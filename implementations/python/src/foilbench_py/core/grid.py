@@ -98,13 +98,21 @@ def project_faces(
     freestream: tuple[float, ...],
     dt: float,
     channel_walls: bool = False,
+    pressure_tolerance: float = 1.0e-5,
 ) -> tuple[FaceVelocityX, FaceVelocityY, int]:
     apply_domain_boundaries(u, v, domain, freestream, channel_walls)
     enforce_solid_faces(u, v, solid, wall_velocity)
     divergence = (u[:, 1:] - u[:, :-1]) / domain.dx + (v[1:, :] - v[:-1, :]) / domain.dy
     fluid = ~solid
     rhs = np.where(fluid, -divergence / max(dt, 1.0e-12), 0.0)
-    pressure, info = solve_masked_poisson(rhs, fluid, domain.dx, domain.dy)
+    pressure, info = solve_masked_poisson(
+        rhs,
+        fluid,
+        domain.dx,
+        domain.dy,
+        domain.periodic_axes,
+        pressure_tolerance,
+    )
     u[:, 1:-1] -= dt * (pressure[:, 1:] - pressure[:, :-1]) / domain.dx
     v[1:-1, :] -= dt * (pressure[1:, :] - pressure[:-1, :]) / domain.dy
     apply_domain_boundaries(u, v, domain, freestream, channel_walls)

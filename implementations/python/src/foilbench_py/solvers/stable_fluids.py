@@ -100,6 +100,10 @@ class StableFluidsSolver:
     def _apply_projection(self, dt: float) -> None:
         scenario, _, u, v, solid = self._require()
         channel = str(scenario.solver_options.get("initial_condition", "")) == "poiseuille"
+        tolerance_option = scenario.solver_options.get("pressure_tolerance", 1.0e-5)
+        if not isinstance(tolerance_option, (int, float)):
+            raise TypeError("pressure_tolerance must be numeric")
+        pressure_tolerance = float(tolerance_option)
         self._u, self._v, info = project_faces(
             u,
             v,
@@ -109,6 +113,7 @@ class StableFluidsSolver:
             scenario.freestream,
             dt,
             channel,
+            pressure_tolerance,
         )
         self._projection_warning = "" if info == 0 else f"pressure CG returned {info}"
 
@@ -122,7 +127,11 @@ class StableFluidsSolver:
             abs(scenario.freestream[0]),
             1.0e-6,
         )
-        stable_dt = 0.7 * min(scenario.domain.dx, scenario.domain.dy) / max_speed
+        cfl_option = scenario.solver_options.get("stable_cfl", 0.7)
+        if not isinstance(cfl_option, (int, float)):
+            raise TypeError("stable_cfl must be numeric")
+        cfl = float(cfl_option)
+        stable_dt = cfl * min(scenario.domain.dx, scenario.domain.dy) / max_speed
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
         viscosity = abs(scenario.freestream[0]) * scenario.foil.chord / scenario.reynolds

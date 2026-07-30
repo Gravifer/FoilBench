@@ -9,6 +9,18 @@ Python is the semantic reference, not the presumed performance winner.
 Cross-language comparison happens through schema-validated result artifacts.
 No implementation is required to load another language's solver.
 
+## Interactive and reference domains
+
+The interactive airfoil scenario uses a compact `5c × 3c` domain at
+`160 × 96`: 32 cells per chord and approximately four cells through the
+maximum thickness of a NACA 0012/2412 section. This spends the preview budget
+on the foil and near wake rather than a long downstream canvas.
+
+The separate `scenarios/airfoil/reference.json` retains the wide `8c × 4c`
+domain and strict pressure tolerance for validation and benchmark matrices.
+Changing preview compromises therefore does not silently change reference
+runs.
+
 ## Python data flow
 
 1. A scenario supplies the domain, airfoil, boundary conditions, and control

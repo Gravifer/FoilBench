@@ -175,8 +175,20 @@ class PicFlipSolver:
             scenario.domain.ny, scenario.domain.nx, 2
         )
         channel = str(scenario.solver_options.get("initial_condition", "")) == "poiseuille"
+        tolerance_option = scenario.solver_options.get("pressure_tolerance", 1.0e-5)
+        if not isinstance(tolerance_option, (int, float)):
+            raise TypeError("pressure_tolerance must be numeric")
+        pressure_tolerance = float(tolerance_option)
         u, v, info = project_faces(
-            u, v, scenario.domain, solid, wall, scenario.freestream, dt, channel
+            u,
+            v,
+            scenario.domain,
+            solid,
+            wall,
+            scenario.freestream,
+            dt,
+            channel,
+            pressure_tolerance,
         )
         self._projection_warning = "" if info == 0 else f"pressure CG returned {info}"
         return faces_to_cell(u, v)

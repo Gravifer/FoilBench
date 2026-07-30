@@ -1,11 +1,10 @@
 {
   "schema_version": 1,
   "id": "reference",
-  "scenario": "scenarios/airfoil/default.json",
+  "scenario": "scenarios/airfoil/reference.json",
   "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
   "resolutions": [[256, 128], [512, 256], [1024, 512]],
   "duration": 22.0,
   "repetitions": 3,
   "save_snapshots": true
 }
-

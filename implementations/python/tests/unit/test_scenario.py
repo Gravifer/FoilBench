@@ -14,7 +14,7 @@ def test_default_scenario_validates() -> None:
     root = find_repo_root(Path(__file__))
     scenario = load_scenario(root / "scenarios" / "airfoil" / "default.json")
     assert scenario.id == "naca2412-dynamic"
-    assert scenario.domain.resolution == (384, 192)
+    assert scenario.domain.resolution == (160, 96)
 
 
 def test_phase_one_solver_rejects_thin_3d(
