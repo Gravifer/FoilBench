@@ -1,7 +1,10 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from foilbench_py.core.geometry import NacaFoil
+from foilbench_py.core.models import ControlState
 from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from tests.helpers import ScenarioFactory
@@ -73,3 +76,36 @@ def test_lbm_open_boundaries_remain_finite_for_many_steps(
         rtol=0.01,
     )
     assert np.isfinite(state.velocity).all()
+
+
+def test_pic_flip_abrupt_stall_does_not_amplify_transfer_error(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(160, 96))
+    scenario = replace(
+        scenario,
+        domain=replace(
+            scenario.domain,
+            bounds=((-1.5, 3.5), (-1.5, 1.5)),
+        ),
+        reynolds=1000.0,
+        output_dt=1.0 / 60.0,
+        solver_options={
+            **scenario.solver_options,
+            "pressure_tolerance": 0.001,
+        },
+    )
+    solver = create_solver("pic-flip")
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+    report = None
+    for step in range(7):
+        time = (step + 1) * scenario.output_dt
+        report = solver.advance(ControlState(time, 25.0, 0.0), scenario.output_dt)
+
+    assert report is not None
+    diagnostics = solver.diagnostics()
+    assert diagnostics.values["kinetic_energy"] < 1.0
+    assert diagnostics.values["enstrophy"] < 10.0
+    assert report.max_speed < 5.0
+    assert np.isfinite(solver.export_state().velocity).all()

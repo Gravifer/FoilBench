@@ -247,11 +247,15 @@ class PicFlipSolver:
                 control.angular_velocity_degrees,
             )
             self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
-            old_grid = grid_velocity.copy()
             transferred = self._particle_to_grid()
+            pre_projection_grid = transferred.copy()
             self._grid_velocity = self._project(transferred, sub_control, dt)
             pic_velocity = sample_vector(self._grid_velocity, positions, scenario.domain)
-            delta = sample_vector(self._grid_velocity - old_grid, positions, scenario.domain)
+            delta = sample_vector(
+                self._grid_velocity - pre_projection_grid,
+                positions,
+                scenario.domain,
+            )
             blend = 0.0 if self._settling_steps > 0 else self._blend
             particle_velocity[:] = (1.0 - blend) * pic_velocity + blend * (
                 particle_velocity + delta
