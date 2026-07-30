@@ -44,6 +44,39 @@ uniform vec4 color;
 void main() { fragColor = color; }
 """
 
+_FIELD_VERTEX = """
+#version 330
+out vec2 uv;
+const vec2 positions[4] = vec2[4](
+    vec2(-1.0, -1.0),
+    vec2( 1.0, -1.0),
+    vec2(-1.0,  1.0),
+    vec2( 1.0,  1.0)
+);
+void main() {
+    vec2 position = positions[gl_VertexID];
+    uv = 0.5 * (position + 1.0);
+    gl_Position = vec4(position, 0.0, 1.0);
+}
+"""
+
+_FIELD_FRAGMENT = """
+#version 330
+in vec2 uv;
+out vec4 fragColor;
+uniform sampler2D vorticity_texture;
+void main() {
+    float value = texture(vorticity_texture, uv).r;
+    float magnitude = pow(min(abs(value), 1.0), 0.7);
+    float visibility = smoothstep(0.18, 0.9, magnitude);
+    vec3 clockwise = vec3(0.65, 0.12, 0.02);
+    vec3 counterclockwise = vec3(0.02, 0.28, 0.65);
+    vec3 selected = value >= 0.0 ? clockwise : counterclockwise;
+    vec3 background = vec3(0.015, 0.02, 0.035);
+    fragColor = vec4(mix(background, selected, 0.38 * visibility), 1.0);
+}
+"""
+
 
 class FoilWindow(pyglet.window.Window):
     def __init__(self, model: ViewerModel) -> None:
@@ -64,6 +97,10 @@ class FoilWindow(pyglet.window.Window):
         self.line_program = self.ctx.program(
             vertex_shader=_VERTEX_SHADER, fragment_shader=_LINE_FRAGMENT
         )
+        self.field_program = self.ctx.program(
+            vertex_shader=_FIELD_VERTEX,
+            fragment_shader=_FIELD_FRAGMENT,
+        )
         point_bytes = model.tracers.positions.shape[0] * 2 * 4
         line_vertices = (model.tracers.history.shape[0] - 1) * model.tracers.positions.shape[0] * 2
         self.point_buffer = self.ctx.buffer(reserve=point_bytes, dynamic=True)
@@ -78,6 +115,16 @@ class FoilWindow(pyglet.window.Window):
         self.foil_vao = self.ctx.vertex_array(
             self.line_program, [(self.foil_buffer, "2f", "in_position")]
         )
+        self.field_vao = self.ctx.vertex_array(self.field_program, [])
+        self.field_texture = self.ctx.texture(
+            (model.scenario.domain.nx, model.scenario.domain.ny),
+            components=1,
+            dtype="f4",
+        )
+        self.field_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.field_texture.repeat_x = False
+        self.field_texture.repeat_y = False
+        self.field_revision = -1
         self.label = pyglet.text.Label(
             "",
             x=12,
@@ -86,6 +133,16 @@ class FoilWindow(pyglet.window.Window):
             anchor_y="top",
             color=(235, 241, 255, 255),
             font_size=11,
+        )
+        self.help_label = pyglet.text.Label(
+            "1/2/3 solver   drag foil   Space pause   R reset   "
+            "[/] PIC/FLIP blend   V vorticity   T tracer mode",
+            x=12,
+            y=self.height - 32,
+            anchor_x="left",
+            anchor_y="top",
+            color=(185, 198, 220, 255),
+            font_size=9,
         )
         pyglet.clock.schedule_interval(self._tick, 1.0 / 60.0)
 
@@ -99,26 +156,34 @@ class FoilWindow(pyglet.window.Window):
 
     def _tick(self, dt: float) -> None:
         self.model.update(dt)
-        self.label.text = (
-            self.model.status() + "   [1/2/3 switch, drag foil, Space pause, R reset, [/] blend]"
-        )
+        self.label.text = self.model.status()
         self.label.y = self.height - 12
+        self.help_label.y = self.height - 32
         self.invalid = True
 
     def on_draw(self) -> None:
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.clear(0.015, 0.02, 0.035, 1.0)
+        if self.model.show_vorticity and self.model.vorticity_display is not None:
+            if self.field_revision != self.model.vorticity_revision:
+                field = np.asarray(self.model.vorticity_display, dtype=np.float32)
+                self.field_texture.write(field.tobytes())
+                self.field_revision = self.model.vorticity_revision
+            self.field_texture.use(location=0)
+            self.field_program["vorticity_texture"].value = 0
+            self.field_vao.render(mode=moderngl.TRIANGLE_STRIP, vertices=4)
+
         points = self._clip(self.model.tracers.positions)
         self.point_buffer.write(points.tobytes())
-        self.point_program["point_size"].value = 3.2
-        self.point_program["color"].value = (0.24, 0.58, 1.0, 0.86)
+        self.point_program["point_size"].value = 2.4
+        self.point_program["color"].value = (0.48, 0.72, 1.0, 0.58)
         self.point_vao.render(mode=moderngl.POINTS, vertices=points.shape[0])
 
         segments = self._clip(self.model.tracers.path_segments())
         if segments.size:
             self.line_buffer.write(segments.tobytes())
             self.line_program["point_size"].value = 1.0
-            self.line_program["color"].value = (0.22, 0.55, 1.0, 0.10)
+            self.line_program["color"].value = (0.38, 0.64, 1.0, 0.035)
             self.line_vao.render(mode=moderngl.LINES, vertices=segments.shape[0])
 
         control = self.model.control(self.model.scenario.output_dt)
@@ -127,6 +192,7 @@ class FoilWindow(pyglet.window.Window):
         self.line_program["color"].value = (0.78, 0.86, 0.93, 1.0)
         self.foil_vao.render(mode=moderngl.LINE_LOOP, vertices=outline.shape[0])
         self.label.draw()
+        self.help_label.draw()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         del modifiers
@@ -144,6 +210,10 @@ class FoilWindow(pyglet.window.Window):
             self.model.adjust_blend(-0.05)
         elif symbol == key.BRACKETRIGHT:
             self.model.adjust_blend(0.05)
+        elif symbol == key.V:
+            self.model.toggle_vorticity()
+        elif symbol == key.T:
+            self.model.toggle_tracer_mode()
 
     def on_mouse_drag(
         self,

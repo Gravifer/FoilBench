@@ -46,11 +46,23 @@ run:
 uv run --project implementations/python foilbench-py view scenarios/airfoil/default.json
 ```
 
-Confirm that the foil, 8,192 tracer points, batched path afterimages, and
+Confirm that the foil, density-scaled tracer points, batched path afterimages, and
 diagnostic overlay render. Drag the foil, pause and reset, select each solver
 with `1`/`2`/`3`, and adjust PIC/FLIP blending with `[`/`]`. Switching must
 retain visible tracer paths and show the conversion transient without a
 crossfade.
+
+Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
+`T` to switch between display tracers and material tracers. Display tracers
+have deterministic finite lifetimes and respawn throughout the domain so
+closed recirculation regions do not become visually empty. Material tracers
+only re-enter at the inlet and intentionally preserve depletion and residence
+effects. Neither mode changes solver state.
+
+The viewer targets approximately 256 display tracers per square chord and
+clamps the total to 2,048–8,192. The compact preview therefore uses about
+3,840 tracers while the wide reference canvas uses 8,192, keeping the visual
+density comparable.
 
 ## Thin periodic depth
 
