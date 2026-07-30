@@ -32,6 +32,17 @@ runs.
    solver at a completed step boundary.
 5. The benchmark runner times only solver work and emits portable artifacts.
 
+The viewer advances by the scenario's fixed `output_dt`; rendering cadence
+never changes a solver's physical or lattice-unit scaling.
+
+At coarse preview resolutions, D2Q9 may not represent the requested Reynolds
+number while keeping TRT safely separated from `tau=0.5`. It therefore clamps
+to `tau>=0.52`, reports `effective_reynolds` and an explicit warning, and
+displays `Re_eff` in the overlay. Once resolution makes the requested lattice
+viscosity stable, no clamp is applied. Its open domain uses Zou-He velocity
+reconstruction, a convective outlet, and weak far-field/outlet sponge layers
+to suppress corner and reflection modes.
+
 The canonical state uses semantic axes `z y x component`. Two-dimensional
 states store a singleton `z` axis. Private pressure history, lattice
 populations, and solver particles are deliberately excluded.

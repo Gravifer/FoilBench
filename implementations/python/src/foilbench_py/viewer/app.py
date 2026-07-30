@@ -11,6 +11,7 @@ from foilbench_py.core.models import ControlState, Diagnostics, Scenario, StepRe
 from foilbench_py.core.switching import SolverManager
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
+from foilbench_py.solvers.lbm import LBMSolver
 from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.types import ScalarField
 
@@ -91,14 +92,15 @@ class ViewerModel:
     def update(self, dt: float) -> None:
         if self.paused:
             return
-        dt = min(max(dt, 1.0e-5), 1.0 / 30.0)
-        self.time += dt
-        control = self.control(dt)
+        del dt
+        simulation_dt = self.scenario.output_dt
+        self.time += simulation_dt
+        control = self.control(simulation_dt)
         started = perf_counter()
-        self.last_report = self.manager.solver.advance(control, dt)
+        self.last_report = self.manager.solver.advance(control, simulation_dt)
         solver_elapsed = max(perf_counter() - started, 1.0e-9)
         instantaneous_rate = 1.0 / solver_elapsed
-        instantaneous_throughput = dt / solver_elapsed
+        instantaneous_throughput = simulation_dt / solver_elapsed
         smoothing = 0.15
         if self.solver_steps_per_second == 0.0:
             self.solver_steps_per_second = instantaneous_rate
@@ -110,9 +112,9 @@ class ViewerModel:
             self.simulated_seconds_per_wall_second = (
                 1.0 - smoothing
             ) * self.simulated_seconds_per_wall_second + smoothing * instantaneous_throughput
-        self.tracers.update(self.manager.solver, control, dt)
+        self.tracers.update(self.manager.solver, control, simulation_dt)
         self.previous_angle = control.angle_degrees
-        self.diagnostic_elapsed += dt
+        self.diagnostic_elapsed += simulation_dt
         if self.diagnostic_elapsed >= 0.2:
             self._refresh_diagnostics()
             self.diagnostic_elapsed = 0.0
@@ -170,6 +172,11 @@ class ViewerModel:
         substeps = 0 if report is None else report.substeps
         speed = 0.0 if report is None else report.max_speed
         blend = f"  blend={solver.blend:.2f}" if isinstance(solver, PicFlipSolver) else ""
+        effective_reynolds = (
+            f"  Re_eff={diagnostics.values.get('effective_reynolds', 0.0):.0f}"
+            if isinstance(solver, LBMSolver) and diagnostics is not None
+            else ""
+        )
         warning = ""
         if self.manager.last_import is not None:
             warning = "  warm-import transient"
@@ -184,7 +191,7 @@ class ViewerModel:
             f"sub={substeps}  max|u|={speed:4.2f}  "
             f"E={energy:.3f}  Ω={enstrophy:.3f}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"
-            f"{blend}{warning}"
+            f"{blend}{effective_reynolds}{warning}"
         )
 
     @property

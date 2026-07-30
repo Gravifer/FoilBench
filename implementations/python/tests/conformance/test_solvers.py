@@ -48,3 +48,28 @@ def test_solver_is_deterministic_for_fixed_seed(
         rtol=1.0e-6,
         atol=1.0e-6,
     )
+
+
+def test_lbm_open_boundaries_remain_finite_for_many_steps(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(
+        resolution=(48, 24),
+        foil_in_domain=False,
+    )
+    solver = create_solver("lbm-d2q9")
+    solver.initialize(scenario, NacaFoil(scenario.foil), 0)
+    report = None
+    for step in range(300):
+        time = (step + 1) * scenario.output_dt
+        report = solver.advance(scenario.control_at(time), scenario.output_dt)
+
+    assert report is not None
+    assert any("effective Re" in warning for warning in report.warnings)
+    state = solver.export_state()
+    np.testing.assert_allclose(
+        np.mean(state.velocity[0, :, :, 0]),
+        scenario.freestream[0],
+        rtol=0.01,
+    )
+    assert np.isfinite(state.velocity).all()

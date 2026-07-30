@@ -47,10 +47,15 @@ class LBMSolver:
         self._geometry: NacaFoil | None = None
         self._f: LatticePopulation | None = None
         self._outlet: LatticePopulation | None = None
+        self._sponge: ScalarField | None = None
         self._solid: MaskField | None = None
         self._control = ControlState(0.0, 0.0, 0.0)
         self._time = 0.0
         self._density_initial = 1.0
+        self._lattice_speed = 0.08
+        self._lattice_dt = 1.0
+        self._effective_reynolds = 0.0
+        self._viscosity_clamped = False
 
     def _require(self) -> tuple[Scenario, NacaFoil, LatticePopulation, MaskField]:
         if (
@@ -70,23 +75,68 @@ class LBMSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
+        freestream_speed = max(abs(scenario.freestream[0]), 1.0e-12)
+        reference_substeps = max(
+            1,
+            int(np.ceil(scenario.output_dt * freestream_speed / (0.08 * scenario.domain.dx))),
+        )
+        self._lattice_dt = scenario.output_dt / reference_substeps
+        self._lattice_speed = freestream_speed * self._lattice_dt / scenario.domain.dx
+        chord_cells = scenario.foil.chord / scenario.domain.dx
+        requested_viscosity = self._lattice_speed * chord_cells / scenario.reynolds
+        minimum_preview_viscosity = (0.52 - 0.5) / 3.0
+        selected_viscosity = max(
+            requested_viscosity,
+            minimum_preview_viscosity,
+        )
+        self._viscosity_clamped = selected_viscosity > requested_viscosity
+        self._effective_reynolds = self._lattice_speed * chord_cells / selected_viscosity
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
-        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * 0.08
+        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
+            self._lattice_speed / freestream_speed
+        )
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
         positions = cell_centers(scenario.domain)
         if initial == "taylor-green":
-            velocity[:, :, 0] = 0.08 * np.sin(positions[:, :, 0]) * np.cos(positions[:, :, 1])
-            velocity[:, :, 1] = -0.08 * np.cos(positions[:, :, 0]) * np.sin(positions[:, :, 1])
+            velocity[:, :, 0] = (
+                self._lattice_speed * np.sin(positions[:, :, 0]) * np.cos(positions[:, :, 1])
+            )
+            velocity[:, :, 1] = (
+                -self._lattice_speed * np.cos(positions[:, :, 0]) * np.sin(positions[:, :, 1])
+            )
         elif initial == "poiseuille":
             y0, y1 = scenario.domain.bounds[1]
             radius = 0.5 * (y1 - y0)
             center = 0.5 * (y0 + y1)
-            velocity[:, :, 0] = 0.08 * 1.5 * (1.0 - ((positions[:, :, 1] - center) / radius) ** 2)
+            velocity[:, :, 0] = (
+                self._lattice_speed * 1.5 * (1.0 - ((positions[:, :, 1] - center) / radius) ** 2)
+            )
             velocity[:, :, 1] = 0.0
         density = np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
         self._f = self._equilibrium(density, velocity)
         self._outlet = self._f[:, -1:, :].copy()
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
+        sponge = np.zeros((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
+        width = max(3, min(scenario.domain.nx, scenario.domain.ny) // 16)
+        if "y" not in scenario.domain.periodic_axes:
+            y = np.arange(scenario.domain.ny)
+            distance_y = np.minimum(y, scenario.domain.ny - 1 - y)
+            strength_y = 0.12 * np.clip((width - distance_y) / width, 0.0, 1.0) ** 2
+            sponge = np.maximum(sponge, strength_y[:, None])
+        if "x" not in scenario.domain.periodic_axes:
+            outlet_width = 2 * width
+            distance_outlet = scenario.domain.nx - 1 - np.arange(scenario.domain.nx)
+            strength_outlet = (
+                0.08
+                * np.clip(
+                    (outlet_width - distance_outlet) / outlet_width,
+                    0.0,
+                    1.0,
+                )
+                ** 2
+            )
+            sponge = np.maximum(sponge, strength_outlet[None, :])
+        self._sponge = sponge
 
     def _equilibrium(
         self,
@@ -120,7 +170,9 @@ class LBMSolver:
     def _physical_velocity(self) -> VelocityField:
         scenario, _, populations, _ = self._require()
         _, lattice = self._macroscopic(populations)
-        scale = max(np.linalg.norm(np.asarray(scenario.freestream[:2])), 1.0e-12) / 0.08
+        scale = (
+            max(np.linalg.norm(np.asarray(scenario.freestream[:2])), 1.0e-12) / self._lattice_speed
+        )
         return lattice * scale
 
     def _update_solid(self, control: ControlState) -> None:
@@ -130,9 +182,93 @@ class LBMSolver:
         if np.any(uncovered):
             density, velocity = self._macroscopic(populations)
             density[uncovered] = 1.0
-            velocity[uncovered] = np.asarray(scenario.freestream[:2]) * 0.08
+            speed = max(abs(scenario.freestream[0]), 1.0e-12)
+            velocity[uncovered] = np.asarray(scenario.freestream[:2]) * (
+                self._lattice_speed / speed
+            )
             populations[uncovered] = self._equilibrium(density, velocity)[uncovered]
         self._solid = new_solid
+
+    @staticmethod
+    def _left_velocity_boundary(
+        populations: LatticePopulation,
+        ux: float,
+        uy: float,
+    ) -> None:
+        boundary = populations[:, 0, :]
+        density = (
+            boundary[:, 0]
+            + boundary[:, 2]
+            + boundary[:, 4]
+            + 2.0 * (boundary[:, 3] + boundary[:, 6] + boundary[:, 7])
+        ) / (1.0 - ux)
+        boundary[:, 1] = boundary[:, 3] + (2.0 / 3.0) * density * ux
+        boundary[:, 5] = (
+            boundary[:, 7]
+            + 0.5 * (boundary[:, 4] - boundary[:, 2])
+            + (1.0 / 6.0) * density * ux
+            + 0.5 * density * uy
+        )
+        boundary[:, 8] = (
+            boundary[:, 6]
+            + 0.5 * (boundary[:, 2] - boundary[:, 4])
+            + (1.0 / 6.0) * density * ux
+            - 0.5 * density * uy
+        )
+
+    @staticmethod
+    def _bottom_velocity_boundary(
+        populations: LatticePopulation,
+        ux: float,
+        uy: float,
+    ) -> None:
+        boundary = populations[0, :, :]
+        density = (
+            boundary[:, 0]
+            + boundary[:, 1]
+            + boundary[:, 3]
+            + 2.0 * (boundary[:, 4] + boundary[:, 7] + boundary[:, 8])
+        ) / (1.0 - uy)
+        boundary[:, 2] = boundary[:, 4] + (2.0 / 3.0) * density * uy
+        boundary[:, 5] = (
+            boundary[:, 7]
+            + 0.5 * (boundary[:, 3] - boundary[:, 1])
+            + (1.0 / 6.0) * density * uy
+            + 0.5 * density * ux
+        )
+        boundary[:, 6] = (
+            boundary[:, 8]
+            + 0.5 * (boundary[:, 1] - boundary[:, 3])
+            + (1.0 / 6.0) * density * uy
+            - 0.5 * density * ux
+        )
+
+    @staticmethod
+    def _top_velocity_boundary(
+        populations: LatticePopulation,
+        ux: float,
+        uy: float,
+    ) -> None:
+        boundary = populations[-1, :, :]
+        density = (
+            boundary[:, 0]
+            + boundary[:, 1]
+            + boundary[:, 3]
+            + 2.0 * (boundary[:, 2] + boundary[:, 5] + boundary[:, 6])
+        ) / (1.0 + uy)
+        boundary[:, 4] = boundary[:, 2] - (2.0 / 3.0) * density * uy
+        boundary[:, 7] = (
+            boundary[:, 5]
+            + 0.5 * (boundary[:, 1] - boundary[:, 3])
+            - (1.0 / 6.0) * density * uy
+            - 0.5 * density * ux
+        )
+        boundary[:, 8] = (
+            boundary[:, 6]
+            + 0.5 * (boundary[:, 3] - boundary[:, 1])
+            - (1.0 / 6.0) * density * uy
+            + 0.5 * density * ux
+        )
 
     def _stream_with_moving_wall(
         self,
@@ -203,9 +339,14 @@ class LBMSolver:
         scenario, _, populations, _ = self._require()
         dx = scenario.domain.dx
         freestream_speed = max(abs(scenario.freestream[0]), 1.0e-12)
-        u_lattice = min(freestream_speed * dt / dx, 0.08)
+        del dt
+        u_lattice = self._lattice_speed
         chord_cells = scenario.foil.chord / dx
-        nu_lattice = max(u_lattice * chord_cells / scenario.reynolds, 1.0e-5)
+        minimum_preview_viscosity = (0.52 - 0.5) / 3.0
+        requested_viscosity = u_lattice * chord_cells / scenario.reynolds
+        nu_lattice = max(requested_viscosity, minimum_preview_viscosity)
+        self._viscosity_clamped = nu_lattice > requested_viscosity
+        self._effective_reynolds = u_lattice * chord_cells / nu_lattice
         tau_plus = 0.5 + 3.0 * nu_lattice
         tau_minus = 0.5 + (3.0 / 16.0) / max(tau_plus - 0.5, 1.0e-6)
         omega_plus = 1.0 / tau_plus
@@ -230,11 +371,32 @@ class LBMSolver:
             u_lattice / freestream_speed,
         )
 
-        inlet_eq = self._equilibrium(
-            np.ones_like(density), np.broadcast_to(target_lattice, velocity.shape).copy()
+        boundary_equilibrium = self._equilibrium(
+            np.ones_like(density),
+            np.broadcast_to(target_lattice, velocity.shape).copy(),
         )
+        if "y" in scenario.domain.periodic_axes:
+            pass
+        elif str(scenario.solver_options.get("initial_condition", "")) == "poiseuille":
+            streamed[0, :, :] = streamed[1, :, :][:, self._OPPOSITE]
+            streamed[-1, :, :] = streamed[-2, :, :][:, self._OPPOSITE]
+        else:
+            self._bottom_velocity_boundary(
+                streamed,
+                float(target_lattice[0]),
+                float(target_lattice[1]),
+            )
+            self._top_velocity_boundary(
+                streamed,
+                float(target_lattice[0]),
+                float(target_lattice[1]),
+            )
         if "x" not in scenario.domain.periodic_axes:
-            streamed[:, 0, :] = inlet_eq[:, 0, :]
+            self._left_velocity_boundary(
+                streamed,
+                float(target_lattice[0]),
+                float(target_lattice[1]),
+            )
             previous_outlet = (
                 populations[:, -1, :] if self._outlet is None else self._outlet[:, 0, :]
             )
@@ -242,23 +404,22 @@ class LBMSolver:
                 streamed[:, -2, :] - previous_outlet
             )
             self._outlet = streamed[:, -1:, :].copy()
-        if "y" in scenario.domain.periodic_axes:
-            pass
-        elif str(scenario.solver_options.get("initial_condition", "")) == "poiseuille":
-            streamed[0, :, :] = streamed[1, :, :][:, self._OPPOSITE]
-            streamed[-1, :, :] = streamed[-2, :, :][:, self._OPPOSITE]
-        else:
-            streamed[0, :, :] = inlet_eq[0, :, :]
-            streamed[-1, :, :] = inlet_eq[-1, :, :]
+        if "x" not in scenario.domain.periodic_axes and "y" not in scenario.domain.periodic_axes:
+            streamed[0, 0, :] = boundary_equilibrium[0, 0, :]
+            streamed[-1, 0, :] = boundary_equilibrium[-1, 0, :]
+            streamed[0, -1, :] = boundary_equilibrium[0, -1, :]
+            streamed[-1, -1, :] = boundary_equilibrium[-1, -1, :]
+        if self._sponge is not None:
+            strength = self._sponge[:, :, None]
+            streamed = (1.0 - strength) * streamed + strength * boundary_equilibrium
         self._f = streamed
         self._control = control
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
-        scenario, _, _, _ = self._require()
+        self._require()
         if target_dt <= 0.0:
             raise ValueError("target_dt must be positive")
-        dt_max = 0.08 * scenario.domain.dx / max(abs(scenario.freestream[0]), 1.0e-6)
-        substeps = max(1, int(np.ceil(target_dt / dt_max)))
+        substeps = max(1, int(np.ceil(target_dt / self._lattice_dt - 1.0e-12)))
         dt = target_dt / substeps
         for substep in range(substeps):
             fraction = (substep + 1) / substeps
@@ -275,7 +436,12 @@ class LBMSolver:
             self._time, control.angle_degrees, control.angular_velocity_degrees
         )
         max_speed = float(np.max(np.linalg.norm(self._physical_velocity(), axis=2)))
-        return StepReport(target_dt, target_dt, substeps, max_speed)
+        warnings = (
+            (f"LBM relaxation clamp active: effective Re={self._effective_reynolds:.1f}",)
+            if self._viscosity_clamped
+            else ()
+        )
+        return StepReport(target_dt, target_dt, substeps, max_speed, warnings)
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _ = self._require()
@@ -306,7 +472,7 @@ class LBMSolver:
             raise ValueError("warm import requires the same 2D resolution")
         physical = np.asarray(state.velocity[0], dtype=scenario.dtype)
         speed = max(abs(scenario.freestream[0]), 1.0e-12)
-        lattice = physical * (0.08 / speed)
+        lattice = physical * (self._lattice_speed / speed)
         density = (
             np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
             if state.density is None
@@ -336,6 +502,7 @@ class LBMSolver:
             "solid_leakage": solid_leakage(velocity, solid),
             "density_mean": float(np.mean(density)),
             "density_drift": float(np.mean(density) - self._density_initial),
+            "effective_reynolds": self._effective_reynolds,
             "wake_width": wake_width(velocity, scenario.domain, scenario.foil.pivot[0]),
             "recirculation_area": recirculation_area(
                 velocity, scenario.domain, scenario.foil.pivot[0]
@@ -343,4 +510,9 @@ class LBMSolver:
         }
         if not all(np.isfinite(value) for value in values.values()):
             raise FloatingPointError("LBM produced non-finite diagnostics")
-        return Diagnostics(values)
+        warnings = (
+            (f"LBM relaxation clamp active: effective Re={self._effective_reynolds:.1f}",)
+            if self._viscosity_clamped
+            else ()
+        )
+        return Diagnostics(values, warnings)

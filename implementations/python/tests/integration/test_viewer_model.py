@@ -10,7 +10,7 @@ def test_headless_viewer_update_and_switch(
     scenario = scenario_factory(resolution=(32, 16))
     model = ViewerModel.create(scenario, "stable-fluids")
     before = model.tracers.positions.copy()
-    model.update(0.01)
+    model.update(0.5)
     assert model.time == 0.01
     assert not np.array_equal(before, model.tracers.positions)
     assert model.vorticity_display is not None

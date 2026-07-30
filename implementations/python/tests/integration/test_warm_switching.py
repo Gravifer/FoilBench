@@ -32,3 +32,20 @@ def test_all_directed_warm_switches(
     assert manager.solver.info.id == destination
     assert state.time == pytest.approx(0.01)
     assert np.isfinite(state.velocity).all()
+
+
+def test_stable_to_lbm_warm_switch_stays_finite(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(48, 24))
+    geometry = NacaFoil(scenario.foil)
+    manager = SolverManager(create_solver, scenario, geometry, "stable-fluids")
+    manager.solver.advance(scenario.control_at(0.01), scenario.output_dt)
+    manager.switch("lbm-d2q9", scenario.control_at(0.01))
+
+    for step in range(200):
+        time = 0.01 + (step + 1) * scenario.output_dt
+        manager.solver.advance(scenario.control_at(time), scenario.output_dt)
+
+    state = manager.solver.export_state()
+    assert np.isfinite(state.velocity).all()
