@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "poiseuille",
+  "dimension": 2,
+  "bounds": [[0.0, 4.0], [-1.0, 1.0]],
+  "resolution": [192, 96],
+  "periodic_axes": ["x"],
+  "reynolds": 100.0,
+  "freestream": [1.0, 0.0],
+  "foil": {"naca": "0012", "chord": 0.2, "pivot": [-10.0, -10.0]},
+  "controls": [{"time": 0.0, "angle_degrees": 0.0}],
+  "duration": 2.0,
+  "output_dt": 0.02,
+  "precision": "float64",
+  "seed": 0,
+  "solver_options": {"initial_condition": "poiseuille"}
+}
+

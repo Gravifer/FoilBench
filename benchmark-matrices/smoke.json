@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "smoke",
+  "scenario": "scenarios/airfoil/default.json",
+  "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+  "resolutions": [[128, 64]],
+  "duration": 0.1,
+  "repetitions": 1,
+  "save_snapshots": false
+}
+

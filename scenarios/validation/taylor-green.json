@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "taylor-green",
+  "dimension": 2,
+  "bounds": [[0.0, 6.283185307179586], [0.0, 6.283185307179586]],
+  "resolution": [128, 128],
+  "periodic_axes": ["x", "y"],
+  "reynolds": 100.0,
+  "freestream": [0.0, 0.0],
+  "foil": {"naca": "0012", "chord": 0.2, "pivot": [-10.0, -10.0]},
+  "controls": [{"time": 0.0, "angle_degrees": 0.0}],
+  "duration": 1.0,
+  "output_dt": 0.02,
+  "precision": "float64",
+  "seed": 0,
+  "solver_options": {"initial_condition": "taylor-green"}
+}
+

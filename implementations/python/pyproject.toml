@@ -1,0 +1,69 @@
+[project]
+name = "foilbench-py"
+version = "0.1.0"
+description = "Typed Python reference implementation for FoilBench"
+readme = "../../README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "beartype>=0.20",
+  "einx>=0.3",
+  "jaxtyping>=0.3",
+  "jsonschema>=4.23",
+  "moderngl>=5.12",
+  "numba>=0.61",
+  "numpy>=2.0",
+  "psutil>=6.0",
+  "pyglet>=2.1",
+  "scipy>=1.14"
+]
+
+[project.scripts]
+foilbench-py = "foilbench_py.entry:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pyright>=1.1.400",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.11"
+]
+[tool.hatch.build.targets.wheel]
+packages = ["src/foilbench_py", "src/foilbench_kernels"]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+reportMissingTypeStubs = "warning"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".pytest-tmp", "pytest-cache-files-*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["F722"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+  "-ra",
+  "-p",
+  "no:cacheprovider",
+  "--strict-config",
+  "--strict-markers",
+  "--jaxtyping-packages=foilbench_py,beartype.beartype"
+]
+markers = [
+  "fidelity: analytic or convergence validation",
+  "gpu: requires a working OpenGL context",
+  "slow: long-running numerical validation"
+]

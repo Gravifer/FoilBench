@@ -1,0 +1,48 @@
+# Architecture
+
+FoilBench is a polyglot monorepo. `spec/`, `scenarios/`, and
+`benchmark-matrices/` are language-neutral. Every directory under
+`implementations/` is an independent implementation with its own solvers,
+viewer, tests, dependency lock, and native benchmark runner.
+
+Python is the semantic reference, not the presumed performance winner.
+Cross-language comparison happens through schema-validated result artifacts.
+No implementation is required to load another language's solver.
+
+## Python data flow
+
+1. A scenario supplies the domain, airfoil, boundary conditions, and control
+   schedule.
+2. A solver advances its private state and exposes sampled velocity plus a
+   canonical cell-centered state.
+3. The viewer owns passive display tracers and their path history.
+4. Warm switching exports canonical state and imports it into another Python
+   solver at a completed step boundary.
+5. The benchmark runner times only solver work and emits portable artifacts.
+
+The canonical state uses semantic axes `z y x component`. Two-dimensional
+states store a singleton `z` axis. Private pressure history, lattice
+populations, and solver particles are deliberately excluded.
+
+## Viewer GPU smoke test
+
+The automated viewer tests exercise state, controls, tracer paths, and warm
+switching without creating a window. On a machine with an OpenGL 3.3 context,
+run:
+
+```powershell
+uv run --project implementations/python foilbench-py view scenarios/airfoil/default.json
+```
+
+Confirm that the foil, 8,192 tracer points, batched path afterimages, and
+diagnostic overlay render. Drag the foil, pause and reset, select each solver
+with `1`/`2`/`3`, and adjust PIC/FLIP blending with `[`/`]`. Switching must
+retain visible tracer paths and show the conversion transient without a
+crossfade.
+
+## Thin periodic depth
+
+Schemas already describe dimensionality, spanwise extent, and periodic axes.
+Phase 1 solvers advertise 2D support only. A future shallow 3D run represents a
+periodically repeated airfoil section, not a finite wing; it therefore has no
+tips or tip vortices. The default student view will remain a mid-span 2D slice.

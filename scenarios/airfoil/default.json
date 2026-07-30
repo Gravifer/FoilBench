@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "naca2412-dynamic",
+  "dimension": 2,
+  "bounds": [[-2.0, 6.0], [-2.0, 2.0]],
+  "resolution": [128, 64],
+  "periodic_axes": [],
+  "reynolds": 500.0,
+  "freestream": [1.0, 0.0],
+  "foil": {"naca": "2412", "chord": 1.0, "pivot": [0.0, 0.0]},
+  "controls": [
+    {"time": 0.0, "angle_degrees": 4.0},
+    {"time": 3.0, "angle_degrees": 4.0},
+    {"time": 5.0, "angle_degrees": 14.0},
+    {"time": 8.0, "angle_degrees": 14.0},
+    {"time": 10.0, "angle_degrees": 25.0},
+    {"time": 15.0, "angle_degrees": 25.0},
+    {"time": 18.0, "angle_degrees": 4.0},
+    {"time": 22.0, "angle_degrees": 4.0}
+  ],
+  "duration": 22.0,
+  "output_dt": 0.016666666666666666,
+  "precision": "float32",
+  "seed": 0,
+  "solver_options": {
+    "pic_flip_blend": 0.95,
+    "stable_advection": "maccormack"
+  }
+}

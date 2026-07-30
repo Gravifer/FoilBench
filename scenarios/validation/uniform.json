@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "uniform-periodic",
+  "dimension": 2,
+  "bounds": [[0.0, 2.0], [0.0, 1.0]],
+  "resolution": [128, 64],
+  "periodic_axes": ["x", "y"],
+  "reynolds": 500.0,
+  "freestream": [1.0, 0.0],
+  "foil": {"naca": "0012", "chord": 0.2, "pivot": [-10.0, -10.0]},
+  "controls": [{"time": 0.0, "angle_degrees": 0.0}],
+  "duration": 1.0,
+  "output_dt": 0.02,
+  "precision": "float64",
+  "seed": 0,
+  "solver_options": {}
+}
+

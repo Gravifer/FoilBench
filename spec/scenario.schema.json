@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/scenario.schema.json",
+  "title": "FoilBench scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "dimension",
+    "bounds",
+    "resolution",
+    "periodic_axes",
+    "reynolds",
+    "freestream",
+    "foil",
+    "controls",
+    "duration",
+    "output_dt",
+    "precision",
+    "seed"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "dimension": {"enum": [2, 3]},
+    "bounds": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {
+        "type": "array",
+        "prefixItems": [{"type": "number"}, {"type": "number"}],
+        "items": false
+      }
+    },
+    "resolution": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {"type": "integer", "minimum": 4}
+    },
+    "periodic_axes": {
+      "type": "array",
+      "items": {"enum": ["x", "y", "z"]},
+      "uniqueItems": true
+    },
+    "reynolds": {"type": "number", "exclusiveMinimum": 0},
+    "freestream": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "foil": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["naca", "chord", "pivot"],
+      "properties": {
+        "naca": {"type": "string", "pattern": "^[0-9]{4}$"},
+        "chord": {"type": "number", "exclusiveMinimum": 0},
+        "pivot": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": {"type": "number"}
+        }
+      }
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["time", "angle_degrees"],
+        "properties": {
+          "time": {"type": "number", "minimum": 0},
+          "angle_degrees": {"type": "number", "minimum": -90, "maximum": 90}
+        }
+      }
+    },
+    "duration": {"type": "number", "exclusiveMinimum": 0},
+    "output_dt": {"type": "number", "exclusiveMinimum": 0},
+    "precision": {"enum": ["float32", "float64"]},
+    "seed": {"type": "integer", "minimum": 0},
+    "solver_options": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    }
+  }
+}
+
