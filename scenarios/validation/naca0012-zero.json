@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "naca0012-zero-angle",
+  "dimension": 2,
+  "bounds": [[-1.5, 3.5], [-1.5, 1.5]],
+  "resolution": [80, 48],
+  "periodic_axes": [],
+  "reynolds": 500.0,
+  "freestream": [1.0, 0.0],
+  "foil": {"naca": "0012", "chord": 1.0, "pivot": [0.0, 0.0]},
+  "controls": [{"time": 0.0, "angle_degrees": 0.0}],
+  "duration": 0.5,
+  "output_dt": 0.016666666666666666,
+  "precision": "float32",
+  "seed": 0,
+  "solver_options": {
+    "pic_flip_blend": 0.95,
+    "pic_cfl": 0.75,
+    "pressure_tolerance": 0.001,
+    "stable_advection": "maccormack",
+    "stable_cfl": 1.25
+  }
+}
