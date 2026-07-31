@@ -41,3 +41,31 @@ def test_display_tracers_expire_without_leaving_empty_regions(
     for history_slice in model.tracers.history:
         np.testing.assert_array_equal(history_slice, model.tracers.positions)
     assert model.toggle_tracer_mode() == "material"
+
+
+def test_failed_warm_state_recovers_fresh_without_resetting_tracers(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    model.update(model.scenario.output_dt)
+    model.switch_solver("pic-flip")
+    model.set_angle(30.0)
+    positions = model.tracers.positions.copy()
+    history = model.tracers.history.copy()
+
+    model.recover_solver(FloatingPointError("unstable imported flow"))
+
+    state = model.manager.solver.export_state()
+    assert model.manager.solver.info.id == "pic-flip"
+    assert model.manager.last_import is None
+    assert state.time == 0.0
+    assert state.angle_degrees == 30.0
+    assert model.time == 0.0
+    assert model.angle_override == 30.0
+    assert model.previous_angle == 30.0
+    np.testing.assert_array_equal(model.tracers.positions, positions)
+    np.testing.assert_array_equal(model.tracers.history, history)
+    assert "recovered=fresh restart after FloatingPointError" in model.status()

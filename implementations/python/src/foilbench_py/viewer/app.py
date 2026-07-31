@@ -34,6 +34,7 @@ class ViewerModel:
     vorticity_display: ScalarField | None = None
     vorticity_revision: int = 0
     show_vorticity: bool = True
+    recovery_notice: str | None = None
 
     @classmethod
     def create(cls, scenario: Scenario, initial_solver: str = "stable-fluids") -> "ViewerModel":
@@ -129,6 +130,22 @@ class ViewerModel:
     def switch_solver(self, solver_id: str) -> None:
         control = self.control(self.scenario.output_dt)
         self.manager.switch(solver_id, control)
+        self.recovery_notice = None
+        self._refresh_diagnostics()
+
+    def recover_solver(self, failure: Exception) -> None:
+        """Discard the active flow and restart its solver at the visible foil angle."""
+        current_angle = self.control(self.scenario.output_dt).angle_degrees
+        recovery_control = ControlState(0.0, current_angle, 0.0)
+        self.manager.restart_at(recovery_control)
+        self.time = 0.0
+        self.angle_override = current_angle
+        self.previous_angle = current_angle
+        self.last_report = None
+        self.diagnostic_elapsed = 0.0
+        self.solver_steps_per_second = 0.0
+        self.simulated_seconds_per_wall_second = 0.0
+        self.recovery_notice = f"fresh restart after {type(failure).__name__}"
         self._refresh_diagnostics()
 
     def reset(self) -> None:
@@ -152,6 +169,7 @@ class ViewerModel:
         self.vorticity_display = replacement.vorticity_display
         self.vorticity_revision = replacement.vorticity_revision
         self.show_vorticity = replacement.show_vorticity
+        self.recovery_notice = None
 
     def adjust_blend(self, delta: float) -> None:
         solver = self.manager.solver
@@ -180,6 +198,8 @@ class ViewerModel:
         warning = ""
         if self.manager.last_import is not None:
             warning = "  warm-import transient"
+        if self.recovery_notice is not None:
+            warning = f"  recovered={self.recovery_notice}"
         energy = 0.0 if diagnostics is None else diagnostics.values.get("kinetic_energy", 0.0)
         enstrophy = 0.0 if diagnostics is None else diagnostics.values.get("enstrophy", 0.0)
         control = self.control(self.scenario.output_dt)

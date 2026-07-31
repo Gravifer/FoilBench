@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from foilbench_py.viewer.app import ViewerModel
 from foilbench_py.viewer.worker import SimulationWorker
@@ -55,5 +56,41 @@ def test_worker_coalesces_drag_commands_and_resets(
             reset.angle_degrees,
             scenario.control_at(reset.simulation_time).angle_degrees,
         )
+    finally:
+        worker.close()
+
+
+def test_worker_recovers_once_from_failed_advance(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    model.switch_solver("pic-flip")
+    model.set_angle(-30.0)
+    original_update = ViewerModel.update
+    calls = 0
+
+    def fail_once(viewer: ViewerModel, dt: float) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise FloatingPointError("warm state diverged")
+        original_update(viewer, dt)
+
+    monkeypatch.setattr(ViewerModel, "update", fail_once)
+    worker = SimulationWorker(model, maximum_steps_per_second=120.0)
+    worker.start()
+    try:
+        recovered = worker.wait_for_revision(1)
+        assert recovered.failure is None
+        assert recovered.angle_degrees == -30.0
+        assert "recovered=fresh restart after FloatingPointError" in recovered.status
+
+        resumed = worker.wait_for_revision(2)
+        assert resumed.failure is None
+        assert resumed.simulation_time > 0.0
     finally:
         worker.close()

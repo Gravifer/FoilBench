@@ -57,6 +57,7 @@ class SimulationWorker:
         self._stop_requested = False
         self._thread: Thread | None = None
         self._failure: str | None = None
+        self._recovery_pending = False
         self._snapshot = self._build_snapshot(0, 0)
 
     @property
@@ -170,11 +171,13 @@ class SimulationWorker:
         elif command.kind == "reset":
             self._model.reset()
             self._failure = None
+            self._recovery_pending = False
         elif command.kind == "switch_solver":
             if not isinstance(command.value, str):
                 raise TypeError("switch_solver requires a solver id")
             self._model.switch_solver(command.value)
             self._failure = None
+            self._recovery_pending = False
         elif command.kind == "set_angle":
             if not isinstance(command.value, (int, float)):
                 raise TypeError("set_angle requires a numeric angle")
@@ -276,9 +279,23 @@ class SimulationWorker:
             started = perf_counter()
             try:
                 self._model.update(self._model.scenario.output_dt)
+                self._recovery_pending = False
             except Exception as error:
-                self._failure = f"{type(error).__name__}: {error}"
-                self._model.paused = True
+                if self._recovery_pending:
+                    self._failure = f"{type(error).__name__}: {error}"
+                    self._model.paused = True
+                else:
+                    try:
+                        self._model.recover_solver(error)
+                    except Exception as recovery_error:
+                        self._failure = (
+                            f"{type(error).__name__}: {error}; fresh restart failed: "
+                            f"{type(recovery_error).__name__}: {recovery_error}"
+                        )
+                        self._model.paused = True
+                    else:
+                        self._failure = None
+                        self._recovery_pending = True
             self._publish(applied_command)
             remaining = self._step_interval - (perf_counter() - started)
             if remaining > 0.0:
