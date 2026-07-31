@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from chaotic_wake_sweep import SweepCase, _scenario
+
 from foilbench_py.core.geometry import NacaFoil, cell_centers
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver

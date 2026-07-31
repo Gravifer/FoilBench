@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
+
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.metrics import vorticity
 from foilbench_py.core.models import ControlKeyframe, Scenario
