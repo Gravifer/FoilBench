@@ -113,13 +113,20 @@ def run_matrix(
         geometry = NacaFoil(scenario.foil)
         for solver_id in matrix.solvers:
             for repetition in range(matrix.repetitions):
-                solver = create_solver(solver_id)
+                cold_solver = create_solver(solver_id)
                 init_start = time.perf_counter()
-                solver.initialize(scenario, geometry, scenario.seed)
+                cold_solver.initialize(scenario, geometry, scenario.seed)
                 initialization_seconds = time.perf_counter() - init_start
 
                 warm_control = scenario.control_at(min(scenario.output_dt, scenario.duration))
-                solver.advance(warm_control, min(scenario.output_dt, scenario.duration))
+                cold_step_start = time.perf_counter()
+                cold_solver.advance(warm_control, min(scenario.output_dt, scenario.duration))
+                cold_step_seconds = time.perf_counter() - cold_step_start
+
+                # Reinitialize after warming process-global compiled kernels so the
+                # measured physical run starts from the declared scenario state.
+                solver = create_solver(solver_id)
+                solver.initialize(scenario, geometry, scenario.seed)
                 elapsed_simulated = 0.0
                 step_seconds: list[float] = []
                 total_substeps = 0
@@ -202,6 +209,7 @@ def run_matrix(
                     "resolution": list(scenario.domain.resolution),
                     "seed": scenario.seed,
                     "initialization_seconds": initialization_seconds,
+                    "cold_step_seconds": cold_step_seconds,
                     "step_seconds": step_seconds,
                     "median_step_seconds": median,
                     "p95_step_seconds": p95,
@@ -227,6 +235,8 @@ def run_matrix(
                         "solver": solver_id,
                         "resolution": f"{resolution[0]}x{resolution[1]}",
                         "repetition": repetition + 1,
+                        "initialization_seconds": initialization_seconds,
+                        "cold_step_seconds": cold_step_seconds,
                         "median_step_seconds": median,
                         "p95_step_seconds": p95,
                         "simulated_seconds_per_wall_second": result[

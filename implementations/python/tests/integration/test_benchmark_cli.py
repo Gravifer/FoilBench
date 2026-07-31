@@ -17,6 +17,8 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     assert result["resolution"] == [32, 16]
     assert cast(float, result["cell_updates_per_second"]) > 0.0
     assert cast(float, result["particle_updates_per_second"]) >= 0.0
+    assert cast(float, result["initialization_seconds"]) > 0.0
+    assert cast(float, result["cold_step_seconds"]) > 0.0
     diagnostics = cast(dict[str, float], result["diagnostics"])
     assert diagnostics["wake_probe_samples"] >= 8.0
     assert diagnostics["wake_frequency_resolution"] > 0.0

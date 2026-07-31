@@ -7,9 +7,13 @@ Runs are matched by physical domain, resolution, Reynolds number, control
 history, precision, seed, and simulated duration. Each solver may choose the
 stable internal timestep and number of substeps it needs.
 
-The runner reports initialization and compilation separately from steady-state
-work. Timed regions exclude schema validation, serialization, viewer rendering,
-and Jaxtyping runtime checks.
+The runner records cold initialization and the first cold solver step
+separately from steady-state work. Initialization-time compilation is therefore
+visible in `initialization_seconds`, while first-use compilation is visible in
+`cold_step_seconds`. It then creates a fresh solver after process-global kernels
+are warm, so the measured physical run starts at scenario time zero. Timed
+steady-state regions exclude schema validation, serialization, viewer
+rendering, wake-probe sampling, and Jaxtyping runtime checks.
 
 Reported performance includes median and p95 step latency, simulated seconds
 per wall second, update throughput, peak resident memory, and internal
