@@ -116,3 +116,20 @@ def test_transfer_adapter_rejects_inconsistent_dtypes_and_dimensions() -> None:
             4,
             (1.0, 0.0),
         )
+
+
+@pytest.mark.parametrize("dtype", [np.float16, np.int32])
+def test_transfer_adapter_rejects_unsupported_array_dtypes(
+    dtype: type[np.float16] | type[np.int32],
+) -> None:
+    grid = np.zeros((4, 5, 2), dtype=dtype)
+    positions = np.zeros((3, 2), dtype=dtype)
+    with pytest.raises((TypeError, ValueError)):
+        grid_to_particle(grid, positions, 0.0, 0.0, 0.2, 0.25)
+
+
+def test_grid_to_particle_rejects_empty_grid_axes() -> None:
+    grid = np.zeros((0, 5, 2), dtype=np.float32)
+    positions = np.zeros((3, 2), dtype=np.float32)
+    with pytest.raises((TypeError, ValueError)):
+        grid_to_particle(grid, positions, 0.0, 0.0, 0.2, 0.25)
