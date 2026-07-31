@@ -1,10 +1,13 @@
 import numpy as np
 
 from foilbench_py.core.grid import (
+    advect_velocity,
     apply_domain_boundaries,
     cell_to_faces,
     enforce_solid_faces,
+    local_velocity_bounds,
     project_faces,
+    rk2_backtrace,
 )
 from foilbench_py.core.models import DomainSpec
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, ScalarField
@@ -44,3 +47,33 @@ def test_preconditioned_masked_projection_reduces_fluid_divergence() -> None:
 
     assert info == 0
     assert np.linalg.norm(after[~solid]) < 0.25 * np.linalg.norm(before[~solid])
+
+
+def test_rk2_backtrace_matches_midpoint_step_for_linear_rotation() -> None:
+    domain = DomainSpec(2, ((-2.0, 2.0), (-2.0, 2.0)), (64, 64))
+    x = np.linspace(-2.0 + 0.5 * domain.dx, 2.0 - 0.5 * domain.dx, domain.nx)
+    y = np.linspace(-2.0 + 0.5 * domain.dy, 2.0 - 0.5 * domain.dy, domain.ny)
+    xx, yy = np.meshgrid(x, y)
+    velocity = np.stack((-yy, xx), axis=2)
+    points = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+
+    departure = rk2_backtrace(velocity, points, 0.1, domain)
+
+    np.testing.assert_allclose(
+        departure,
+        np.asarray([[0.995, -0.1], [0.1, 0.995]]),
+        atol=1.0e-12,
+    )
+
+
+def test_limited_maccormack_stays_inside_local_component_bounds() -> None:
+    domain = DomainSpec(2, ((0.0, 1.0), (0.0, 1.0)), (32, 32), ("x", "y"))
+    velocity = np.zeros((domain.ny, domain.nx, 2), dtype=np.float64)
+    velocity[:, : domain.nx // 2, 0] = 0.8
+    velocity[domain.ny // 3 : 2 * domain.ny // 3, :, 1] = -0.4
+    lower, upper = local_velocity_bounds(velocity, domain)
+
+    advected = advect_velocity(velocity, 0.02, domain, maccormack=True)
+
+    assert np.all(advected >= lower - 1.0e-12)
+    assert np.all(advected <= upper + 1.0e-12)

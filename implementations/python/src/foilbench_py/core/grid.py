@@ -152,20 +152,62 @@ def advect_velocity(
 ) -> VelocityField:
     positions = cell_centers(domain)
     flat_positions = positions.reshape(-1, 2)
-    flat_velocity = velocity.reshape(-1, 2)
-    departure = flat_positions - dt * flat_velocity
+    departure = rk2_backtrace(velocity, flat_positions, dt, domain)
     first = sample_vector(velocity, departure, domain).reshape(velocity.shape)
     if not maccormack:
         return first
-    forward = sample_vector(
-        first,
-        flat_positions + dt * first.reshape(-1, 2),
-        domain,
-    ).reshape(velocity.shape)
+    forward_points = rk2_backtrace(first, flat_positions, -dt, domain)
+    forward = sample_vector(first, forward_points, domain).reshape(velocity.shape)
     corrected = first + 0.5 * (velocity - forward)
-    lower = np.minimum(velocity.min(axis=(0, 1)), first.min(axis=(0, 1)))
-    upper = np.maximum(velocity.max(axis=(0, 1)), first.max(axis=(0, 1)))
+    lower, upper = local_velocity_bounds(velocity, domain)
+    lower = np.minimum(lower, first)
+    upper = np.maximum(upper, first)
     return np.clip(corrected, lower, upper)
+
+
+def rk2_backtrace(
+    velocity: VelocityField,
+    points: Float[np.ndarray, "point 2"],
+    dt: float,
+    domain: DomainSpec,
+) -> Float[np.ndarray, "point 2"]:
+    """Trace points backward through a frozen velocity field with midpoint RK2."""
+    initial_velocity = sample_vector(velocity, points, domain)
+    midpoint = points - 0.5 * dt * initial_velocity
+    midpoint_velocity = sample_vector(velocity, midpoint, domain)
+    return points - dt * midpoint_velocity
+
+
+def local_velocity_bounds(
+    velocity: VelocityField,
+    domain: DomainSpec,
+) -> tuple[VelocityField, VelocityField]:
+    """Return componentwise extrema over each cell's 3-by-3 neighborhood."""
+    ny, nx, _ = velocity.shape
+    rows = np.arange(ny, dtype=np.int64)
+    columns = np.arange(nx, dtype=np.int64)
+    lower = velocity.copy()
+    upper = velocity.copy()
+    for offset_y in (-1, 0, 1):
+        selected_rows = rows + offset_y
+        selected_rows = np.asarray(
+            np.mod(selected_rows, ny)
+            if "y" in domain.periodic_axes
+            else np.clip(selected_rows, 0, ny - 1),
+            dtype=np.int64,
+        )
+        for offset_x in (-1, 0, 1):
+            selected_columns = columns + offset_x
+            selected_columns = np.asarray(
+                np.mod(selected_columns, nx)
+                if "x" in domain.periodic_axes
+                else np.clip(selected_columns, 0, nx - 1),
+                dtype=np.int64,
+            )
+            neighbor = velocity[selected_rows[:, None], selected_columns[None, :], :]
+            lower = np.minimum(lower, neighbor)
+            upper = np.maximum(upper, neighbor)
+    return lower, upper
 
 
 def wall_velocity_grid(
