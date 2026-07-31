@@ -92,8 +92,10 @@ still receives an ordinary fresh restart. If another failure occurs before a
 successful solver step, the foil continues to track the pointer exactly while
 the moving-wall angular velocity is suppressed. The overlay labels this
 `motion=pose-only` mode. Mouse release followed by one successful stationary
-step restores normal moving-wall coupling; failure from that stationary state
-still pauses the worker.
+step restores normal moving-wall coupling. While the mouse remains held, two
+successful steps with requested foil-tip speed below half the freestream speed
+also restore coupling, with hysteresis against noisy pointer motion. Failure
+from the resulting low-speed or stationary state still pauses the worker.
 
 Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
 `T` to switch between display tracers and material tracers. Display tracers

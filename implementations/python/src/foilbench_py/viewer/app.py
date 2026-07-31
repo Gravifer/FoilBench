@@ -17,6 +17,9 @@ from foilbench_py.solvers.lbm import LBMSolver
 from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.types import ScalarField
 
+_POSE_ONLY_RELEASE_SPEED_RATIO = 0.5
+_POSE_ONLY_RELEASE_STEPS = 2
+
 
 def viewer_bounds(
     scenario: Scenario,
@@ -63,6 +66,7 @@ class ViewerModel:
     drag_active: bool = False
     pose_only_drag: bool = False
     pose_only_release_pending: bool = False
+    pose_only_calm_steps: int = 0
     last_requested_angular_velocity_degrees: float = 0.0
 
     @property
@@ -128,13 +132,22 @@ class ViewerModel:
         return ControlState(self.time, angle, angular_velocity)
 
     @property
-    def rapid_drag_attempted(self) -> bool:
-        """Whether the last requested drag moved a foil tip faster than freestream."""
+    def requested_tip_speed_ratio(self) -> float:
         tip_speed = (
             abs(np.deg2rad(self.last_requested_angular_velocity_degrees))
             * self.scenario.foil.chord
         )
-        return self.drag_active and bool(tip_speed > self.scenario.reference_speed)
+        return float(tip_speed / self.scenario.reference_speed)
+
+    @property
+    def rapid_drag_attempted(self) -> bool:
+        """Whether the last requested drag moved a foil tip faster than freestream."""
+        return self.drag_active and self.requested_tip_speed_ratio > 1.0
+
+    def _disable_pose_only_drag(self) -> None:
+        self.pose_only_drag = False
+        self.pose_only_release_pending = False
+        self.pose_only_calm_steps = 0
 
     def update(self, dt: float) -> None:
         if self.paused:
@@ -171,9 +184,15 @@ class ViewerModel:
         if self.diagnostic_elapsed >= 0.2:
             self._refresh_diagnostics()
             self.diagnostic_elapsed = 0.0
-        if self.pose_only_release_pending and not self.drag_active:
-            self.pose_only_drag = False
-            self.pose_only_release_pending = False
+        if self.pose_only_drag:
+            if self.pose_only_release_pending and not self.drag_active:
+                self._disable_pose_only_drag()
+            elif self.requested_tip_speed_ratio <= _POSE_ONLY_RELEASE_SPEED_RATIO:
+                self.pose_only_calm_steps += 1
+                if self.pose_only_calm_steps >= _POSE_ONLY_RELEASE_STEPS:
+                    self._disable_pose_only_drag()
+            else:
+                self.pose_only_calm_steps = 0
 
     def set_angle(self, angle_degrees: float) -> None:
         self.angle_override = float(np.clip(angle_degrees, -30.0, 30.0))
@@ -189,13 +208,13 @@ class ViewerModel:
         """Keep following the pointer while suppressing unresolved wall rotation."""
         self.pose_only_drag = True
         self.pose_only_release_pending = False
+        self.pose_only_calm_steps = 0
 
     def switch_solver(self, solver_id: str) -> None:
         control = self.control(self.scenario.output_dt)
         self.manager.switch(solver_id, control)
         self.recovery_notice = None
-        self.pose_only_drag = False
-        self.pose_only_release_pending = False
+        self._disable_pose_only_drag()
         self._refresh_diagnostics()
 
     def recover_solver(self, failure: Exception, reset_reynolds: bool = False) -> None:
@@ -247,8 +266,7 @@ class ViewerModel:
         self.show_vorticity = replacement.show_vorticity
         self.recovery_notice = None
         self.drag_active = False
-        self.pose_only_drag = False
-        self.pose_only_release_pending = False
+        self._disable_pose_only_drag()
         self.last_requested_angular_velocity_degrees = 0.0
 
     def adjust_blend(self, delta: float) -> None:

@@ -87,6 +87,28 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
     assert "motion=pose-only" not in model.status()
 
 
+def test_pose_only_drag_clears_after_sustained_slow_motion(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.set_angle(12.0)
+    model.enable_pose_only_drag()
+    model.update(scenario.output_dt)
+    assert model.pose_only_drag
+
+    model.set_angle(12.1)
+    model.update(scenario.output_dt)
+    assert model.pose_only_drag
+    assert model.pose_only_calm_steps == 1
+
+    model.set_angle(12.2)
+    model.update(scenario.output_dt)
+    assert model.drag_active
+    assert not model.pose_only_drag
+    assert model.pose_only_calm_steps == 0
+
+
 def test_display_tracers_expire_without_leaving_empty_regions(
     scenario_factory: ScenarioFactory,
 ) -> None:
