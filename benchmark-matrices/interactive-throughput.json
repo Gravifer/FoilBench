@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "id": "interactive-throughput",
+  "scenario": "scenarios/airfoil/default.json",
+  "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+  "resolutions": [[160, 96], [240, 144]],
+  "duration": 0.25,
+  "repetitions": 3,
+  "save_snapshots": false
+}
