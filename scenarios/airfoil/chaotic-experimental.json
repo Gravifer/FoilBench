@@ -22,6 +22,7 @@
     "pic_population_interval": 8,
     "pressure_tolerance": 0.001,
     "stable_advection": "skew-rk2",
-    "stable_cfl": 0.4
+    "stable_cfl": 0.4,
+    "viewer_crop_cells": 4
   }
 }

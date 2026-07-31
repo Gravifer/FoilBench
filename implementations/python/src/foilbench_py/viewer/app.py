@@ -17,6 +17,29 @@ from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.types import ScalarField
 
 
+def viewer_bounds(
+    scenario: Scenario,
+    cropped: bool = True,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return optional presentation-only bounds inset from the solver domain."""
+    full_bounds = (scenario.domain.bounds[0], scenario.domain.bounds[1])
+    if not cropped:
+        return full_bounds
+    crop_option = scenario.solver_options.get("viewer_crop_cells", 0)
+    if not isinstance(crop_option, int) or isinstance(crop_option, bool):
+        raise TypeError("viewer_crop_cells must be an integer")
+    if crop_option < 0:
+        raise ValueError("viewer_crop_cells cannot be negative")
+    if 2 * crop_option >= min(scenario.domain.nx, scenario.domain.ny) - 2:
+        raise ValueError("viewer crop must leave at least three cells per axis")
+    x0, x1 = full_bounds[0]
+    y0, y1 = full_bounds[1]
+    return (
+        (x0 + crop_option * scenario.domain.dx, x1 - crop_option * scenario.domain.dx),
+        (y0 + crop_option * scenario.domain.dy, y1 - crop_option * scenario.domain.dy),
+    )
+
+
 @dataclass(slots=True)
 class ViewerModel:
     scenario: Scenario

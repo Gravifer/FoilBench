@@ -29,6 +29,14 @@ uv run --project implementations/python foilbench-py view scenarios/airfoil/chao
 Enable the vorticity layer with `V`. The multiscale wake takes several
 simulated seconds to develop; the foil remains draggable.
 
+The experimental viewer crops four cells from each edge. This hides the
+far-field vorticity sheet created where the finite-domain boundary condition
+meets the differentiated display field. The solver, canonical state, and all
+diagnostics still use the complete domain; this is presentation cropping, not
+deletion of inconvenient numerical data. Press `C` to toggle immediately
+between the cropped student view and the full diagnostic domain; the overlay
+reports `view=cropped` or `view=full`.
+
 ## Evidence
 
 Long-horizon probe statistics use the final eight simulated seconds unless

@@ -1,7 +1,25 @@
 import numpy as np
+import pytest
 
-from foilbench_py.viewer.app import ViewerModel
+from foilbench_py.viewer.app import ViewerModel, viewer_bounds
 from tests.helpers import ScenarioFactory
+
+
+def test_viewer_bounds_can_crop_only_the_presentation(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    scenario.solver_options["viewer_crop_cells"] = 3
+
+    bounds = viewer_bounds(scenario)
+    full_bounds = viewer_bounds(scenario, cropped=False)
+
+    assert bounds[0][0] == pytest.approx(scenario.domain.bounds[0][0] + 3 * scenario.domain.dx)
+    assert bounds[0][1] == pytest.approx(scenario.domain.bounds[0][1] - 3 * scenario.domain.dx)
+    assert bounds[1][0] == pytest.approx(scenario.domain.bounds[1][0] + 3 * scenario.domain.dy)
+    assert bounds[1][1] == pytest.approx(scenario.domain.bounds[1][1] - 3 * scenario.domain.dy)
+    assert scenario.domain.bounds != bounds
+    assert full_bounds == (scenario.domain.bounds[0], scenario.domain.bounds[1])
 
 
 def test_headless_viewer_update_and_switch(

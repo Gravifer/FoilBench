@@ -14,7 +14,7 @@ import numpy as np
 import pyglet
 from pyglet.window import key, mouse
 
-from foilbench_py.viewer.app import ViewerModel
+from foilbench_py.viewer.app import ViewerModel, viewer_bounds
 from foilbench_py.viewer.worker import SimulationWorker
 
 _VERTEX_SHADER = """
@@ -66,8 +66,10 @@ _FIELD_FRAGMENT = """
 in vec2 uv;
 out vec4 fragColor;
 uniform sampler2D vorticity_texture;
+uniform vec2 uv_min;
+uniform vec2 uv_max;
 void main() {
-    float value = texture(vorticity_texture, uv).r;
+    float value = texture(vorticity_texture, mix(uv_min, uv_max, uv)).r;
     float magnitude = pow(min(abs(value), 1.0), 0.7);
     float visibility = smoothstep(0.18, 0.9, magnitude);
     vec3 clockwise = vec3(0.65, 0.12, 0.02);
@@ -91,6 +93,13 @@ class FoilWindow(pyglet.window.Window):
         self.worker = SimulationWorker(model)
         self.scenario = self.worker.scenario
         self.geometry = self.worker.geometry
+        self.full_view_bounds = viewer_bounds(self.scenario, cropped=False)
+        self.cropped_view_bounds = viewer_bounds(self.scenario, cropped=True)
+        self.crop_available = self.cropped_view_bounds != self.full_view_bounds
+        self.crop_enabled = self.crop_available
+        self.view_bounds = (
+            self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
+        )
         self.snapshot = self.worker.latest_snapshot()
         self.ctx = moderngl.create_context()
         self.ctx.enable(moderngl.BLEND | moderngl.PROGRAM_POINT_SIZE)
@@ -128,6 +137,7 @@ class FoilWindow(pyglet.window.Window):
         self.field_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.field_texture.repeat_x = False
         self.field_texture.repeat_y = False
+        self._update_field_view()
         self.field_revision = -1
         self.label = pyglet.text.Label(
             "",
@@ -140,7 +150,7 @@ class FoilWindow(pyglet.window.Window):
         )
         self.help_label = pyglet.text.Label(
             "1/2/3 solver   drag foil   Space pause   R reset   "
-            "[/] PIC/FLIP blend   V vorticity   T tracer mode",
+            "[/] PIC/FLIP blend   V vorticity   T tracer mode   C crop",
             x=12,
             y=self.height - 32,
             anchor_x="left",
@@ -151,9 +161,23 @@ class FoilWindow(pyglet.window.Window):
         self.worker.start()
         pyglet.clock.schedule_interval(self._tick, 1.0 / 60.0)
 
+    def _update_field_view(self) -> None:
+        domain_x0, domain_x1 = self.full_view_bounds[0]
+        domain_y0, domain_y1 = self.full_view_bounds[1]
+        view_x0, view_x1 = self.view_bounds[0]
+        view_y0, view_y1 = self.view_bounds[1]
+        self.field_program["uv_min"].value = (
+            (view_x0 - domain_x0) / (domain_x1 - domain_x0),
+            (view_y0 - domain_y0) / (domain_y1 - domain_y0),
+        )
+        self.field_program["uv_max"].value = (
+            (view_x1 - domain_x0) / (domain_x1 - domain_x0),
+            (view_y1 - domain_y0) / (domain_y1 - domain_y0),
+        )
+
     def _clip(self, points: np.ndarray) -> np.ndarray:
-        x0, x1 = self.scenario.domain.bounds[0]
-        y0, y1 = self.scenario.domain.bounds[1]
+        x0, x1 = self.view_bounds[0]
+        y0, y1 = self.view_bounds[1]
         clipped = np.empty_like(points, dtype=np.float32)
         clipped[:, 0] = 2.0 * (points[:, 0] - x0) / (x1 - x0) - 1.0
         clipped[:, 1] = 2.0 * (points[:, 1] - y0) / (y1 - y0) - 1.0
@@ -162,7 +186,8 @@ class FoilWindow(pyglet.window.Window):
     def _tick(self, dt: float) -> None:
         del dt
         self.snapshot = self.worker.latest_snapshot()
-        self.label.text = self.snapshot.status
+        view_status = "cropped" if self.crop_enabled else "full"
+        self.label.text = f"{self.snapshot.status}  view={view_status}"
         self.label.y = self.height - 12
         self.help_label.y = self.height - 32
         self.invalid = True
@@ -219,6 +244,12 @@ class FoilWindow(pyglet.window.Window):
             self.worker.toggle_vorticity()
         elif symbol == key.T:
             self.worker.toggle_tracer_mode()
+        elif symbol == key.C and self.crop_available:
+            self.crop_enabled = not self.crop_enabled
+            self.view_bounds = (
+                self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
+            )
+            self._update_field_view()
 
     def on_mouse_drag(
         self,
@@ -232,8 +263,8 @@ class FoilWindow(pyglet.window.Window):
         del dx, dy, modifiers
         if not buttons & mouse.LEFT:
             return
-        x0, x1 = self.scenario.domain.bounds[0]
-        y0, y1 = self.scenario.domain.bounds[1]
+        x0, x1 = self.view_bounds[0]
+        y0, y1 = self.view_bounds[1]
         world_x = x0 + x / max(self.width, 1) * (x1 - x0)
         world_y = y0 + y / max(self.height, 1) * (y1 - y0)
         pivot = self.scenario.foil.pivot
