@@ -4,7 +4,7 @@
 # pyright: reportUnknownVariableType=false
 """Typed boundary around kernels excluded from Jaxtyping's import hook."""
 
-from foilbench_kernels.pic import particle_to_grid_kernel
+from foilbench_kernels.pic import grid_to_particle_kernel, particle_to_grid_kernel
 from foilbench_py.types import ParticleVelocity, PointCloud, VelocityField
 
 
@@ -31,3 +31,14 @@ def particle_to_grid(
         freestream[0],
         freestream[1],
     )
+
+
+def grid_to_particle(
+    grid: VelocityField,
+    positions: PointCloud,
+    x0: float,
+    y0: float,
+    dx: float,
+    dy: float,
+) -> ParticleVelocity:
+    return grid_to_particle_kernel(grid, positions, x0, y0, dx, dy)

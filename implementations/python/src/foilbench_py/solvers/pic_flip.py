@@ -23,7 +23,7 @@ from foilbench_py.core.models import (
     StepReport,
 )
 from foilbench_py.core.rng import PCG32
-from foilbench_py.solvers._numba_adapter import particle_to_grid
+from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
 from foilbench_py.types import MaskField, ParticleVelocity, PointCloud, VelocityField
 
 
@@ -125,7 +125,7 @@ class PicFlipSolver:
             scenario.domain.bounds[1][0] + (cell_y + 0.1 + 0.8 * jitter[:, 1]) * scenario.domain.dy
         )
         self._positions = positions
-        self._particle_velocity = sample_vector(velocity, positions, scenario.domain)
+        self._particle_velocity = self._grid_to_particle(velocity, positions)
 
     def _require_seed(
         self,
@@ -167,6 +167,23 @@ class PicFlipSolver:
             scenario.freestream,
         )
 
+    def _grid_to_particle(
+        self,
+        velocity: VelocityField,
+        positions: PointCloud,
+    ) -> ParticleVelocity:
+        if self._scenario is None:
+            raise RuntimeError("solver has not been initialized")
+        domain = self._scenario.domain
+        return grid_to_particle(
+            velocity,
+            positions,
+            domain.bounds[0][0],
+            domain.bounds[1][0],
+            domain.dx,
+            domain.dy,
+        )
+
     def _project(self, velocity: VelocityField, control: ControlState, dt: float) -> VelocityField:
         scenario, geometry, _, _, _, solid = self._require()
         u, v = cell_to_faces(velocity)
@@ -195,9 +212,9 @@ class PicFlipSolver:
 
     def _advect_particles(self, control: ControlState, dt: float) -> None:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
-        velocity_0 = sample_vector(grid_velocity, positions, scenario.domain)
+        velocity_0 = self._grid_to_particle(grid_velocity, positions)
         midpoint = positions + 0.5 * dt * velocity_0
-        velocity_mid = sample_vector(grid_velocity, midpoint, scenario.domain)
+        velocity_mid = self._grid_to_particle(grid_velocity, midpoint)
         positions += dt * velocity_mid
         x0, x1 = scenario.domain.bounds[0]
         y0, y1 = scenario.domain.bounds[1]
@@ -250,11 +267,10 @@ class PicFlipSolver:
             transferred = self._particle_to_grid()
             pre_projection_grid = transferred.copy()
             self._grid_velocity = self._project(transferred, sub_control, dt)
-            pic_velocity = sample_vector(self._grid_velocity, positions, scenario.domain)
-            delta = sample_vector(
+            pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
+            delta = self._grid_to_particle(
                 self._grid_velocity - pre_projection_grid,
                 positions,
-                scenario.domain,
             )
             blend = 0.0 if self._settling_steps > 0 else self._blend
             particle_velocity[:] = (1.0 - blend) * pic_velocity + blend * (
