@@ -33,7 +33,16 @@ runs.
 5. The benchmark runner times only solver work and emits portable artifacts.
 
 The viewer advances by the scenario's fixed `output_dt`; rendering cadence
-never changes a solver's physical or lattice-unit scaling.
+never changes a solver's physical or lattice-unit scaling. A single-owner
+simulation worker applies queued controls only between completed steps and
+publishes immutable, latest-only render snapshots. The Pyglet/OpenGL thread
+never reads live solver, tracer, or history arrays. It can therefore continue
+rendering and accepting input while a slower solver step is in progress.
+
+The worker does not catch up or conceal throughput: it attempts at most 60
+solver steps per wall second and advances one fixed `output_dt` per completed
+step. When a backend is slower than real time, the overlay continues to report
+its actual solver steps/s and simulated-seconds/wall-second values.
 
 At coarse preview resolutions, D2Q9 may not represent the requested Reynolds
 number while keeping TRT safely separated from `tau=0.5`. It therefore clamps
@@ -49,9 +58,9 @@ populations, and solver particles are deliberately excluded.
 
 ## Viewer GPU smoke test
 
-The automated viewer tests exercise state, controls, tracer paths, and warm
-switching without creating a window. On a machine with an OpenGL 3.3 context,
-run:
+The automated viewer tests exercise state, controls, immutable worker
+snapshots, clean thread shutdown, tracer paths, and warm switching without
+creating a window. On a machine with an OpenGL 3.3 context, run:
 
 ```powershell
 uv run --project implementations/python foilbench-py view scenarios/airfoil/default.json

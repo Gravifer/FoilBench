@@ -15,6 +15,7 @@ import pyglet
 from pyglet.window import key, mouse
 
 from foilbench_py.viewer.app import ViewerModel
+from foilbench_py.viewer.worker import SimulationWorker
 
 _VERTEX_SHADER = """
 #version 330
@@ -87,7 +88,10 @@ class FoilWindow(pyglet.window.Window):
             resizable=True,
             vsync=True,
         )
-        self.model = model
+        self.worker = SimulationWorker(model)
+        self.scenario = self.worker.scenario
+        self.geometry = self.worker.geometry
+        self.snapshot = self.worker.latest_snapshot()
         self.ctx = moderngl.create_context()
         self.ctx.enable(moderngl.BLEND | moderngl.PROGRAM_POINT_SIZE)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
@@ -101,8 +105,8 @@ class FoilWindow(pyglet.window.Window):
             vertex_shader=_FIELD_VERTEX,
             fragment_shader=_FIELD_FRAGMENT,
         )
-        point_bytes = model.tracers.positions.shape[0] * 2 * 4
-        line_vertices = (model.tracers.history.shape[0] - 1) * model.tracers.positions.shape[0] * 2
+        point_bytes = self.snapshot.positions.shape[0] * 2 * 4
+        line_vertices = self.worker.maximum_line_vertices
         self.point_buffer = self.ctx.buffer(reserve=point_bytes, dynamic=True)
         self.line_buffer = self.ctx.buffer(reserve=line_vertices * 2 * 4, dynamic=True)
         self.foil_buffer = self.ctx.buffer(reserve=1024 * 2 * 4, dynamic=True)
@@ -117,7 +121,7 @@ class FoilWindow(pyglet.window.Window):
         )
         self.field_vao = self.ctx.vertex_array(self.field_program, [])
         self.field_texture = self.ctx.texture(
-            (model.scenario.domain.nx, model.scenario.domain.ny),
+            (self.scenario.domain.nx, self.scenario.domain.ny),
             components=1,
             dtype="f4",
         )
@@ -144,19 +148,21 @@ class FoilWindow(pyglet.window.Window):
             color=(185, 198, 220, 255),
             font_size=9,
         )
+        self.worker.start()
         pyglet.clock.schedule_interval(self._tick, 1.0 / 60.0)
 
     def _clip(self, points: np.ndarray) -> np.ndarray:
-        x0, x1 = self.model.scenario.domain.bounds[0]
-        y0, y1 = self.model.scenario.domain.bounds[1]
+        x0, x1 = self.scenario.domain.bounds[0]
+        y0, y1 = self.scenario.domain.bounds[1]
         clipped = np.empty_like(points, dtype=np.float32)
         clipped[:, 0] = 2.0 * (points[:, 0] - x0) / (x1 - x0) - 1.0
         clipped[:, 1] = 2.0 * (points[:, 1] - y0) / (y1 - y0) - 1.0
         return clipped
 
     def _tick(self, dt: float) -> None:
-        self.model.update(dt)
-        self.label.text = self.model.status()
+        del dt
+        self.snapshot = self.worker.latest_snapshot()
+        self.label.text = self.snapshot.status
         self.label.y = self.height - 12
         self.help_label.y = self.height - 32
         self.invalid = True
@@ -164,30 +170,29 @@ class FoilWindow(pyglet.window.Window):
     def on_draw(self) -> None:
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.clear(0.015, 0.02, 0.035, 1.0)
-        if self.model.show_vorticity and self.model.vorticity_display is not None:
-            if self.field_revision != self.model.vorticity_revision:
-                field = np.asarray(self.model.vorticity_display, dtype=np.float32)
+        if self.snapshot.show_vorticity and self.snapshot.vorticity is not None:
+            if self.field_revision != self.snapshot.vorticity_revision:
+                field = np.asarray(self.snapshot.vorticity, dtype=np.float32)
                 self.field_texture.write(field.tobytes())
-                self.field_revision = self.model.vorticity_revision
+                self.field_revision = self.snapshot.vorticity_revision
             self.field_texture.use(location=0)
             self.field_program["vorticity_texture"].value = 0
             self.field_vao.render(mode=moderngl.TRIANGLE_STRIP, vertices=4)
 
-        points = self._clip(self.model.tracers.positions)
+        points = self._clip(self.snapshot.positions)
         self.point_buffer.write(points.tobytes())
         self.point_program["point_size"].value = 2.4
         self.point_program["color"].value = (0.48, 0.72, 1.0, 0.58)
         self.point_vao.render(mode=moderngl.POINTS, vertices=points.shape[0])
 
-        segments = self._clip(self.model.tracers.path_segments())
+        segments = self._clip(self.snapshot.path_segments)
         if segments.size:
             self.line_buffer.write(segments.tobytes())
             self.line_program["point_size"].value = 1.0
             self.line_program["color"].value = (0.38, 0.64, 1.0, 0.035)
             self.line_vao.render(mode=moderngl.LINES, vertices=segments.shape[0])
 
-        control = self.model.control(self.model.scenario.output_dt)
-        outline = self._clip(self.model.geometry.outline(control.angle_degrees))
+        outline = self._clip(self.geometry.outline(self.snapshot.angle_degrees))
         self.foil_buffer.write(outline.tobytes())
         self.line_program["color"].value = (0.78, 0.86, 0.93, 1.0)
         self.foil_vao.render(mode=moderngl.LINE_LOOP, vertices=outline.shape[0])
@@ -197,23 +202,23 @@ class FoilWindow(pyglet.window.Window):
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         del modifiers
         if symbol == key.SPACE:
-            self.model.paused = not self.model.paused
+            self.worker.toggle_pause()
         elif symbol == key.R:
-            self.model.reset()
+            self.worker.reset()
         elif symbol in (key._1, key.NUM_1):
-            self.model.switch_solver("stable-fluids")
+            self.worker.switch_solver("stable-fluids")
         elif symbol in (key._2, key.NUM_2):
-            self.model.switch_solver("lbm-d2q9")
+            self.worker.switch_solver("lbm-d2q9")
         elif symbol in (key._3, key.NUM_3):
-            self.model.switch_solver("pic-flip")
+            self.worker.switch_solver("pic-flip")
         elif symbol == key.BRACKETLEFT:
-            self.model.adjust_blend(-0.05)
+            self.worker.adjust_blend(-0.05)
         elif symbol == key.BRACKETRIGHT:
-            self.model.adjust_blend(0.05)
+            self.worker.adjust_blend(0.05)
         elif symbol == key.V:
-            self.model.toggle_vorticity()
+            self.worker.toggle_vorticity()
         elif symbol == key.T:
-            self.model.toggle_tracer_mode()
+            self.worker.toggle_tracer_mode()
 
     def on_mouse_drag(
         self,
@@ -227,23 +232,27 @@ class FoilWindow(pyglet.window.Window):
         del dx, dy, modifiers
         if not buttons & mouse.LEFT:
             return
-        x0, x1 = self.model.scenario.domain.bounds[0]
-        y0, y1 = self.model.scenario.domain.bounds[1]
+        x0, x1 = self.scenario.domain.bounds[0]
+        y0, y1 = self.scenario.domain.bounds[1]
         world_x = x0 + x / max(self.width, 1) * (x1 - x0)
         world_y = y0 + y / max(self.height, 1) * (y1 - y0)
-        pivot = self.model.scenario.foil.pivot
+        pivot = self.scenario.foil.pivot
         angle = math.degrees(math.atan2(world_y - pivot[1], world_x - pivot[0]))
-        self.model.set_angle(angle)
+        self.worker.set_angle(angle)
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
         del x, y, button, modifiers
-        self.model.release_angle()
+        self.worker.release_angle()
 
     def on_close(self) -> None:
         pyglet.clock.unschedule(self._tick)
+        self.worker.close()
         super().on_close()
 
 
 def run_gl_window(model: ViewerModel) -> None:
-    FoilWindow(model)
-    pyglet.app.run()
+    window = FoilWindow(model)
+    try:
+        pyglet.app.run()
+    finally:
+        window.worker.close()
