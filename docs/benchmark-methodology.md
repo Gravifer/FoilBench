@@ -28,6 +28,14 @@ fraction, and discrete frequency resolution. These values characterize
 coherent and broadband wakes without treating either as an automated quality
 rank.
 
+For a scripted angle excursion that returns to its initial angle, the runner
+also records recovery against the last pre-excursion baseline. Recovery means
+both wake width and recirculation area have returned within 25% of that
+baseline, with a two-cell floor so grid quantization cannot make the criterion
+impossible. If this does not occur before the run ends, `recovery_elapsed` is
+explicitly right-censored and `recovery_observed` is zero. The normalized
+transverse RMS is additionally reported as `wake_mixing_index`.
+
 The validation repertoire consists of uniform flow, Taylor-Green decay,
 Poiseuille flow, a symmetric NACA 0012 case, and the pedagogical dynamic NACA
 2412 scenario.

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "id": "dynamic-diagnostics",
+  "scenario": "scenarios/airfoil/default.json",
+  "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+  "resolutions": [[64, 32]],
+  "duration": 22.0,
+  "repetitions": 1,
+  "save_snapshots": false
+}

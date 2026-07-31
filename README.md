@@ -34,5 +34,6 @@ preserved in Git commit `f71d1fba327cf67a1513764bb8596ac4faf99cb2`:
 git show f71d1fb:particle_airfoil_stall.py
 ```
 
-See [architecture](docs/architecture.md), [benchmark methodology](docs/benchmark-methodology.md),
-and the [implementation roadmap](docs/implementation-roadmap.md).
+See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-acceptance.md),
+[benchmark methodology](docs/benchmark-methodology.md), and the
+[implementation roadmap](docs/implementation-roadmap.md).

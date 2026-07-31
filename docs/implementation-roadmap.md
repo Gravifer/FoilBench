@@ -7,8 +7,8 @@
 - Native ModernGL viewer with direct within-Python warm switching.
 - Portable benchmark and fidelity artifacts.
 
-Phase 1 acceptance was completed with strict Pyright and Ruff checks, the full
-Python test suite, finite matched runs for all three solvers at 32 and 48 cells
+Phase 1 acceptance was completed with strict Pyright and Ruff checks, all 88
+Python tests, finite matched runs for all three solvers at 32 and 48 cells
 per chord, direct warm-switch coverage, graceful fresh recovery, and a
 responsive latest-snapshot viewer. The 32-cells-per-chord preview sustains
 double-digit solver updates per second for all three solvers in developed
