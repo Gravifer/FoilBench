@@ -133,3 +133,67 @@ def test_grid_to_particle_rejects_empty_grid_axes() -> None:
     positions = np.zeros((3, 2), dtype=np.float32)
     with pytest.raises((TypeError, ValueError)):
         grid_to_particle(grid, positions, 0.0, 0.0, 0.2, 0.25)
+
+
+def test_periodic_transfer_wraps_quadratic_support() -> None:
+    grid = np.arange(6 * 8 * 2, dtype=np.float32).reshape(6, 8, 2)
+    x0 = -1.0
+    y0 = -0.75
+    dx = 0.25
+    dy = 0.25
+    width = grid.shape[1] * dx
+    height = grid.shape[0] * dy
+    positions = np.asarray(
+        [
+            [x0 - 0.07, y0 + 0.31],
+            [x0 + width - 0.07, y0 + 0.31],
+            [x0 + 0.43, y0 - 0.09],
+            [x0 + 0.43, y0 + height - 0.09],
+        ],
+        dtype=np.float32,
+    )
+
+    gathered = grid_to_particle(
+        grid,
+        positions,
+        x0,
+        y0,
+        dx,
+        dy,
+        periodic_x=True,
+        periodic_y=True,
+    )
+    np.testing.assert_allclose(gathered[0], gathered[1], rtol=1.0e-6, atol=1.0e-6)
+    np.testing.assert_allclose(gathered[2], gathered[3], rtol=1.0e-6, atol=1.0e-6)
+
+    velocities = np.asarray(
+        [[0.75, -0.25], [0.75, -0.25]],
+        dtype=np.float32,
+    )
+    left = particle_to_grid(
+        positions[:1],
+        velocities[:1],
+        x0,
+        y0,
+        dx,
+        dy,
+        grid.shape[1],
+        grid.shape[0],
+        (0.0, 0.0),
+        periodic_x=True,
+        periodic_y=True,
+    )
+    right = particle_to_grid(
+        positions[1:2],
+        velocities[1:2],
+        x0,
+        y0,
+        dx,
+        dy,
+        grid.shape[1],
+        grid.shape[0],
+        (0.0, 0.0),
+        periodic_x=True,
+        periodic_y=True,
+    )
+    np.testing.assert_allclose(left, right, rtol=1.0e-6, atol=1.0e-6)

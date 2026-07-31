@@ -31,6 +31,8 @@ def particle_to_grid_kernel(
     ny: int,
     freestream_x: float,
     freestream_y: float,
+    periodic_x: bool,
+    periodic_y: bool,
 ) -> np.ndarray:
     weights = np.zeros((ny, nx), dtype=positions.dtype)
     momentum = np.zeros((ny, nx, 2), dtype=positions.dtype)
@@ -41,11 +43,11 @@ def particle_to_grid_kernel(
         base_y = int(np.floor(gy - 0.5))
         for offset_y in range(3):
             source_y = base_y + offset_y
-            target_y = min(max(source_y, 0), ny - 1)
+            target_y = source_y % ny if periodic_y else min(max(source_y, 0), ny - 1)
             wy = _weight(gy - source_y)
             for offset_x in range(3):
                 source_x = base_x + offset_x
-                target_x = min(max(source_x, 0), nx - 1)
+                target_x = source_x % nx if periodic_x else min(max(source_x, 0), nx - 1)
                 weight = wy * _weight(gx - source_x)
                 weights[target_y, target_x] += weight
                 momentum[target_y, target_x, 0] += weight * velocities[particle, 0]
@@ -70,6 +72,8 @@ def grid_to_particle_kernel(
     y0: float,
     dx: float,
     dy: float,
+    periodic_x: bool,
+    periodic_y: bool,
 ) -> np.ndarray:
     velocities = np.empty_like(positions)
     ny, nx, _ = grid.shape
@@ -83,11 +87,11 @@ def grid_to_particle_kernel(
         weight_sum = 0.0
         for offset_y in range(3):
             source_y = base_y + offset_y
-            target_y = min(max(source_y, 0), ny - 1)
+            target_y = source_y % ny if periodic_y else min(max(source_y, 0), ny - 1)
             wy = _weight(gy - source_y)
             for offset_x in range(3):
                 source_x = base_x + offset_x
-                target_x = min(max(source_x, 0), nx - 1)
+                target_x = source_x % nx if periodic_x else min(max(source_x, 0), nx - 1)
                 weight = wy * _weight(gx - source_x)
                 velocity_x += weight * grid[target_y, target_x, 0]
                 velocity_y += weight * grid[target_y, target_x, 1]

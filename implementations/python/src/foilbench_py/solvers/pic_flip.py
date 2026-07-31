@@ -22,6 +22,10 @@ from foilbench_py.core.models import (
     SolverInfo,
     StepReport,
 )
+from foilbench_py.core.particle_population import (
+    maintain_particle_population,
+    particle_cell_counts,
+)
 from foilbench_py.core.rng import PCG32
 from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
 from foilbench_py.types import MaskField, ParticleVelocity, PointCloud, VelocityField
@@ -49,6 +53,9 @@ class PicFlipSolver:
         self._settling_steps = 0
         self._rng = PCG32(0)
         self._projection_warning = ""
+        self._reseeded_last_step = 0
+        self._advance_count = 0
+        self._population_interval = 8
 
     @property
     def blend(self) -> float:
@@ -90,6 +97,13 @@ class PicFlipSolver:
         if not isinstance(configured_blend, (int, float)):
             raise TypeError("pic_flip_blend must be numeric")
         self._blend = float(configured_blend)
+        configured_interval = scenario.solver_options.get("pic_population_interval", 8)
+        if not isinstance(configured_interval, int) or isinstance(configured_interval, bool):
+            raise TypeError("pic_population_interval must be an integer")
+        if configured_interval < 1:
+            raise ValueError("pic_population_interval must be positive")
+        self._population_interval = configured_interval
+        self._advance_count = 0
         self._rng = PCG32(seed, stream=71)
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
@@ -165,6 +179,8 @@ class PicFlipSolver:
             scenario.domain.nx,
             scenario.domain.ny,
             scenario.freestream,
+            "x" in scenario.domain.periodic_axes,
+            "y" in scenario.domain.periodic_axes,
         )
 
     def _grid_to_particle(
@@ -182,6 +198,8 @@ class PicFlipSolver:
             domain.bounds[1][0],
             domain.dx,
             domain.dy,
+            "x" in domain.periodic_axes,
+            "y" in domain.periodic_axes,
         )
 
     def _project(self, velocity: VelocityField, control: ControlState, dt: float) -> VelocityField:
@@ -211,24 +229,40 @@ class PicFlipSolver:
         return faces_to_cell(u, v)
 
     def _advect_particles(self, control: ControlState, dt: float) -> None:
-        scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
+        scenario, _geometry, positions, particle_velocity, grid_velocity, _solid = self._require()
         velocity_0 = self._grid_to_particle(grid_velocity, positions)
         midpoint = positions + 0.5 * dt * velocity_0
         velocity_mid = self._grid_to_particle(grid_velocity, midpoint)
         positions += dt * velocity_mid
         x0, x1 = scenario.domain.bounds[0]
         y0, y1 = scenario.domain.bounds[1]
-        escaped = (
-            (positions[:, 0] < x0)
-            | (positions[:, 0] > x1)
-            | (positions[:, 1] < y0)
-            | (positions[:, 1] > y1)
-        )
+        periodic_x = "x" in scenario.domain.periodic_axes
+        periodic_y = "y" in scenario.domain.periodic_axes
+        if periodic_x:
+            positions[:, 0] = x0 + np.mod(positions[:, 0] - x0, x1 - x0)
+        if periodic_y:
+            positions[:, 1] = y0 + np.mod(positions[:, 1] - y0, y1 - y0)
+        escaped = np.zeros(positions.shape[0], dtype=np.bool_)
+        if not periodic_x:
+            escaped |= (positions[:, 0] < x0) | (positions[:, 0] > x1)
+        if not periodic_y:
+            escaped |= (positions[:, 1] < y0) | (positions[:, 1] > y1)
         count = int(np.count_nonzero(escaped))
         if count:
-            positions[escaped, 0] = x0 + self._rng.uniform(0.0, 0.5 * scenario.domain.dx, (count,))
+            if periodic_x:
+                positions[escaped, 0] = self._rng.uniform(x0, x1, (count,))
+            else:
+                positions[escaped, 0] = x0 + self._rng.uniform(
+                    0.0,
+                    0.5 * scenario.domain.dx,
+                    (count,),
+                )
             positions[escaped, 1] = self._rng.uniform(y0, y1, (count,))
             particle_velocity[escaped] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
+        self._resolve_particle_collisions(control)
+
+    def _resolve_particle_collisions(self, control: ControlState) -> None:
+        _, geometry, positions, particle_velocity, _, _ = self._require()
         inside = geometry.contains(positions, control.angle_degrees)
         if np.any(inside):
             points = positions[inside]
@@ -243,6 +277,23 @@ class PicFlipSolver:
             )
             particle_velocity[inside] = wall + relative
 
+    def _maintain_particle_population(self, control: ControlState) -> None:
+        scenario, _, positions, particle_velocity, grid_velocity, solid = self._require()
+        report = maintain_particle_population(
+            positions,
+            solid,
+            scenario.domain,
+            self._rng,
+        )
+        moved = report.moved_indices
+        if moved.size:
+            particle_velocity[moved] = self._grid_to_particle(
+                grid_velocity,
+                positions[moved],
+            )
+            self._reseeded_last_step += int(moved.size)
+            self._resolve_particle_collisions(control)
+
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
         if target_dt <= 0.0:
@@ -255,6 +306,7 @@ class PicFlipSolver:
         stable_dt = 0.6 * min(scenario.domain.dx, scenario.domain.dy) / max_speed
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
+        self._reseeded_last_step = 0
         for substep in range(substeps):
             fraction = (substep + 1) / substeps
             sub_control = ControlState(
@@ -280,6 +332,9 @@ class PicFlipSolver:
             self._advect_particles(sub_control, dt)
             if self._settling_steps > 0:
                 self._settling_steps -= 1
+        self._advance_count += 1
+        if self._advance_count % self._population_interval == 0:
+            self._maintain_particle_population(control)
         self._time += target_dt
         self._control = ControlState(
             self._time, control.angle_degrees, control.angular_velocity_degrees
@@ -327,6 +382,11 @@ class PicFlipSolver:
 
     def diagnostics(self) -> Diagnostics:
         scenario, _, positions, _, grid_velocity, solid = self._require()
+        counts = particle_cell_counts(positions, scenario.domain).reshape(
+            scenario.domain.ny,
+            scenario.domain.nx,
+        )
+        fluid_counts = counts[~solid]
         values = {
             "time": self._time,
             "kinetic_energy": kinetic_energy(grid_velocity),
@@ -334,6 +394,14 @@ class PicFlipSolver:
             "divergence_l2": divergence_l2(grid_velocity, scenario.domain),
             "solid_leakage": solid_leakage(grid_velocity, solid),
             "particle_count": float(positions.shape[0]),
+            "empty_fluid_cell_fraction": float(np.count_nonzero(fluid_counts == 0))
+            / fluid_counts.size,
+            "underfilled_fluid_cell_fraction": float(np.count_nonzero(fluid_counts < 2))
+            / fluid_counts.size,
+            "p05_particles_per_fluid_cell": float(np.percentile(fluid_counts, 5.0)),
+            "p95_particles_per_fluid_cell": float(np.percentile(fluid_counts, 95.0)),
+            "max_particles_per_fluid_cell": float(np.max(fluid_counts)),
+            "reseeded_last_step": float(self._reseeded_last_step),
             "wake_width": wake_width(grid_velocity, scenario.domain, scenario.foil.pivot[0]),
             "recirculation_area": recirculation_area(
                 grid_velocity, scenario.domain, scenario.foil.pivot[0]

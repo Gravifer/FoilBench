@@ -25,6 +25,8 @@ def particle_to_grid(
     nx: int,
     ny: int,
     freestream: tuple[float, ...],
+    periodic_x: bool = False,
+    periodic_y: bool = False,
 ) -> Float[np.ndarray, "ny nx 2"]:
     if positions.ndim != 2 or positions.shape[1] != 2:
         raise ValueError("positions must have shape (particle, 2)")
@@ -47,6 +49,8 @@ def particle_to_grid(
         ny,
         freestream[0],
         freestream[1],
+        periodic_x,
+        periodic_y,
     )
 
 
@@ -57,6 +61,8 @@ def grid_to_particle(
     y0: float,
     dx: float,
     dy: float,
+    periodic_x: bool = False,
+    periodic_y: bool = False,
 ) -> Float[np.ndarray, "particle 2"]:
     if grid.ndim != 3 or grid.shape[2] != 2:
         raise ValueError("grid must have shape (ny, nx, 2)")
@@ -70,4 +76,13 @@ def grid_to_particle(
         raise TypeError("grid and positions must use the same dtype")
     if dx <= 0.0 or dy <= 0.0:
         raise ValueError("grid spacing must be positive")
-    return grid_to_particle_kernel(grid, positions, x0, y0, dx, dy)
+    return grid_to_particle_kernel(
+        grid,
+        positions,
+        x0,
+        y0,
+        dx,
+        dy,
+        periodic_x,
+        periodic_y,
+    )
