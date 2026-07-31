@@ -48,6 +48,9 @@ class ViewerSnapshot:
 
 
 class SimulationWorker:
+    _FAILURE_WINDOW_SECONDS = 5.0
+    _FAILURE_LIMIT = 3
+
     def __init__(self, model: ViewerModel, maximum_steps_per_second: float = 60.0) -> None:
         if maximum_steps_per_second <= 0.0:
             raise ValueError("maximum_steps_per_second must be positive")
@@ -60,6 +63,7 @@ class SimulationWorker:
         self._thread: Thread | None = None
         self._failure: str | None = None
         self._recovery_pending = False
+        self._recent_failures: deque[float] = deque()
         self._snapshot = self._build_snapshot(0, 0)
 
     @property
@@ -173,6 +177,16 @@ class SimulationWorker:
             self._commands.clear()
             return commands
 
+    def _record_failure(self, now: float) -> int:
+        self._recent_failures.append(now)
+        cutoff = now - self._FAILURE_WINDOW_SECONDS
+        while self._recent_failures and self._recent_failures[0] < cutoff:
+            self._recent_failures.popleft()
+        return len(self._recent_failures)
+
+    def _clear_failure_history(self) -> None:
+        self._recent_failures.clear()
+
     def _apply_command(self, command: ViewerCommand) -> None:
         if command.kind == "toggle_pause":
             self._model.paused = not self._model.paused
@@ -180,12 +194,14 @@ class SimulationWorker:
             self._model.reset()
             self._failure = None
             self._recovery_pending = False
+            self._clear_failure_history()
         elif command.kind == "switch_solver":
             if not isinstance(command.value, str):
                 raise TypeError("switch_solver requires a solver id")
             self._model.switch_solver(command.value)
             self._failure = None
             self._recovery_pending = False
+            self._clear_failure_history()
         elif command.kind == "set_angle":
             if not isinstance(command.value, (int, float)):
                 raise TypeError("set_angle requires a numeric angle")
@@ -200,8 +216,12 @@ class SimulationWorker:
             if not isinstance(command.value, (int, float)):
                 raise TypeError("adjust_reynolds requires a numeric logarithmic step")
             self._model.adjust_reynolds(float(command.value))
+            self._recovery_pending = False
+            self._clear_failure_history()
         elif command.kind == "reset_reynolds":
             self._model.reset_reynolds()
+            self._recovery_pending = False
+            self._clear_failure_history()
         elif command.kind == "toggle_vorticity":
             self._model.toggle_vorticity()
         elif command.kind == "toggle_tracer":
@@ -295,12 +315,19 @@ class SimulationWorker:
                 self._model.update(self._model.scenario.output_dt)
                 self._recovery_pending = False
             except Exception as error:
-                if self._recovery_pending:
+                failure_count = self._record_failure(perf_counter())
+                reynolds_is_modified = (
+                    self._model.manager.reynolds != self._model.scenario.reynolds
+                )
+                reset_reynolds = reynolds_is_modified and (
+                    self._recovery_pending or failure_count >= self._FAILURE_LIMIT
+                )
+                if self._recovery_pending and not reset_reynolds:
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                 else:
                     try:
-                        self._model.recover_solver(error)
+                        self._model.recover_solver(error, reset_reynolds=reset_reynolds)
                     except Exception as recovery_error:
                         self._failure = (
                             f"{type(error).__name__}: {error}; fresh restart failed: "
@@ -310,6 +337,8 @@ class SimulationWorker:
                     else:
                         self._failure = None
                         self._recovery_pending = True
+                        if reset_reynolds:
+                            self._clear_failure_history()
             self._publish(applied_command)
             remaining = self._step_interval - (perf_counter() - started)
             if remaining > 0.0:

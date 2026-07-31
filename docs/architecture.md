@@ -81,6 +81,12 @@ sped up—they remain passive and advance through the same physical interval as
 the solver. LBM continues to display `Re_eff` when its relaxation clamp cannot
 honor the requested value.
 
+Runtime Reynolds control has a recovery circuit breaker. Two consecutive
+solver failures, or three failures within five wall-clock seconds, restore the
+scenario Reynolds number before a fresh restart at the visible foil angle.
+The overlay records the automatic Reynolds reset. Repeated failure at the
+scenario value pauses the worker instead of entering an endless recovery loop.
+
 Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
 `T` to switch between display tracers and material tracers. Display tracers
 have deterministic finite lifetimes and respawn throughout the domain so

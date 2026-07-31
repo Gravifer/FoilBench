@@ -164,9 +164,12 @@ class ViewerModel:
         self.recovery_notice = None
         self._refresh_diagnostics()
 
-    def recover_solver(self, failure: Exception) -> None:
+    def recover_solver(self, failure: Exception, reset_reynolds: bool = False) -> None:
         """Discard the active flow and restart its solver at the visible foil angle."""
         current_angle = self.control(self.scenario.output_dt).angle_degrees
+        previous_reynolds = self.manager.reynolds
+        if reset_reynolds:
+            self.reset_reynolds()
         recovery_control = ControlState(0.0, current_angle, 0.0)
         self.manager.restart_at(recovery_control)
         self.time = 0.0
@@ -177,7 +180,14 @@ class ViewerModel:
         self.diagnostic_elapsed = 0.0
         self.solver_steps_per_second = 0.0
         self.simulated_seconds_per_wall_second = 0.0
-        self.recovery_notice = f"fresh restart after {type(failure).__name__}"
+        reynolds_notice = (
+            f"; Re reset {previous_reynolds:.0f}->{self.manager.reynolds:.0f}"
+            if reset_reynolds and previous_reynolds != self.manager.reynolds
+            else ""
+        )
+        self.recovery_notice = (
+            f"fresh restart after {type(failure).__name__}{reynolds_notice}"
+        )
         self._refresh_diagnostics()
 
     def reset(self) -> None:

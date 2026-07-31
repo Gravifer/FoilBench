@@ -98,3 +98,81 @@ def test_worker_recovers_once_from_failed_advance(
         assert resumed.simulation_time > 0.0
     finally:
         worker.close()
+
+
+def test_worker_resets_modified_reynolds_after_consecutive_failures(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    scenario_reynolds = model.scenario.reynolds
+    model.set_reynolds(10.0 * scenario_reynolds)
+    original_update = ViewerModel.update
+    calls = 0
+
+    def fail_twice(viewer: ViewerModel, dt: float) -> None:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise FloatingPointError("runtime Reynolds diverged")
+        original_update(viewer, dt)
+
+    monkeypatch.setattr(ViewerModel, "update", fail_twice)
+    worker = SimulationWorker(model, maximum_steps_per_second=10.0)
+    worker.start()
+    try:
+        first_recovery = worker.wait_for_revision(1)
+        assert first_recovery.failure is None
+        assert "Re reset" not in first_recovery.status
+
+        circuit_break = worker.wait_for_revision(2)
+        assert circuit_break.failure is None
+        assert model.manager.reynolds == scenario_reynolds
+        assert f"Re reset {10.0 * scenario_reynolds:.0f}->{scenario_reynolds:.0f}" in (
+            circuit_break.status
+        )
+
+        resumed = worker.wait_for_revision(3)
+        assert resumed.failure is None
+        assert resumed.simulation_time > 0.0
+    finally:
+        worker.close()
+
+
+def test_worker_resets_modified_reynolds_after_failures_in_window(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    scenario_reynolds = model.scenario.reynolds
+    model.set_reynolds(10.0 * scenario_reynolds)
+    original_update = ViewerModel.update
+    calls = 0
+
+    def fail_interleaved(viewer: ViewerModel, dt: float) -> None:
+        nonlocal calls
+        calls += 1
+        if calls in {1, 3, 5}:
+            raise FloatingPointError("intermittent Reynolds instability")
+        original_update(viewer, dt)
+
+    monkeypatch.setattr(ViewerModel, "update", fail_interleaved)
+    worker = SimulationWorker(model, maximum_steps_per_second=10.0)
+    worker.start()
+    try:
+        circuit_break = worker.wait_for_revision(5)
+        assert circuit_break.failure is None
+        assert model.manager.reynolds == scenario_reynolds
+        assert "Re reset" in circuit_break.status
+
+        resumed = worker.wait_for_revision(6)
+        assert resumed.failure is None
+        assert resumed.simulation_time > 0.0
+    finally:
+        worker.close()
