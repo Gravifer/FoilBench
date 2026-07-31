@@ -62,6 +62,31 @@ def test_runtime_reynolds_mildly_scales_physical_playback(
     assert model.manager.reynolds == scenario.reynolds
 
 
+def test_pose_only_drag_tracks_angle_and_clears_after_release(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.set_angle(12.0)
+
+    assert model.control(scenario.output_dt).angular_velocity_degrees != 0.0
+    model.enable_pose_only_drag()
+    pose_control = model.control(scenario.output_dt)
+    assert pose_control.angle_degrees == 12.0
+    assert pose_control.angular_velocity_degrees == 0.0
+    assert "motion=pose-only" in model.status()
+
+    model.release_angle()
+    assert model.pose_only_drag
+    assert model.pose_only_release_pending
+    model.update(scenario.output_dt)
+
+    assert not model.drag_active
+    assert not model.pose_only_drag
+    assert not model.pose_only_release_pending
+    assert "motion=pose-only" not in model.status()
+
+
 def test_display_tracers_expire_without_leaving_empty_regions(
     scenario_factory: ScenarioFactory,
 ) -> None:

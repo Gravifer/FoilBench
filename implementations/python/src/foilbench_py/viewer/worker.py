@@ -319,14 +319,21 @@ class SimulationWorker:
                 reynolds_is_modified = (
                     self._model.manager.reynolds != self._model.scenario.reynolds
                 )
-                reset_reynolds = reynolds_is_modified and (
+                pose_only_recovery = (
+                    self._recovery_pending
+                    and self._model.rapid_drag_attempted
+                    and not self._model.pose_only_drag
+                )
+                reset_reynolds = not pose_only_recovery and reynolds_is_modified and (
                     self._recovery_pending or failure_count >= self._FAILURE_LIMIT
                 )
-                if self._recovery_pending and not reset_reynolds:
+                if self._recovery_pending and not reset_reynolds and not pose_only_recovery:
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                 else:
                     try:
+                        if pose_only_recovery:
+                            self._model.enable_pose_only_drag()
                         self._model.recover_solver(error, reset_reynolds=reset_reynolds)
                     except Exception as recovery_error:
                         self._failure = (
@@ -337,7 +344,7 @@ class SimulationWorker:
                     else:
                         self._failure = None
                         self._recovery_pending = True
-                        if reset_reynolds:
+                        if reset_reynolds or pose_only_recovery:
                             self._clear_failure_history()
             self._publish(applied_command)
             remaining = self._step_interval - (perf_counter() - started)

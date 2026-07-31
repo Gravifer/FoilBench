@@ -87,6 +87,14 @@ scenario Reynolds number before a fresh restart at the visible foil angle.
 The overlay records the automatic Reynolds reset. Repeated failure at the
 scenario value pauses the worker instead of entering an endless recovery loop.
 
+Rapid dragging has a separate recovery tier. The first motion-driven failure
+still receives an ordinary fresh restart. If another failure occurs before a
+successful solver step, the foil continues to track the pointer exactly while
+the moving-wall angular velocity is suppressed. The overlay labels this
+`motion=pose-only` mode. Mouse release followed by one successful stationary
+step restores normal moving-wall coupling; failure from that stationary state
+still pauses the worker.
+
 Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
 `T` to switch between display tracers and material tracers. Display tracers
 have deterministic finite lifetimes and respawn throughout the domain so

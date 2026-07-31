@@ -60,6 +60,10 @@ class ViewerModel:
     vorticity_revision: int = 0
     show_vorticity: bool = True
     recovery_notice: str | None = None
+    drag_active: bool = False
+    pose_only_drag: bool = False
+    pose_only_release_pending: bool = False
+    last_requested_angular_velocity_degrees: float = 0.0
 
     @property
     def playback_rate(self) -> float:
@@ -119,7 +123,18 @@ class ViewerModel:
         scheduled = self.scenario.control_at(self.time)
         angle = scheduled.angle_degrees if self.angle_override is None else self.angle_override
         angular_velocity = (angle - self.previous_angle) / max(dt, 1.0e-9)
+        if self.pose_only_drag:
+            angular_velocity = 0.0
         return ControlState(self.time, angle, angular_velocity)
+
+    @property
+    def rapid_drag_attempted(self) -> bool:
+        """Whether the last requested drag moved a foil tip faster than freestream."""
+        tip_speed = (
+            abs(np.deg2rad(self.last_requested_angular_velocity_degrees))
+            * self.scenario.foil.chord
+        )
+        return self.drag_active and bool(tip_speed > self.scenario.reference_speed)
 
     def update(self, dt: float) -> None:
         if self.paused:
@@ -127,6 +142,12 @@ class ViewerModel:
         del dt
         simulation_dt = self.scenario.output_dt * self.playback_rate
         self.time += simulation_dt
+        scheduled = self.scenario.control_at(self.time)
+        angle = scheduled.angle_degrees if self.angle_override is None else self.angle_override
+        self.last_requested_angular_velocity_degrees = (angle - self.previous_angle) / max(
+            simulation_dt,
+            1.0e-9,
+        )
         control = self.control(simulation_dt)
         started = perf_counter()
         self.last_report = self.manager.solver.advance(control, simulation_dt)
@@ -150,18 +171,31 @@ class ViewerModel:
         if self.diagnostic_elapsed >= 0.2:
             self._refresh_diagnostics()
             self.diagnostic_elapsed = 0.0
+        if self.pose_only_release_pending and not self.drag_active:
+            self.pose_only_drag = False
+            self.pose_only_release_pending = False
 
     def set_angle(self, angle_degrees: float) -> None:
         self.angle_override = float(np.clip(angle_degrees, -30.0, 30.0))
+        self.drag_active = True
 
     def release_angle(self) -> None:
         if self.angle_override is not None:
             self.previous_angle = self.angle_override
+        self.drag_active = False
+        self.pose_only_release_pending = self.pose_only_drag
+
+    def enable_pose_only_drag(self) -> None:
+        """Keep following the pointer while suppressing unresolved wall rotation."""
+        self.pose_only_drag = True
+        self.pose_only_release_pending = False
 
     def switch_solver(self, solver_id: str) -> None:
         control = self.control(self.scenario.output_dt)
         self.manager.switch(solver_id, control)
         self.recovery_notice = None
+        self.pose_only_drag = False
+        self.pose_only_release_pending = False
         self._refresh_diagnostics()
 
     def recover_solver(self, failure: Exception, reset_reynolds: bool = False) -> None:
@@ -212,6 +246,10 @@ class ViewerModel:
         self.vorticity_revision = replacement.vorticity_revision
         self.show_vorticity = replacement.show_vorticity
         self.recovery_notice = None
+        self.drag_active = False
+        self.pose_only_drag = False
+        self.pose_only_release_pending = False
+        self.last_requested_angular_velocity_degrees = 0.0
 
     def adjust_blend(self, delta: float) -> None:
         solver = self.manager.solver
@@ -252,6 +290,7 @@ class ViewerModel:
             warning = "  warm-import transient"
         if self.recovery_notice is not None:
             warning = f"  recovered={self.recovery_notice}"
+        motion_mode = "  motion=pose-only" if self.pose_only_drag else ""
         energy = 0.0 if diagnostics is None else diagnostics.values.get("kinetic_energy", 0.0)
         enstrophy = 0.0 if diagnostics is None else diagnostics.values.get("enstrophy", 0.0)
         control = self.control(self.scenario.output_dt)
@@ -264,7 +303,7 @@ class ViewerModel:
             f"sub={substeps}  max|u|={speed:4.2f}  "
             f"E={energy:.3f}  Ω={enstrophy:.3f}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"
-            f"{blend}{effective_reynolds}{warning}"
+            f"{blend}{effective_reynolds}{motion_mode}{warning}"
         )
 
     @property

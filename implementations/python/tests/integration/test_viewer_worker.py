@@ -176,3 +176,45 @@ def test_worker_resets_modified_reynolds_after_failures_in_window(
         assert resumed.simulation_time > 0.0
     finally:
         worker.close()
+
+
+def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    model.set_angle(30.0)
+    original_update = ViewerModel.update
+    calls = 0
+
+    def fail_twice_during_rapid_drag(viewer: ViewerModel, dt: float) -> None:
+        nonlocal calls
+        calls += 1
+        viewer.last_requested_angular_velocity_degrees = 600.0
+        if calls <= 2:
+            raise FloatingPointError("moving wall diverged")
+        original_update(viewer, dt)
+
+    monkeypatch.setattr(ViewerModel, "update", fail_twice_during_rapid_drag)
+    worker = SimulationWorker(model, maximum_steps_per_second=10.0)
+    worker.start()
+    try:
+        first_recovery = worker.wait_for_revision(1)
+        assert first_recovery.failure is None
+        assert "motion=pose-only" not in first_recovery.status
+
+        pose_only = worker.wait_for_revision(2)
+        assert pose_only.failure is None
+        assert pose_only.angle_degrees == 30.0
+        assert "motion=pose-only" in pose_only.status
+        assert model.manager.solver.export_state().angular_velocity_degrees == 0.0
+
+        released = worker.wait_for_command(worker.release_angle())
+        assert released.failure is None
+        assert "motion=pose-only" not in released.status
+        assert not model.pose_only_drag
+    finally:
+        worker.close()
