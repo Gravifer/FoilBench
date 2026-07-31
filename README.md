@@ -37,3 +37,6 @@ git show f71d1fb:particle_airfoil_stall.py
 See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-acceptance.md),
 [benchmark methodology](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
+
+An opt-in post-Phase-1 investigation of deterministic 2D chaotic wakes is
+documented in [the provisional chaotic-wake experiment](docs/chaotic-wake-experiment.md).
