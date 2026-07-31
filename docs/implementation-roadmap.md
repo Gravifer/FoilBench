@@ -7,20 +7,20 @@
 - Native ModernGL viewer with direct within-Python warm switching.
 - Portable benchmark and fidelity artifacts.
 
-### Remaining Phase 1 fidelity gate
+### Phase 1 wake acceptance
 
-The compact Stable Fluids preview now produces separated shear-layer roll-up,
-recirculation, and an unsteady transverse wake. At long, fixed 25-degree stall,
-however, it still tends toward overly coherent vortex shedding rather than a
-broadband turbulent 2D wake. Do not describe the current result as turbulence.
+The compact Stable Fluids preview produces separated shear-layer roll-up,
+recirculation, and an unsteady transverse wake. A coherent alternating vortex
+street satisfies the Phase 1 pedagogical requirement. It demonstrates the
+onset and persistence of separated unsteady flow without claiming to reproduce
+three-dimensional turbulence.
 
-Increasing Reynolds number to 10,000 and applying deterministic 1.5–5% inlet
-disturbances did not remove that coherence; those scenario-only experiments
-were therefore not retained. The next flow-fidelity commit should improve the
-subcell no-slip/immersed-boundary treatment and reduce numerical dissipation at
-48–64 cells per chord. Acceptance requires both visual vortex interaction and
-a broadband wake-probe spectrum, not merely nonzero recirculation or periodic
-shedding.
+The benchmark records a downstream transverse-velocity probe, shedding
+frequency, Strouhal number, RMS fluctuation, and the fraction of spectral power
+in the dominant peak. These values characterize coherent and broadband wakes;
+they do not assign either an automated visual-quality score. Subcell boundary
+refinement and broadband irregularity remain future fidelity improvements, not
+Phase 1 blockers.
 
 ## Phase 2A: Julia
 

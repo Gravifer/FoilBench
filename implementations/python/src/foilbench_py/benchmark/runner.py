@@ -16,6 +16,7 @@ import psutil
 
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.geometry import NacaFoil
+from foilbench_py.core.metrics import analyze_wake_probe
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
@@ -124,6 +125,19 @@ def run_matrix(
                 total_substeps = 0
                 peak_rss = process.memory_info().rss
                 warnings: list[str] = []
+                wake_probe: list[float] = []
+                probe_point = np.asarray(
+                    [
+                        [
+                            min(
+                                scenario.foil.pivot[0] + 1.5 * scenario.foil.chord,
+                                scenario.domain.bounds[0][1] - 0.5 * scenario.domain.dx,
+                            ),
+                            scenario.foil.pivot[1],
+                        ]
+                    ],
+                    dtype=scenario.dtype,
+                )
                 success = True
                 try:
                     while elapsed_simulated < scenario.duration - 1.0e-12:
@@ -136,9 +150,29 @@ def run_matrix(
                         total_substeps += report.substeps
                         warnings.extend(report.warnings)
                         peak_rss = max(peak_rss, process.memory_info().rss)
+                        if elapsed_simulated >= 0.5 * scenario.duration:
+                            wake_probe.append(float(solver.sample_velocity(probe_point)[0, 1]))
                     diagnostics = solver.diagnostics()
                     warnings.extend(diagnostics.warnings)
-                    diagnostic_values = diagnostics.values
+                    diagnostic_values = dict(diagnostics.values)
+                    if len(wake_probe) >= 8:
+                        spectrum = analyze_wake_probe(
+                            np.asarray(wake_probe, dtype=np.float64),
+                            scenario.output_dt,
+                            scenario.foil.chord,
+                            max(float(np.linalg.norm(scenario.freestream)), 1.0e-12),
+                        )
+                        diagnostic_values.update(
+                            {
+                                "wake_probe_samples": float(spectrum.sample_count),
+                                "wake_transverse_rms": spectrum.transverse_rms,
+                                "wake_dominant_frequency": spectrum.dominant_frequency,
+                                "wake_strouhal_number": spectrum.strouhal_number,
+                                "wake_dominant_power_fraction": (
+                                    spectrum.dominant_power_fraction
+                                ),
+                            }
+                        )
                 except (FloatingPointError, RuntimeError, ValueError) as error:
                     success = False
                     warnings.append(f"{type(error).__name__}: {error}")

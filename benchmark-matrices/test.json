@@ -4,8 +4,7 @@
   "scenario": "scenarios/airfoil/default.json",
   "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
   "resolutions": [[32, 16]],
-  "duration": 0.01,
+  "duration": 0.30,
   "repetitions": 1,
   "save_snapshots": true
 }
-

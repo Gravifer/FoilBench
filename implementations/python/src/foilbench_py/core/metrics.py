@@ -1,12 +1,23 @@
 # pyright: reportPrivateImportUsage=false
 """Shared diagnostics, with named-axis operations where they improve clarity."""
 
+from dataclasses import dataclass
+
 import einx
 import numpy as np
 from jaxtyping import Float
 
 from foilbench_py.core.models import DomainSpec
 from foilbench_py.types import MaskField, VelocityField
+
+
+@dataclass(frozen=True, slots=True)
+class WakeSpectrum:
+    sample_count: int
+    transverse_rms: float
+    dominant_frequency: float
+    strouhal_number: float
+    dominant_power_fraction: float
 
 
 def speed_squared(
@@ -76,3 +87,39 @@ def recirculation_area(velocity: VelocityField, domain: DomainSpec, pivot_x: flo
     )
     downstream = centers_x > pivot_x
     return float(np.count_nonzero(velocity[:, downstream, 0] < 0.0) * domain.dx * domain.dy)
+
+
+def analyze_wake_probe(
+    transverse_velocity: Float[np.ndarray, " sample"],
+    sample_dt: float,
+    chord: float,
+    freestream_speed: float,
+) -> WakeSpectrum:
+    """Describe periodic content in a uniformly sampled transverse wake probe."""
+    if transverse_velocity.ndim != 1:
+        raise ValueError("wake probe samples must be one-dimensional")
+    if transverse_velocity.size < 8:
+        raise ValueError("wake spectrum requires at least eight samples")
+    if sample_dt <= 0.0 or chord <= 0.0 or freestream_speed <= 0.0:
+        raise ValueError("sample_dt, chord, and freestream_speed must be positive")
+    if not np.isfinite(transverse_velocity).all():
+        raise ValueError("wake probe samples must be finite")
+
+    centered = transverse_velocity - np.mean(transverse_velocity)
+    transverse_rms = float(np.sqrt(np.mean(centered * centered)))
+    windowed = centered * np.hanning(centered.size)
+    power = np.abs(np.fft.rfft(windowed)) ** 2
+    power[0] = 0.0
+    total_power = float(np.sum(power))
+    if total_power <= np.finfo(np.float64).tiny:
+        return WakeSpectrum(transverse_velocity.size, transverse_rms, 0.0, 0.0, 0.0)
+
+    dominant_index = int(np.argmax(power))
+    frequency = float(np.fft.rfftfreq(centered.size, sample_dt)[dominant_index])
+    return WakeSpectrum(
+        transverse_velocity.size,
+        transverse_rms,
+        frequency,
+        frequency * chord / freestream_speed,
+        float(power[dominant_index] / total_power),
+    )
