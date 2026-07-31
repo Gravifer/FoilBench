@@ -23,7 +23,15 @@ from foilbench_py.core.models import (
     SolverInfo,
     StepReport,
 )
-from foilbench_py.types import LatticePopulation, MaskField, PointCloud, ScalarField, VelocityField
+from foilbench_py.solvers._numba_adapter import lbm_trt_collision
+from foilbench_py.types import (
+    CoordinateField,
+    LatticePopulation,
+    MaskField,
+    PointCloud,
+    ScalarField,
+    VelocityField,
+)
 
 
 class LBMSolver:
@@ -49,6 +57,10 @@ class LBMSolver:
         self._outlet: LatticePopulation | None = None
         self._sponge: ScalarField | None = None
         self._solid: MaskField | None = None
+        self._centers: CoordinateField | None = None
+        self._signed_distance: ScalarField | None = None
+        self._solid_angle: float | None = None
+        self._boundary_equilibrium: LatticePopulation | None = None
         self._control = ControlState(0.0, 0.0, 0.0)
         self._time = 0.0
         self._density_initial = 1.0
@@ -97,6 +109,7 @@ class LBMSolver:
         )
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
         positions = cell_centers(scenario.domain)
+        self._centers = positions
         if initial == "taylor-green":
             velocity[:, :, 0] = (
                 self._lattice_speed * np.sin(positions[:, :, 0]) * np.cos(positions[:, :, 1])
@@ -115,7 +128,21 @@ class LBMSolver:
         density = np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
         self._f = self._equilibrium(density, velocity)
         self._outlet = self._f[:, -1:, :].copy()
-        self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
+        self._signed_distance = geometry.signed_distance(
+            positions.reshape(-1, 2),
+            self._control.angle_degrees,
+        ).reshape(scenario.domain.ny, scenario.domain.nx)
+        self._solid = self._signed_distance <= 0.0
+        self._solid_angle = self._control.angle_degrees
+        target_lattice = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
+            self._lattice_speed / freestream_speed
+        )
+        target_velocity = np.empty_like(velocity)
+        target_velocity[...] = target_lattice
+        self._boundary_equilibrium = self._equilibrium(
+            np.ones_like(density),
+            target_velocity,
+        )
         sponge = np.zeros((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
         width = max(3, min(scenario.domain.nx, scenario.domain.ny) // 16)
         if "y" not in scenario.domain.periodic_axes:
@@ -177,7 +204,15 @@ class LBMSolver:
 
     def _update_solid(self, control: ControlState) -> None:
         scenario, geometry, populations, old_solid = self._require()
-        new_solid = geometry.mask(scenario.domain, control.angle_degrees)
+        if self._solid_angle == control.angle_degrees:
+            return
+        if self._centers is None:
+            raise RuntimeError("LBM geometry cache has not been initialized")
+        signed_distance = geometry.signed_distance(
+            self._centers.reshape(-1, 2),
+            control.angle_degrees,
+        ).reshape(scenario.domain.ny, scenario.domain.nx)
+        new_solid = signed_distance <= 0.0
         uncovered = old_solid & ~new_solid
         if np.any(uncovered):
             density, velocity = self._macroscopic(populations)
@@ -188,6 +223,8 @@ class LBMSolver:
             )
             populations[uncovered] = self._equilibrium(density, velocity)[uncovered]
         self._solid = new_solid
+        self._signed_distance = signed_distance
+        self._solid_angle = control.angle_degrees
 
     @staticmethod
     def _left_velocity_boundary(
@@ -279,10 +316,10 @@ class LBMSolver:
     ) -> LatticePopulation:
         """Stream fluid links and apply Bouzidi-style interpolated wall reflection."""
         scenario, geometry, _, solid = self._require()
-        centers = cell_centers(scenario.domain)
-        signed_distance = geometry.signed_distance(
-            centers.reshape(-1, 2), control.angle_degrees
-        ).reshape(scenario.domain.ny, scenario.domain.nx)
+        centers = self._centers
+        signed_distance = self._signed_distance
+        if centers is None or signed_distance is None:
+            raise RuntimeError("LBM geometry cache has not been initialized")
         streamed = np.zeros_like(post_collision)
         for direction, (cx_raw, cy_raw) in enumerate(self._C):
             cx = int(cx_raw)
@@ -352,17 +389,9 @@ class LBMSolver:
         omega_plus = 1.0 / tau_plus
         omega_minus = 1.0 / tau_minus
 
-        density, velocity = self._macroscopic(populations)
+        density, post = lbm_trt_collision(populations, omega_plus, omega_minus)
         target = np.asarray(scenario.freestream[:2], dtype=populations.dtype)
         target_lattice = target * (u_lattice / freestream_speed)
-        equilibrium = self._equilibrium(density, velocity)
-        opposite_f = populations[:, :, self._OPPOSITE]
-        opposite_eq = equilibrium[:, :, self._OPPOSITE]
-        even = 0.5 * (populations + opposite_f)
-        odd = 0.5 * (populations - opposite_f)
-        even_eq = 0.5 * (equilibrium + opposite_eq)
-        odd_eq = 0.5 * (equilibrium - opposite_eq)
-        post = populations - omega_plus * (even - even_eq) - omega_minus * (odd - odd_eq)
 
         streamed = self._stream_with_moving_wall(
             post,
@@ -371,10 +400,9 @@ class LBMSolver:
             u_lattice / freestream_speed,
         )
 
-        boundary_equilibrium = self._equilibrium(
-            np.ones_like(density),
-            np.broadcast_to(target_lattice, velocity.shape).copy(),
-        )
+        boundary_equilibrium = self._boundary_equilibrium
+        if boundary_equilibrium is None:
+            raise RuntimeError("LBM boundary cache has not been initialized")
         if "y" in scenario.domain.periodic_axes:
             pass
         elif str(scenario.solver_options.get("initial_condition", "")) == "poiseuille":
@@ -483,6 +511,13 @@ class LBMSolver:
         self._time = state.time
         self._control = control
         self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+        if self._centers is None:
+            raise RuntimeError("LBM geometry cache has not been initialized")
+        self._signed_distance = geometry.signed_distance(
+            self._centers.reshape(-1, 2),
+            control.angle_degrees,
+        ).reshape(scenario.domain.ny, scenario.domain.nx)
+        self._solid_angle = control.angle_degrees
         return ImportReport(
             state.source_solver,
             self.info.id,

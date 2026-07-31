@@ -7,7 +7,9 @@
 import numpy as np
 from jaxtyping import Float
 
+from foilbench_kernels.lbm import trt_collision_kernel
 from foilbench_kernels.pic import grid_to_particle_kernel, particle_to_grid_kernel
+from foilbench_py.types import LatticePopulation, ScalarField
 
 
 def _require_supported_float(array: np.ndarray, name: str) -> None:
@@ -86,3 +88,21 @@ def grid_to_particle(
         periodic_x,
         periodic_y,
     )
+
+
+def lbm_trt_collision(
+    populations: LatticePopulation,
+    omega_plus: float,
+    omega_minus: float,
+) -> tuple[ScalarField, LatticePopulation]:
+    if populations.ndim != 3 or populations.shape[2] != 9:
+        raise ValueError("D2Q9 populations must have shape (ny, nx, 9)")
+    _require_supported_float(populations, "populations")
+    if omega_plus <= 0.0 or omega_minus <= 0.0:
+        raise ValueError("TRT relaxation rates must be positive")
+    density, post_collision = trt_collision_kernel(
+        populations,
+        omega_plus,
+        omega_minus,
+    )
+    return density, post_collision

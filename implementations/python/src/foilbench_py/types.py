@@ -6,6 +6,7 @@ from jaxtyping import Bool, Float, Float32, Integer
 type ScalarField = Float[np.ndarray, "ny nx"]
 type ScalarVolume = Float[np.ndarray, "nz ny nx"]
 type VelocityField = Float[np.ndarray, "ny nx dim"]
+type CoordinateField = Float[np.ndarray, "ny nx dim"]
 type VelocityVolume = Float[np.ndarray, "nz ny nx dim"]
 type FaceVelocityX = Float[np.ndarray, "ny nx_face"]
 type FaceVelocityY = Float[np.ndarray, "ny_face nx"]
