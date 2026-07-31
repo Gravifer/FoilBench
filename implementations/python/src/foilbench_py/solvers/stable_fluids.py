@@ -134,7 +134,7 @@ class StableFluidsSolver:
         stable_dt = cfl * min(scenario.domain.dx, scenario.domain.dy) / max_speed
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
-        viscosity = abs(scenario.freestream[0]) * scenario.foil.chord / scenario.reynolds
+        viscosity = scenario.reference_speed * scenario.foil.chord / scenario.reynolds
         for substep in range(substeps):
             fraction = (substep + 1) / substeps
             sub_control = ControlState(

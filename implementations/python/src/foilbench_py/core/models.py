@@ -105,6 +105,13 @@ class Scenario:
     def dtype(self) -> np.dtype[np.floating]:
         return np.dtype(np.float32 if self.precision == "float32" else np.float64)
 
+    @property
+    def reference_speed(self) -> float:
+        freestream_speed = float(np.linalg.norm(np.asarray(self.freestream, dtype=np.float64)))
+        initial_condition = str(self.solver_options.get("initial_condition", "freestream"))
+        prescribed_speed = 1.0 if initial_condition in ("taylor-green", "poiseuille") else 0.0
+        return max(freestream_speed, prescribed_speed, 1.0e-12)
+
     def control_at(self, time: float) -> ControlState:
         if len(self.controls) == 1 or time <= self.controls[0].time:
             return ControlState(time, self.controls[0].angle_degrees, 0.0)
@@ -186,6 +193,11 @@ class CanonicalFlowState:
             )
         if self.density is not None and self.density.shape != expected_shape[:-1]:
             raise ValueError("density shape does not match the canonical grid")
+        expected_dtype = np.dtype(self.precision)
+        if self.velocity.dtype != expected_dtype:
+            raise TypeError("velocity dtype does not match canonical precision")
+        if self.density is not None and self.density.dtype != expected_dtype:
+            raise TypeError("density dtype does not match canonical precision")
         if not np.isfinite(self.velocity).all():
             raise ValueError("canonical velocity contains non-finite values")
 

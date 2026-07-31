@@ -7,6 +7,7 @@ from typing import cast
 import numpy as np
 
 from foilbench_py.core.models import AxisName, CanonicalFlowState, Precision
+from foilbench_py.types import VelocityField
 
 
 def _json_object(path: Path) -> dict[str, object]:
@@ -118,3 +119,8 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
         velocity=velocity,
         density=density,
     )
+
+
+def midspan_velocity(state: CanonicalFlowState) -> VelocityField:
+    """Extract the canonical mid-span plane used by the default 2D presentation."""
+    return state.velocity[state.velocity.shape[0] // 2]

@@ -6,7 +6,7 @@ import pytest
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import DomainSpec
 from foilbench_py.core.scenario import find_repo_root, load_scenario
-from foilbench_py.solvers.factory import create_solver
+from foilbench_py.solvers.factory import create_solver, solver_ids
 from tests.helpers import ScenarioFactory
 
 
@@ -17,7 +17,9 @@ def test_default_scenario_validates() -> None:
     assert scenario.domain.resolution == (160, 96)
 
 
+@pytest.mark.parametrize("solver_id", solver_ids())
 def test_phase_one_solver_rejects_thin_3d(
+    solver_id: str,
     scenario_factory: ScenarioFactory,
 ) -> None:
     scenario = scenario_factory()
@@ -33,8 +35,10 @@ def test_phase_one_solver_rejects_thin_3d(
         freestream=(1.0, 0.0, 0.0),
         foil=replace(scenario.foil, pivot=(0.0, 0.0, 0.0)),
     )
+    solver = create_solver(solver_id)
+    assert solver.info.dimensions == (2,)
     with pytest.raises(NotImplementedError, match="only 2D"):
-        create_solver("stable-fluids").initialize(
+        solver.initialize(
             scenario,
             NacaFoil(scenario.foil),
             0,

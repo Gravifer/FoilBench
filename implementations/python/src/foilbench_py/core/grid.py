@@ -162,7 +162,7 @@ def advect_velocity(
     lower, upper = local_velocity_bounds(velocity, domain)
     lower = np.minimum(lower, first)
     upper = np.maximum(upper, first)
-    return np.clip(corrected, lower, upper)
+    return np.asarray(np.clip(corrected, lower, upper), dtype=velocity.dtype)
 
 
 def rk2_backtrace(

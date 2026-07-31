@@ -8,6 +8,7 @@ import numpy as np
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.metrics import vorticity
 from foilbench_py.core.models import ControlState, Diagnostics, Scenario, StepReport
+from foilbench_py.core.state_io import midspan_velocity
 from foilbench_py.core.switching import SolverManager
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
@@ -64,7 +65,7 @@ class ViewerModel:
         solver = self.manager.solver
         self.last_diagnostics = solver.diagnostics()
         state = solver.export_state()
-        omega = vorticity(state.velocity[0], self.scenario.domain)
+        omega = vorticity(midspan_velocity(state), self.scenario.domain)
         control = self.control(self.scenario.output_dt)
         solid = self.geometry.mask(self.scenario.domain, control.angle_degrees)
         omega = omega.copy()

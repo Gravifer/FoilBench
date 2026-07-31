@@ -7,7 +7,7 @@ import pytest
 
 from foilbench_py.core.models import CanonicalFlowState, Precision
 from foilbench_py.core.scenario import find_repo_root
-from foilbench_py.core.state_io import load_canonical_state, save_canonical_state
+from foilbench_py.core.state_io import load_canonical_state, midspan_velocity, save_canonical_state
 
 
 @pytest.mark.parametrize("precision", ["float32", "float64"])
@@ -87,3 +87,19 @@ def test_canonical_state_reader_rejects_semantically_swapped_axes() -> None:
 
     with pytest.raises(ValueError, match="axes"):
         load_canonical_state(directory)
+
+
+def test_midspan_extraction_handles_2d_and_shallow_3d_states() -> None:
+    velocity_2d = np.arange(1 * 4 * 8 * 2, dtype=np.float32).reshape(1, 4, 8, 2)
+    state_2d = CanonicalFlowState(
+        1, 2, ((0.0, 1.0), (0.0, 1.0)), (8, 4), (), 0.0, "float32",
+        0.0, 0.0, "python", "test", velocity_2d,
+    )
+    velocity_3d = np.arange(5 * 4 * 8 * 3, dtype=np.float32).reshape(5, 4, 8, 3)
+    state_3d = CanonicalFlowState(
+        1, 3, ((0.0, 1.0), (0.0, 1.0), (0.0, 0.2)), (8, 4, 5), ("z",),
+        0.0, "float32", 0.0, 0.0, "python", "test", velocity_3d,
+    )
+
+    np.testing.assert_array_equal(midspan_velocity(state_2d), velocity_2d[0])
+    np.testing.assert_array_equal(midspan_velocity(state_3d), velocity_3d[2])

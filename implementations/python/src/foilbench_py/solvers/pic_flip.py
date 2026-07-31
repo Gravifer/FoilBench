@@ -3,7 +3,7 @@
 import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
-from foilbench_py.core.grid import cell_to_faces, faces_to_cell, project_faces
+from foilbench_py.core.grid import cell_to_faces, faces_to_cell, implicit_diffuse, project_faces
 from foilbench_py.core.interpolation import sample_vector
 from foilbench_py.core.metrics import (
     divergence_l2,
@@ -448,7 +448,9 @@ class PicFlipSolver:
             self._resolve_particle_collisions(sub_control)
             transferred = self._particle_to_grid()
             pre_projection_grid = transferred.copy()
-            self._grid_velocity = self._project(transferred, sub_control, dt)
+            viscosity = scenario.reference_speed * scenario.foil.chord / scenario.reynolds
+            diffused = implicit_diffuse(transferred, viscosity, dt, scenario.domain)
+            self._grid_velocity = self._project(diffused, sub_control, dt)
             pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
             delta = self._grid_to_particle(
                 self._grid_velocity - pre_projection_grid,

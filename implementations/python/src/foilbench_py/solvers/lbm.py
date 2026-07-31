@@ -66,6 +66,7 @@ class LBMSolver:
         self._density_initial = 1.0
         self._lattice_speed = 0.08
         self._lattice_dt = 1.0
+        self._reference_speed = 1.0
         self._effective_reynolds = 0.0
         self._viscosity_clamped = False
 
@@ -87,13 +88,19 @@ class LBMSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
-        freestream_speed = max(abs(scenario.freestream[0]), 1.0e-12)
+        self._reference_speed = scenario.reference_speed
         reference_substeps = max(
             1,
-            int(np.ceil(scenario.output_dt * freestream_speed / (0.08 * scenario.domain.dx))),
+            int(
+                np.ceil(
+                    scenario.output_dt
+                    * self._reference_speed
+                    / (0.08 * scenario.domain.dx)
+                )
+            ),
         )
         self._lattice_dt = scenario.output_dt / reference_substeps
-        self._lattice_speed = freestream_speed * self._lattice_dt / scenario.domain.dx
+        self._lattice_speed = self._reference_speed * self._lattice_dt / scenario.domain.dx
         chord_cells = scenario.foil.chord / scenario.domain.dx
         requested_viscosity = self._lattice_speed * chord_cells / scenario.reynolds
         minimum_preview_viscosity = (0.52 - 0.5) / 3.0
@@ -105,7 +112,7 @@ class LBMSolver:
         self._effective_reynolds = self._lattice_speed * chord_cells / selected_viscosity
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
-            self._lattice_speed / freestream_speed
+            self._lattice_speed / self._reference_speed
         )
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
         positions = cell_centers(scenario.domain)
@@ -135,7 +142,7 @@ class LBMSolver:
         self._solid = self._signed_distance <= 0.0
         self._solid_angle = self._control.angle_degrees
         target_lattice = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
-            self._lattice_speed / freestream_speed
+            self._lattice_speed / self._reference_speed
         )
         target_velocity = np.empty_like(velocity)
         target_velocity[...] = target_lattice
@@ -197,10 +204,8 @@ class LBMSolver:
     def _physical_velocity(self) -> VelocityField:
         scenario, _, populations, _ = self._require()
         _, lattice = self._macroscopic(populations)
-        scale = (
-            max(np.linalg.norm(np.asarray(scenario.freestream[:2])), 1.0e-12) / self._lattice_speed
-        )
-        return lattice * scale
+        scale = self._reference_speed / self._lattice_speed
+        return np.asarray(lattice * scale, dtype=scenario.dtype)
 
     def _update_solid(self, control: ControlState) -> None:
         scenario, geometry, populations, old_solid = self._require()
@@ -217,9 +222,8 @@ class LBMSolver:
         if np.any(uncovered):
             density, velocity = self._macroscopic(populations)
             density[uncovered] = 1.0
-            speed = max(abs(scenario.freestream[0]), 1.0e-12)
             velocity[uncovered] = np.asarray(scenario.freestream[:2]) * (
-                self._lattice_speed / speed
+                self._lattice_speed / self._reference_speed
             )
             populations[uncovered] = self._equilibrium(density, velocity)[uncovered]
         self._solid = new_solid
@@ -375,7 +379,6 @@ class LBMSolver:
     def _step(self, dt: float, control: ControlState) -> None:
         scenario, _, populations, _ = self._require()
         dx = scenario.domain.dx
-        freestream_speed = max(abs(scenario.freestream[0]), 1.0e-12)
         del dt
         u_lattice = self._lattice_speed
         chord_cells = scenario.foil.chord / dx
@@ -391,13 +394,13 @@ class LBMSolver:
 
         density, post = lbm_trt_collision(populations, omega_plus, omega_minus)
         target = np.asarray(scenario.freestream[:2], dtype=populations.dtype)
-        target_lattice = target * (u_lattice / freestream_speed)
+        target_lattice = target * (u_lattice / self._reference_speed)
 
         streamed = self._stream_with_moving_wall(
             post,
             density,
             control,
-            u_lattice / freestream_speed,
+            u_lattice / self._reference_speed,
         )
 
         boundary_equilibrium = self._boundary_equilibrium
@@ -491,7 +494,7 @@ class LBMSolver:
             source_language="python",
             source_solver=self.info.id,
             velocity=self._physical_velocity()[None, ...],
-            density=density[None, ...],
+            density=np.asarray(density, dtype=scenario.dtype)[None, ...],
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportReport:
@@ -499,8 +502,7 @@ class LBMSolver:
         if state.dimension != 2 or state.resolution != scenario.domain.resolution:
             raise ValueError("warm import requires the same 2D resolution")
         physical = np.asarray(state.velocity[0], dtype=scenario.dtype)
-        speed = max(abs(scenario.freestream[0]), 1.0e-12)
-        lattice = physical * (self._lattice_speed / speed)
+        lattice = physical * (self._lattice_speed / self._reference_speed)
         density = (
             np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
             if state.density is None
