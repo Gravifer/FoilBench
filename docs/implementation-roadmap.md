@@ -2,6 +2,9 @@
 
 ## Phase 1: Python reference — complete
 
+**Status:** Completed on 2026-07-31. The requirement-by-requirement evidence is
+recorded in [Phase 1 acceptance](phase1-acceptance.md).
+
 - Typed shared contracts and geometry.
 - Stable Fluids, D2Q9 TRT LBM, and blended PIC/FLIP.
 - Native ModernGL viewer with direct within-Python warm switching.
