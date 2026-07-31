@@ -24,7 +24,9 @@ Python implementation is the eventual performance winner.
 
 - Stable Fluids uses a MAC grid, midpoint RK2 backtracing, locally limited
   MacCormack or first-order semi-Lagrangian advection, implicit viscosity,
-  matrix-free preconditioned projection, and a moving no-slip foil.
+  matrix-free preconditioned projection, and a moving no-slip foil. Opt-in
+  direct-face MacCormack and CFL-limited skew-symmetric RK2 transport support
+  the accepted chaotic-wake investigation without changing the default path.
 - D2Q9 LBM uses TRT collision, compiled collision plus vectorized streaming,
   interpolated moving-wall bounce-back, open boundaries, Mach-limited lattice
   scaling, and deterministic uncovered-cell initialization.
@@ -34,13 +36,19 @@ Python implementation is the eventual performance winner.
 - The Pyglet/ModernGL viewer owns 2,048–8,192 passive tracers and batched path
   histories. A single-owner simulation worker decouples fixed physical steps
   from rendering and reports actual steps/s and simulated/wall time.
-- Dragging, pause, reset, solver selection, PIC/FLIP blend, vorticity, tracer
-  mode, and diagnostics are supported. The manual GPU smoke procedure is in
+- Dragging, pause, reset, solver selection, PIC/FLIP blend, online Reynolds
+  control, vorticity, tracer mode, toggleable presentation cropping, and
+  diagnostics are supported. The manual GPU smoke procedure is in
   `architecture.md`; headless state/control/worker behavior is automated.
 - All six directed warm-swap pairs are tested. State conversion happens only
   at completed steps and preserves controls, time, tracers, and paths. Invalid
   imported states recover by fresh initialization at the selected foil angle
   and evenly replenish display tracers, with no visual crossfade.
+- Repeated rapid-motion failures temporarily degrade to exact pose updates
+  with zero moving-wall angular velocity; normal coupling returns when the
+  drag calms. Reynolds instability has a separate reset circuit breaker, and
+  Stable Fluids rejects catastrophic CFL or pressure-CG states early enough
+  for the viewer worker to recover instead of appearing frozen.
 
 ## Benchmarks and fidelity
 
@@ -57,9 +65,12 @@ Python implementation is the eventual performance winner.
 - Dynamic NACA 2412 artifacts report wake width, recirculation, enstrophy,
   normalized transverse mixing, spectral shedding, leakage, and baseline-
   relative recovery without producing a truth or visual-quality score.
-- The accepted pedagogical wake is visibly separated and unsteady, including
-  shear-layer roll-up and a coherent alternating vortex street. Phase 1 makes
-  no claim of three-dimensional vortex-stretching turbulence.
+- The accepted default pedagogical wake is visibly separated and unsteady,
+  including shear-layer roll-up and a coherent alternating vortex street. An
+  opt-in scenario adds measured deterministic, irregular 2D wake behavior.
+  The vortex street remains sufficient for acceptance; the chaotic extension
+  is an overachievement, not a new parity requirement for later languages.
+  Phase 1 makes no claim of three-dimensional vortex-stretching turbulence.
 - Scenarios and canonical state declare dimensionality and periodic axes. All
   Phase 1 solvers advertise only 2D and reject thin-3D scenarios through the
   common capability mechanism. D3Q19 remains the intended first thin-3D solver.
@@ -67,10 +78,19 @@ Python implementation is the eventual performance winner.
 ## Final local evidence
 
 On 2026-07-31, Ruff passed, strict Pyright reported zero errors and warnings,
-and all 88 tests passed. The documented CLI workflow then completed `describe`,
-schema-validated smoke/compare, the three-repetition 160×96 and 240×144
-throughput matrix, all six three-second fixed-stall runs, and the complete
-low-resolution dynamic control history. All solver runs succeeded with finite
-state and zero reported solid leakage. Exact local measurements are recorded
-in `benchmark-results-2026-07-31.md`; generated artifacts remain gitignored in
-`results/`.
+and all 88 then-current tests passed. The documented CLI workflow then
+completed `describe`, schema-validated smoke/compare, the three-repetition
+160×96 and 240×144 throughput matrix, all six three-second fixed-stall runs,
+and the complete low-resolution dynamic control history. All solver runs
+succeeded with finite state and zero reported solid leakage. Exact local
+measurements are recorded in `benchmark-results-2026-07-31.md`; generated
+artifacts remain gitignored in `results/`.
+
+On 2026-08-01, the accepted chaotic-wake and interaction extension passed all
+105 Python tests, Ruff, and strict Pyright with zero errors or warnings.
+Targeted checks cover deterministic chaos evidence, online Reynolds behavior,
+presentation-only cropping, repeated-failure recovery, pose-only rapid-drag
+fallback and release, non-finite pressure rejection, and end-to-end Stable
+Fluids recovery. The original full benchmark matrix was not rerun; the
+extension's separate timing, refinement, spectrum, and paired-trajectory
+evidence is recorded in `chaotic-wake-experiment.md`.

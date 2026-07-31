@@ -1,9 +1,13 @@
-# Provisional chaotic-wake experiment
+# Accepted Phase 1 chaotic-wake extension
 
-This post-Phase-1 experiment is isolated on `codex/chaotic-wake-experiment`.
-It does not change the accepted Phase 1 default and makes no claim of
-three-dimensional turbulence. Its target is deterministic, irregular 2D
-separated flow with a resolved range of interacting scales.
+This work began as a provisional excursion isolated on
+`codex/chaotic-wake-experiment` and was accepted into the completed Phase 1
+reference on 2026-08-01. It remains opt-in, does not change the robust default
+transport, and makes no claim of three-dimensional turbulence. Its target is
+deterministic, irregular 2D separated flow with a resolved range of
+interacting scales. The original coherent alternating vortex street remains
+sufficient for solver acceptance; this extension records an overachievement,
+not a new cross-language parity requirement.
 
 ## What changed
 
