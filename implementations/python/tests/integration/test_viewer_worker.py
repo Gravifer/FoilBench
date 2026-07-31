@@ -26,6 +26,10 @@ def test_worker_publishes_detached_snapshots_and_processes_paused_commands(
         assert angled.simulation_time == paused_time
         assert angled.angle_degrees == 18.0
 
+        faster = worker.wait_for_command(worker.adjust_reynolds(0.25))
+        assert faster.simulation_time == paused_time
+        assert "rate=" in faster.status
+
         switched = worker.wait_for_command(worker.switch_solver("pic-flip"))
         assert switched.simulation_time == paused_time
         assert "PIC/FLIP" in switched.status

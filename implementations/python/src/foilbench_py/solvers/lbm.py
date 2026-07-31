@@ -69,6 +69,16 @@ class LBMSolver:
         self._reference_speed = 1.0
         self._effective_reynolds = 0.0
         self._viscosity_clamped = False
+        self._reynolds = 1.0
+
+    @property
+    def reynolds(self) -> float:
+        return self._reynolds
+
+    def set_reynolds(self, reynolds: float) -> None:
+        if not np.isfinite(reynolds) or reynolds <= 0.0:
+            raise ValueError("Reynolds number must be finite and positive")
+        self._reynolds = float(reynolds)
 
     def _require(self) -> tuple[Scenario, NacaFoil, LatticePopulation, MaskField]:
         if (
@@ -88,6 +98,7 @@ class LBMSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
+        self.set_reynolds(scenario.reynolds)
         self._reference_speed = scenario.reference_speed
         reference_substeps = max(
             1,
@@ -102,7 +113,7 @@ class LBMSolver:
         self._lattice_dt = scenario.output_dt / reference_substeps
         self._lattice_speed = self._reference_speed * self._lattice_dt / scenario.domain.dx
         chord_cells = scenario.foil.chord / scenario.domain.dx
-        requested_viscosity = self._lattice_speed * chord_cells / scenario.reynolds
+        requested_viscosity = self._lattice_speed * chord_cells / self._reynolds
         minimum_preview_viscosity = (0.52 - 0.5) / 3.0
         selected_viscosity = max(
             requested_viscosity,
@@ -383,7 +394,7 @@ class LBMSolver:
         u_lattice = self._lattice_speed
         chord_cells = scenario.foil.chord / dx
         minimum_preview_viscosity = (0.52 - 0.5) / 3.0
-        requested_viscosity = u_lattice * chord_cells / scenario.reynolds
+        requested_viscosity = u_lattice * chord_cells / self._reynolds
         nu_lattice = max(requested_viscosity, minimum_preview_viscosity)
         self._viscosity_clamped = nu_lattice > requested_viscosity
         self._effective_reynolds = u_lattice * chord_cells / nu_lattice
@@ -533,6 +544,7 @@ class LBMSolver:
         velocity = self._physical_velocity()
         values = {
             "time": self._time,
+            "requested_reynolds": self._reynolds,
             "kinetic_energy": kinetic_energy(velocity),
             "enstrophy": enstrophy(velocity, scenario.domain),
             "divergence_l2": divergence_l2(velocity, scenario.domain),

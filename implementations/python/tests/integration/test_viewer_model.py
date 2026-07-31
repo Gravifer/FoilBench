@@ -43,6 +43,25 @@ def test_headless_viewer_update_and_switch(
     assert "warm-import transient" in model.status()
 
 
+def test_runtime_reynolds_mildly_scales_physical_playback(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+
+    model.adjust_reynolds(1.0)
+    model.update(scenario.output_dt)
+
+    assert model.manager.reynolds == 10.0 * scenario.reynolds
+    assert model.playback_rate == pytest.approx(1.5)
+    assert model.time == pytest.approx(1.5 * scenario.output_dt)
+    assert "rate=1.50x" in model.status()
+    model.switch_solver("lbm-d2q9")
+    assert model.manager.reynolds == 10.0 * scenario.reynolds
+    model.reset_reynolds()
+    assert model.manager.reynolds == scenario.reynolds
+
+
 def test_display_tracers_expire_without_leaving_empty_regions(
     scenario_factory: ScenarioFactory,
 ) -> None:

@@ -52,6 +52,28 @@ def test_stable_to_lbm_warm_switch_stays_finite(
     assert np.isfinite(state.velocity).all()
 
 
+def test_runtime_reynolds_survives_warm_switch_and_restart(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    manager = SolverManager(
+        create_solver,
+        scenario,
+        NacaFoil(scenario.foil),
+        "stable-fluids",
+    )
+    selected_reynolds = 4.0 * scenario.reynolds
+    manager.set_reynolds(selected_reynolds)
+
+    manager.switch("pic-flip", scenario.control_at(scenario.output_dt))
+    assert manager.reynolds == selected_reynolds
+    assert manager.solver.reynolds == selected_reynolds
+
+    manager.restart_at(ControlState(0.0, 12.0, 0.0))
+    assert manager.reynolds == selected_reynolds
+    assert manager.solver.reynolds == selected_reynolds
+
+
 @pytest.mark.parametrize("destination", solver_ids())
 def test_restart_discards_imported_state_and_starts_at_current_angle(
     destination: str,

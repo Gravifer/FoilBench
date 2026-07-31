@@ -149,8 +149,8 @@ class FoilWindow(pyglet.window.Window):
             font_size=11,
         )
         self.help_label = pyglet.text.Label(
-            "1/2/3 solver   drag foil   Space pause   R reset   "
-            "[/] PIC/FLIP blend   V vorticity   T tracer mode   C crop",
+            "1/2/3 solver  drag foil  Space pause  R reset  -/+ Re  0 Re reset  "
+            "[/] blend  V vort  T tracers  C crop",
             x=12,
             y=self.height - 32,
             anchor_x="left",
@@ -240,6 +240,12 @@ class FoilWindow(pyglet.window.Window):
             self.worker.adjust_blend(-0.05)
         elif symbol == key.BRACKETRIGHT:
             self.worker.adjust_blend(0.05)
+        elif symbol in (key.MINUS, key.NUM_SUBTRACT):
+            self.worker.adjust_reynolds(-0.25)
+        elif symbol in (key.EQUAL, key.PLUS, key.NUM_ADD):
+            self.worker.adjust_reynolds(0.25)
+        elif symbol in (key._0, key.NUM_0):
+            self.worker.reset_reynolds()
         elif symbol == key.V:
             self.worker.toggle_vorticity()
         elif symbol == key.T:

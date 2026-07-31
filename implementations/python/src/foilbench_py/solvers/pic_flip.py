@@ -59,6 +59,7 @@ class PicFlipSolver:
         self._time = 0.0
         self._blend = 0.95
         self._settling_steps = 0
+        self._reynolds = 1.0
         self._rng = PCG32(0)
         self._projection_warning = ""
         self._reseeded_last_step = 0
@@ -66,6 +67,15 @@ class PicFlipSolver:
         self._population_interval = 8
         self._cfl = 0.75
         self._swept_collisions_last_step = 0
+
+    @property
+    def reynolds(self) -> float:
+        return self._reynolds
+
+    def set_reynolds(self, reynolds: float) -> None:
+        if not np.isfinite(reynolds) or reynolds <= 0.0:
+            raise ValueError("Reynolds number must be finite and positive")
+        self._reynolds = float(reynolds)
 
     @property
     def blend(self) -> float:
@@ -103,6 +113,7 @@ class PicFlipSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
+        self.set_reynolds(scenario.reynolds)
         configured_blend = scenario.solver_options.get("pic_flip_blend", 0.95)
         if not isinstance(configured_blend, (int, float)):
             raise TypeError("pic_flip_blend must be numeric")
@@ -448,7 +459,7 @@ class PicFlipSolver:
             self._resolve_particle_collisions(sub_control)
             transferred = self._particle_to_grid()
             pre_projection_grid = transferred.copy()
-            viscosity = scenario.reference_speed * scenario.foil.chord / scenario.reynolds
+            viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
             diffused = implicit_diffuse(transferred, viscosity, dt, scenario.domain)
             self._grid_velocity = self._project(diffused, sub_control, dt)
             pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
@@ -522,6 +533,7 @@ class PicFlipSolver:
         fluid_counts = counts[~solid]
         values = {
             "time": self._time,
+            "requested_reynolds": self._reynolds,
             "kinetic_energy": kinetic_energy(grid_velocity),
             "enstrophy": enstrophy(grid_velocity, scenario.domain),
             "divergence_l2": divergence_l2(grid_velocity, scenario.domain),

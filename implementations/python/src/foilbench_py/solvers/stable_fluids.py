@@ -55,6 +55,16 @@ class StableFluidsSolver:
         self._maccormack = True
         self._face_advection = False
         self._skew_rk2 = False
+        self._reynolds = 1.0
+
+    @property
+    def reynolds(self) -> float:
+        return self._reynolds
+
+    def set_reynolds(self, reynolds: float) -> None:
+        if not np.isfinite(reynolds) or reynolds <= 0.0:
+            raise ValueError("Reynolds number must be finite and positive")
+        self._reynolds = float(reynolds)
 
     def initialize(self, scenario: Scenario, geometry: NacaFoil, seed: int) -> None:
         del seed
@@ -64,6 +74,7 @@ class StableFluidsSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
+        self.set_reynolds(scenario.reynolds)
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
@@ -142,7 +153,7 @@ class StableFluidsSolver:
         stable_dt = cfl * min(scenario.domain.dx, scenario.domain.dy) / max_speed
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
-        viscosity = scenario.reference_speed * scenario.foil.chord / scenario.reynolds
+        viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
         for substep in range(substeps):
             fraction = (substep + 1) / substeps
             sub_control = ControlState(
@@ -239,6 +250,7 @@ class StableFluidsSolver:
         velocity = self.cell_velocity()
         values = {
             "time": self._time,
+            "requested_reynolds": self._reynolds,
             "kinetic_energy": kinetic_energy(velocity),
             "enstrophy": enstrophy(velocity, scenario.domain),
             "divergence_l2": divergence_l2(velocity, scenario.domain),

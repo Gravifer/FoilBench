@@ -29,6 +29,12 @@ uv run --project implementations/python foilbench-py view scenarios/airfoil/chao
 Enable the vorticity layer with `V`. The multiscale wake takes several
 simulated seconds to develop; the foil remains draggable.
 
+Use `-` and `+` to move Reynolds number down or up in quarter-decade steps,
+and `0` to return to `Re=10000`. A fresh 4-degree run becomes near-laminar by
+`Re=500–1000`; lowering angle alone at `Re=10000` remains visibly unsteady.
+The current flow is preserved when Reynolds changes, so a developed wake
+relaxes rather than disappearing immediately.
+
 The experimental viewer crops four cells from each edge. This hides the
 far-field vorticity sheet created where the finite-domain boundary condition
 meets the differentiated display field. The solver, canonical state, and all

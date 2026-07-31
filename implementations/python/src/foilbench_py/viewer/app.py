@@ -1,5 +1,6 @@
 """Typed viewer state, independent of the untyped OpenGL adapter."""
 
+import math
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -60,6 +61,12 @@ class ViewerModel:
     show_vorticity: bool = True
     recovery_notice: str | None = None
 
+    @property
+    def playback_rate(self) -> float:
+        exponent = math.log(1.5) / math.log(10.0)
+        relative_reynolds = self.manager.reynolds / self.scenario.reynolds
+        return float(np.clip(relative_reynolds**exponent, 0.5, 2.0))
+
     @classmethod
     def create(cls, scenario: Scenario, initial_solver: str = "stable-fluids") -> "ViewerModel":
         geometry = NacaFoil(scenario.foil)
@@ -118,7 +125,7 @@ class ViewerModel:
         if self.paused:
             return
         del dt
-        simulation_dt = self.scenario.output_dt
+        simulation_dt = self.scenario.output_dt * self.playback_rate
         self.time += simulation_dt
         control = self.control(simulation_dt)
         started = perf_counter()
@@ -201,6 +208,16 @@ class ViewerModel:
         if isinstance(solver, PicFlipSolver):
             solver.blend = solver.blend + delta
 
+    def set_reynolds(self, reynolds: float) -> None:
+        selected = float(np.clip(reynolds, 50.0, 100_000.0))
+        self.manager.set_reynolds(selected)
+
+    def adjust_reynolds(self, decades: float) -> None:
+        self.set_reynolds(self.manager.reynolds * 10.0**decades)
+
+    def reset_reynolds(self) -> None:
+        self.set_reynolds(self.scenario.reynolds)
+
     def toggle_vorticity(self) -> bool:
         self.show_vorticity = not self.show_vorticity
         return self.show_vorticity
@@ -231,6 +248,7 @@ class ViewerModel:
         return (
             f"{solver.info.display_name}  t={self.time:6.2f}  "
             f"AoA={control.angle_degrees:5.1f}°  "
+            f"Re={self.manager.reynolds:7.0f}  rate={self.playback_rate:4.2f}x  "
             f"step={self.solver_steps_per_second:4.1f}/s  "
             f"sim/wall={self.simulated_seconds_per_wall_second:4.2f}  "
             f"sub={substeps}  max|u|={speed:4.2f}  "

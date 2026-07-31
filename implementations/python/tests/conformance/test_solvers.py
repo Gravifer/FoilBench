@@ -33,6 +33,25 @@ def test_solver_protocol_and_canonical_export(
 
 
 @pytest.mark.parametrize("solver_id", solver_ids())
+def test_solver_accepts_runtime_reynolds_changes(
+    solver_id: str,
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    solver = create_solver(solver_id)
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+    solver.set_reynolds(2.0 * scenario.reynolds)
+    solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+
+    assert solver.reynolds == 2.0 * scenario.reynolds
+    assert solver.diagnostics().values["requested_reynolds"] == 2.0 * scenario.reynolds
+    assert np.isfinite(solver.export_state().velocity).all()
+    with pytest.raises(ValueError, match="Reynolds"):
+        solver.set_reynolds(0.0)
+
+
+@pytest.mark.parametrize("solver_id", solver_ids())
 def test_solver_is_deterministic_for_fixed_seed(
     solver_id: str, scenario_factory: ScenarioFactory
 ) -> None:

@@ -72,6 +72,15 @@ with `1`/`2`/`3`, and adjust PIC/FLIP blending with `[`/`]`. Switching must
 retain visible tracer paths and show the conversion transient without a
 crossfade.
 
+Use `-` and `+` to change the requested Reynolds number in quarter-decade
+steps; `0` restores the scenario value. The selection changes solver viscosity
+online and survives warm switching. To make the visual response legible, wall-
+clock playback scales mildly: a tenfold Reynolds increase advances simulated
+time 1.5 times as fast, clamped to 0.5–2 times. Tracers are not independently
+sped up—they remain passive and advance through the same physical interval as
+the solver. LBM continues to display `Re_eff` when its relaxation clamp cannot
+honor the requested value.
+
 Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
 `T` to switch between display tracers and material tracers. Display tracers
 have deterministic finite lifetimes and respawn throughout the domain so

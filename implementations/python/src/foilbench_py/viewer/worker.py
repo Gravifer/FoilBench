@@ -18,6 +18,8 @@ type CommandKind = Literal[
     "set_angle",
     "release_angle",
     "adjust_blend",
+    "adjust_reynolds",
+    "reset_reynolds",
     "toggle_vorticity",
     "toggle_tracer",
 ]
@@ -153,6 +155,12 @@ class SimulationWorker:
     def adjust_blend(self, delta: float) -> int:
         return self._enqueue("adjust_blend", delta)
 
+    def adjust_reynolds(self, decades: float) -> int:
+        return self._enqueue("adjust_reynolds", decades)
+
+    def reset_reynolds(self) -> int:
+        return self._enqueue("reset_reynolds")
+
     def toggle_vorticity(self) -> int:
         return self._enqueue("toggle_vorticity")
 
@@ -188,6 +196,12 @@ class SimulationWorker:
             if not isinstance(command.value, (int, float)):
                 raise TypeError("adjust_blend requires a numeric delta")
             self._model.adjust_blend(float(command.value))
+        elif command.kind == "adjust_reynolds":
+            if not isinstance(command.value, (int, float)):
+                raise TypeError("adjust_reynolds requires a numeric logarithmic step")
+            self._model.adjust_reynolds(float(command.value))
+        elif command.kind == "reset_reynolds":
+            self._model.reset_reynolds()
         elif command.kind == "toggle_vorticity":
             self._model.toggle_vorticity()
         elif command.kind == "toggle_tracer":
