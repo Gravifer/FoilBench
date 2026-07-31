@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from foilbench_py.solvers._numba_adapter import grid_to_particle
+from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
 
 
 def _quadratic_weight(distance: float) -> float:
@@ -91,3 +91,28 @@ def test_quadratic_grid_to_particle_preserves_constant_velocity(
         rtol=1.0e-6,
         atol=1.0e-6,
     )
+
+
+def test_transfer_adapter_rejects_inconsistent_dtypes_and_dimensions() -> None:
+    grid = np.zeros((4, 5, 2), dtype=np.float32)
+    positions = np.zeros((3, 2), dtype=np.float64)
+    with pytest.raises(TypeError, match="same dtype"):
+        grid_to_particle(grid, positions, 0.0, 0.0, 0.2, 0.25)
+
+    positions_3d = np.zeros((3, 3), dtype=np.float32)
+    with pytest.raises((TypeError, ValueError)):
+        grid_to_particle(grid, positions_3d, 0.0, 0.0, 0.2, 0.25)
+
+    velocities = np.zeros((4, 2), dtype=np.float32)
+    with pytest.raises((TypeError, ValueError)):
+        particle_to_grid(
+            positions_3d,
+            velocities,
+            0.0,
+            0.0,
+            0.2,
+            0.25,
+            5,
+            4,
+            (1.0, 0.0),
+        )
