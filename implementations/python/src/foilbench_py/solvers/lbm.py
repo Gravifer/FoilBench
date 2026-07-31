@@ -40,7 +40,7 @@ class LBMSolver:
         display_name="D2Q9 TRT LBM",
         dimensions=(2,),
         supports_moving_boundary=True,
-        acceleration="vectorized NumPy",
+        acceleration="Numba TRT collision + vectorized NumPy streaming",
     )
 
     _C = np.asarray(

@@ -17,6 +17,13 @@ substeps. Reported diagnostics include energy, enstrophy, divergence, mass or
 density drift where meaningful, solid leakage, wake width, and recirculation
 area. FoilBench does not assign an aesthetic score.
 
+Airfoil runs also sample transverse velocity 1.5 chords downstream during the
+second half of the matched physical interval. The runner reports RMS
+fluctuation, dominant frequency, Strouhal number, dominant spectral-power
+fraction, and discrete frequency resolution. These values characterize
+coherent and broadband wakes without treating either as an automated quality
+rank.
+
 The validation repertoire consists of uniform flow, Taylor-Green decay,
 Poiseuille flow, a symmetric NACA 0012 case, and the pedagogical dynamic NACA
 2412 scenario.

@@ -1,13 +1,20 @@
 # Implementation roadmap
 
-## Phase 1: Python reference
+## Phase 1: Python reference — complete
 
 - Typed shared contracts and geometry.
 - Stable Fluids, D2Q9 TRT LBM, and blended PIC/FLIP.
 - Native ModernGL viewer with direct within-Python warm switching.
 - Portable benchmark and fidelity artifacts.
 
-### Phase 1 wake acceptance
+Phase 1 acceptance was completed with strict Pyright and Ruff checks, the full
+Python test suite, finite matched runs for all three solvers at 32 and 48 cells
+per chord, direct warm-switch coverage, graceful fresh recovery, and a
+responsive latest-snapshot viewer. The 32-cells-per-chord preview sustains
+double-digit solver updates per second for all three solvers in developed
+fixed stall.
+
+### Accepted wake behavior
 
 The compact Stable Fluids preview produces separated shear-layer roll-up,
 recirculation, and an unsteady transverse wake. A coherent alternating vortex

@@ -36,6 +36,7 @@ def test_wake_spectrum_recovers_a_coherent_shedding_frequency() -> None:
     spectrum = analyze_wake_probe(samples, sample_dt, chord=1.0, freestream_speed=2.0)
 
     assert spectrum.sample_count == 400
+    assert spectrum.frequency_resolution == pytest.approx(0.25)
     assert spectrum.transverse_rms == pytest.approx(0.7 / np.sqrt(2.0), rel=0.01)
     assert spectrum.dominant_frequency == pytest.approx(2.5)
     assert spectrum.strouhal_number == pytest.approx(1.25)

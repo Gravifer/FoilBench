@@ -1,7 +1,8 @@
 # FoilBench
 
 FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
-contains the robustly typed Python reference implementation. Julia and
+is complete and contains the robustly typed Python reference implementation.
+Julia and
 TypeScript peers are planned for Phase 2; Rust and WASM are planned for Phase 3.
 
 The implementations share scenarios, schemas, and result artifacts. They do
@@ -35,4 +36,3 @@ git show f71d1fb:particle_airfoil_stall.py
 
 See [architecture](docs/architecture.md), [benchmark methodology](docs/benchmark-methodology.md),
 and the [implementation roadmap](docs/implementation-roadmap.md).
-

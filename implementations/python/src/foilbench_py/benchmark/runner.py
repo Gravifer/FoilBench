@@ -165,6 +165,7 @@ def run_matrix(
                         diagnostic_values.update(
                             {
                                 "wake_probe_samples": float(spectrum.sample_count),
+                                "wake_frequency_resolution": spectrum.frequency_resolution,
                                 "wake_transverse_rms": spectrum.transverse_rms,
                                 "wake_dominant_frequency": spectrum.dominant_frequency,
                                 "wake_strouhal_number": spectrum.strouhal_number,

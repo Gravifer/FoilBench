@@ -14,6 +14,7 @@ from foilbench_py.types import MaskField, VelocityField
 @dataclass(frozen=True, slots=True)
 class WakeSpectrum:
     sample_count: int
+    frequency_resolution: float
     transverse_rms: float
     dominant_frequency: float
     strouhal_number: float
@@ -111,13 +112,22 @@ def analyze_wake_probe(
     power = np.abs(np.fft.rfft(windowed)) ** 2
     power[0] = 0.0
     total_power = float(np.sum(power))
+    frequency_resolution = 1.0 / (centered.size * sample_dt)
     if total_power <= np.finfo(np.float64).tiny:
-        return WakeSpectrum(transverse_velocity.size, transverse_rms, 0.0, 0.0, 0.0)
+        return WakeSpectrum(
+            transverse_velocity.size,
+            frequency_resolution,
+            transverse_rms,
+            0.0,
+            0.0,
+            0.0,
+        )
 
     dominant_index = int(np.argmax(power))
     frequency = float(np.fft.rfftfreq(centered.size, sample_dt)[dominant_index])
     return WakeSpectrum(
         transverse_velocity.size,
+        frequency_resolution,
         transverse_rms,
         frequency,
         frequency * chord / freestream_speed,
