@@ -218,3 +218,26 @@ def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
         assert not model.pose_only_drag
     finally:
         worker.close()
+
+
+def test_worker_recovers_stable_fluids_from_unresolved_wall_cfl(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(64, 32))
+    scenario.solver_options["stable_advection"] = "skew-rk2"
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.set_angle(-30.0)
+    worker = SimulationWorker(model, maximum_steps_per_second=10.0)
+    worker.start()
+    try:
+        recovered = worker.wait_for_revision(1, timeout=10.0)
+        assert recovered.failure is None
+        assert recovered.angle_degrees == -30.0
+        assert np.isfinite(recovered.positions).all()
+        assert "recovered=fresh restart after FloatingPointError" in recovered.status
+
+        resumed = worker.wait_for_revision(2, timeout=10.0)
+        assert resumed.failure is None
+        assert resumed.simulation_time > 0.0
+    finally:
+        worker.close()

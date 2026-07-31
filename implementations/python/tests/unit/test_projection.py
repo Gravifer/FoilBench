@@ -1,5 +1,7 @@
 import numpy as np
+import pytest
 
+from foilbench_py.core._scipy_adapter import solve_masked_poisson
 from foilbench_py.core.grid import (
     advect_faces,
     advect_faces_skew_rk2,
@@ -49,6 +51,15 @@ def test_preconditioned_masked_projection_reduces_fluid_divergence() -> None:
 
     assert info == 0
     assert np.linalg.norm(after[~solid]) < 0.25 * np.linalg.norm(before[~solid])
+
+
+def test_masked_projection_rejects_non_finite_rhs_before_cg() -> None:
+    rhs = np.zeros((8, 8), dtype=np.float32)
+    rhs[3, 4] = np.inf
+    fluid = np.ones_like(rhs, dtype=np.bool_)
+
+    with pytest.raises(FloatingPointError, match="pressure RHS"):
+        solve_masked_poisson(rhs, fluid, 0.125, 0.125)
 
 
 def test_rk2_backtrace_matches_midpoint_step_for_linear_rotation() -> None:

@@ -109,6 +109,18 @@ def test_pose_only_drag_clears_after_sustained_slow_motion(
     assert model.pose_only_calm_steps == 0
 
 
+def test_stable_fluids_rejects_unresolved_wall_motion_before_pressure_cg(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(64, 32))
+    scenario.solver_options["stable_advection"] = "skew-rk2"
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.set_angle(-30.0)
+
+    with pytest.raises(FloatingPointError, match="projection CFL"):
+        model.update(scenario.output_dt)
+
+
 def test_display_tracers_expire_without_leaving_empty_regions(
     scenario_factory: ScenarioFactory,
 ) -> None:

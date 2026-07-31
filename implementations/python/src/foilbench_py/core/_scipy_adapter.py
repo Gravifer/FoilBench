@@ -108,14 +108,28 @@ def solve_masked_poisson(
     if singular and np.any(fluid):
         compatible_rhs[fluid] -= np.mean(compatible_rhs[fluid])
     compatible_rhs[~fluid] = 0.0
-    solution, info = cg(
-        operator,
-        compatible_rhs.ravel(),
-        M=preconditioner,
-        rtol=tolerance,
-        atol=0.0,
-        maxiter=max_iterations,
-    )
+    if not np.isfinite(compatible_rhs).all():
+        raise FloatingPointError("pressure RHS contains non-finite values")
+    safe_component = 0.25 * np.sqrt(np.finfo(rhs.dtype).max / max(size, 1))
+    if float(np.max(np.abs(compatible_rhs))) > safe_component:
+        raise FloatingPointError("pressure RHS exceeds the safe CG dot-product range")
+
+    def validate_iterate(iterate: np.ndarray) -> None:
+        if not np.isfinite(iterate).all():
+            raise FloatingPointError("pressure CG produced a non-finite iterate")
+
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        solution, info = cg(
+            operator,
+            compatible_rhs.ravel(),
+            M=preconditioner,
+            rtol=tolerance,
+            atol=0.0,
+            maxiter=max_iterations,
+            callback=validate_iterate,
+        )
+    if not np.isfinite(solution).all():
+        raise FloatingPointError("pressure CG produced a non-finite solution")
     pressure = solution.reshape(ny, nx)
     if np.any(fluid):
         pressure[fluid] -= np.mean(pressure[fluid])

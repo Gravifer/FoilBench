@@ -97,6 +97,13 @@ successful steps with requested foil-tip speed below half the freestream speed
 also restore coupling, with hysteresis against noisy pointer motion. Failure
 from the resulting low-speed or stationary state still pauses the worker.
 
+Stable Fluids validates the actual face and moving-wall CFL against a generous
+ceiling derived from its configured target before entering its iterative
+pressure solve. Catastrophic face growth therefore becomes a prompt solver
+exception instead of a long series of overflowing CG iterations. CG also
+rejects non-finite inputs and iterates, and non-convergence enters the same
+viewer recovery policy rather than remaining a passive warning.
+
 Press `V` to toggle the dynamically normalized signed-vorticity layer. Press
 `T` to switch between display tracers and material tracers. Display tracers
 have deterministic finite lifetimes and respawn throughout the domain so

@@ -33,6 +33,8 @@ from foilbench_py.core.models import (
 )
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, MaskField, PointCloud, VelocityField
 
+_MIN_PROJECTION_CFL_LIMIT = 1.0
+
 
 class StableFluidsSolver:
     info = SolverInfo(
@@ -121,18 +123,48 @@ class StableFluidsSolver:
         if not isinstance(tolerance_option, (int, float)):
             raise TypeError("pressure_tolerance must be numeric")
         pressure_tolerance = float(tolerance_option)
+        cfl_option = scenario.solver_options.get("stable_cfl", 0.7)
+        if not isinstance(cfl_option, (int, float)):
+            raise TypeError("stable_cfl must be numeric")
+        configured_cfl = float(cfl_option)
+        if self._skew_rk2:
+            configured_cfl = min(configured_cfl, 0.4)
+        projection_cfl_limit = max(_MIN_PROJECTION_CFL_LIMIT, 2.0 * configured_cfl)
+        wall_velocity = self._wall_grid(self._control)
+        arrays = (u, v, wall_velocity)
+        if not all(np.isfinite(array).all() for array in arrays):
+            raise FloatingPointError("Stable Fluids projection received non-finite velocity")
+        face_speed = max(float(np.max(np.abs(u))), float(np.max(np.abs(v))))
+        wall_speed = (
+            float(np.max(np.linalg.norm(wall_velocity[solid], axis=1)))
+            if np.any(solid)
+            else 0.0
+        )
+        projection_cfl = max(face_speed, wall_speed) * dt / min(
+            scenario.domain.dx,
+            scenario.domain.dy,
+        )
+        if projection_cfl > projection_cfl_limit:
+            raise FloatingPointError(
+                f"Stable Fluids projection CFL {projection_cfl:.2f} exceeds "
+                f"{projection_cfl_limit:.2f}"
+            )
         self._u, self._v, info = project_faces(
             u,
             v,
             scenario.domain,
             solid,
-            self._wall_grid(self._control),
+            wall_velocity,
             scenario.freestream,
             dt,
             channel,
             pressure_tolerance,
         )
-        self._projection_warning = "" if info == 0 else f"pressure CG returned {info}"
+        if info != 0:
+            raise FloatingPointError(f"Stable Fluids pressure CG did not converge: {info}")
+        if not np.isfinite(self._u).all() or not np.isfinite(self._v).all():
+            raise FloatingPointError("Stable Fluids projection produced non-finite velocity")
+        self._projection_warning = ""
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
         scenario, geometry, _, _, _ = self._require()
