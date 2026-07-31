@@ -17,6 +17,7 @@ import psutil
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.metrics import analyze_wake_probe
+from foilbench_py.core.models import Scenario
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
@@ -87,6 +88,30 @@ def _percentile_95(values: list[float]) -> float:
     return float(np.percentile(np.asarray(values), 95.0))
 
 
+def recovery_window(scenario: Scenario) -> tuple[float, float] | None:
+    """Return the baseline end and completed-return time for an angle excursion."""
+    initial_angle = scenario.controls[0].angle_degrees
+    final_angle = scenario.controls[-1].angle_degrees
+    if not np.isclose(initial_angle, final_angle):
+        return None
+    changed = [
+        index
+        for index, keyframe in enumerate(scenario.controls)
+        if not np.isclose(keyframe.angle_degrees, initial_angle)
+    ]
+    if not changed:
+        return None
+    first_changed = changed[0]
+    last_changed = changed[-1]
+    if first_changed == 0 or last_changed + 1 >= len(scenario.controls):
+        return None
+    baseline_end = scenario.controls[first_changed - 1].time
+    recovery_start = scenario.controls[last_changed + 1].time
+    if baseline_end >= recovery_start or recovery_start >= scenario.duration:
+        return None
+    return baseline_end, recovery_start
+
+
 def run_matrix(
     matrix_path: str | Path,
     output_root: str | Path | None = None,
@@ -133,6 +158,9 @@ def run_matrix(
                 peak_rss = process.memory_info().rss
                 warnings: list[str] = []
                 wake_probe: list[float] = []
+                recovery_times = recovery_window(scenario)
+                recovery_baseline: tuple[float, float] | None = None
+                recovery_elapsed: float | None = None
                 probe_point = np.asarray(
                     [
                         [
@@ -159,6 +187,37 @@ def run_matrix(
                         peak_rss = max(peak_rss, process.memory_info().rss)
                         if elapsed_simulated >= 0.5 * scenario.duration:
                             wake_probe.append(float(solver.sample_velocity(probe_point)[0, 1]))
+                        if recovery_times is not None:
+                            baseline_end, recovery_start = recovery_times
+                            crossed_baseline = (
+                                recovery_baseline is None
+                                and elapsed_simulated >= baseline_end
+                            )
+                            observing_recovery = (
+                                recovery_baseline is not None
+                                and recovery_elapsed is None
+                                and elapsed_simulated >= recovery_start
+                            )
+                            if crossed_baseline or observing_recovery:
+                                transient = solver.diagnostics().values
+                                wake = transient["wake_width"]
+                                recirculation = transient["recirculation_area"]
+                                if crossed_baseline:
+                                    recovery_baseline = (wake, recirculation)
+                                elif recovery_baseline is not None:
+                                    wake_tolerance = max(
+                                        1.25 * recovery_baseline[0],
+                                        2.0 * scenario.domain.dy,
+                                    )
+                                    recirculation_tolerance = max(
+                                        1.25 * recovery_baseline[1],
+                                        2.0 * scenario.domain.dx * scenario.domain.dy,
+                                    )
+                                    if (
+                                        wake <= wake_tolerance
+                                        and recirculation <= recirculation_tolerance
+                                    ):
+                                        recovery_elapsed = elapsed_simulated - recovery_start
                     diagnostics = solver.diagnostics()
                     warnings.extend(diagnostics.warnings)
                     diagnostic_values = dict(diagnostics.values)
@@ -174,6 +233,9 @@ def run_matrix(
                                 "wake_probe_samples": float(spectrum.sample_count),
                                 "wake_frequency_resolution": spectrum.frequency_resolution,
                                 "wake_transverse_rms": spectrum.transverse_rms,
+                                "wake_mixing_index": (
+                                    spectrum.transverse_rms / scenario.reference_speed
+                                ),
                                 "wake_dominant_frequency": spectrum.dominant_frequency,
                                 "wake_strouhal_number": spectrum.strouhal_number,
                                 "wake_dominant_power_fraction": (
@@ -181,6 +243,25 @@ def run_matrix(
                                 ),
                             }
                         )
+                    if recovery_times is not None and recovery_baseline is not None:
+                        baseline_end, recovery_start = recovery_times
+                        observed = recovery_elapsed is not None
+                        diagnostic_values.update(
+                            {
+                                "recovery_baseline_time": baseline_end,
+                                "recovery_start_time": recovery_start,
+                                "recovery_observed": float(observed),
+                                "recovery_elapsed": (
+                                    recovery_elapsed
+                                    if recovery_elapsed is not None
+                                    else scenario.duration - recovery_start
+                                ),
+                            }
+                        )
+                        if not observed:
+                            warnings.append(
+                                "wake recovery was not observed; recovery_elapsed is right-censored"
+                            )
                 except (FloatingPointError, RuntimeError, ValueError) as error:
                     success = False
                     warnings.append(f"{type(error).__name__}: {error}")

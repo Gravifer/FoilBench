@@ -2,9 +2,13 @@ import json
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from foilbench_py.benchmark.compare import format_comparison
-from foilbench_py.benchmark.runner import run_matrix
-from foilbench_py.core.scenario import find_repo_root
+from foilbench_py.benchmark.runner import recovery_window, run_matrix
+from foilbench_py.cli import main
+from foilbench_py.core.scenario import find_repo_root, load_scenario
+from foilbench_py.solvers.factory import solver_ids
 
 
 def test_smoke_benchmark_emits_comparable_artifacts() -> None:
@@ -28,3 +32,21 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     assert "stable-fluids" in comparison
     assert "lbm-d2q9" in comparison
     assert "pic-flip" in comparison
+
+
+def test_describe_reports_python_capabilities(capsys: pytest.CaptureFixture[str]) -> None:
+    main(["describe", "--json"])
+    captured = capsys.readouterr()
+    description = cast(dict[str, object], json.loads(captured.out))
+    assert description["implementation"] == "python"
+    assert description["thin_3d"] is False
+    solvers = cast(list[dict[str, object]], description["solvers"])
+    assert tuple(entry["id"] for entry in solvers) == solver_ids()
+    assert all(entry["dimensions"] == [2] for entry in solvers)
+    assert all(entry["moving_boundary"] is True for entry in solvers)
+
+
+def test_default_scenario_declares_a_recovery_window() -> None:
+    root = find_repo_root(Path(__file__))
+    scenario = load_scenario(root / "scenarios" / "airfoil" / "default.json")
+    assert recovery_window(scenario) == (3.0, 18.0)
