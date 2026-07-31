@@ -25,6 +25,13 @@ class NacaFoil:
     def thickness(self) -> float:
         return int(self.spec.naca[2:]) / 100.0
 
+    @property
+    def maximum_radius(self) -> float:
+        vertical_extent = (
+            self.maximum_camber + 0.51 * self.thickness
+        ) * self.spec.chord
+        return float(np.hypot(0.75 * self.spec.chord, vertical_extent))
+
     def _to_local(self, points: PointCloud, angle_degrees: float) -> Float[np.ndarray, "point 2"]:
         angle = np.deg2rad(angle_degrees)
         cosine = np.cos(angle)

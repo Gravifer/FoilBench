@@ -56,6 +56,7 @@ class PicFlipSolver:
         self._reseeded_last_step = 0
         self._advance_count = 0
         self._population_interval = 8
+        self._swept_collisions_last_step = 0
 
     @property
     def blend(self) -> float:
@@ -228,12 +229,23 @@ class PicFlipSolver:
         self._projection_warning = "" if info == 0 else f"pressure CG returned {info}"
         return faces_to_cell(u, v)
 
-    def _advect_particles(self, control: ControlState, dt: float) -> None:
+    def _advect_particles(
+        self,
+        start_control: ControlState,
+        control: ControlState,
+        dt: float,
+    ) -> None:
         scenario, _geometry, positions, particle_velocity, grid_velocity, _solid = self._require()
+        start_positions = positions.copy()
         velocity_0 = self._grid_to_particle(grid_velocity, positions)
         midpoint = positions + 0.5 * dt * velocity_0
         velocity_mid = self._grid_to_particle(grid_velocity, midpoint)
         positions += dt * velocity_mid
+        self._swept_collisions_last_step += self._resolve_swept_particle_collisions(
+            start_positions,
+            start_control,
+            control,
+        )
         x0, x1 = scenario.domain.bounds[0]
         y0, y1 = scenario.domain.bounds[1]
         periodic_x = "x" in scenario.domain.periodic_axes
@@ -260,6 +272,83 @@ class PicFlipSolver:
             positions[escaped, 1] = self._rng.uniform(y0, y1, (count,))
             particle_velocity[escaped] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
         self._resolve_particle_collisions(control)
+
+    def _resolve_swept_particle_collisions(
+        self,
+        start_positions: PointCloud,
+        start_control: ControlState,
+        control: ControlState,
+    ) -> int:
+        scenario, geometry, positions, particle_velocity, _, _ = self._require()
+        path = positions - start_positions
+        pivot = np.asarray(scenario.foil.pivot[:2], dtype=positions.dtype)
+        path_length_squared = np.sum(path * path, axis=1)
+        projection = np.sum((pivot - start_positions) * path, axis=1) / np.maximum(
+            path_length_squared,
+            1.0e-12,
+        )
+        projection = np.clip(projection, 0.0, 1.0)
+        closest = start_positions + projection[:, None] * path
+        collision_margin = 0.05 * min(scenario.domain.dx, scenario.domain.dy)
+        candidate = np.linalg.norm(closest - pivot, axis=1) <= (
+            geometry.maximum_radius + collision_margin
+        )
+        candidate_indices = np.flatnonzero(candidate)
+        if candidate_indices.size == 0:
+            return 0
+
+        particle_travel = float(
+            np.max(np.linalg.norm(path[candidate_indices], axis=1))
+        )
+        wall_travel = (
+            abs(np.deg2rad(control.angle_degrees - start_control.angle_degrees))
+            * geometry.maximum_radius
+        )
+        spacing = 0.1 * min(scenario.domain.dx, scenario.domain.dy)
+        sample_count = int(
+            np.clip(
+                np.ceil((particle_travel + wall_travel) / max(spacing, 1.0e-12)),
+                2,
+                16,
+            )
+        )
+        hit = np.zeros(candidate_indices.size, dtype=np.bool_)
+        for sample in range(1, sample_count + 1):
+            fraction = sample / sample_count
+            angle = start_control.angle_degrees + fraction * (
+                control.angle_degrees - start_control.angle_degrees
+            )
+            sample_points = (
+                start_positions[candidate_indices]
+                + fraction * path[candidate_indices]
+            )
+            distance = geometry.signed_distance(sample_points, angle)
+            entering = (distance <= collision_margin) & ~hit
+            if not np.any(entering):
+                continue
+            selected = candidate_indices[entering]
+            inside_points = sample_points[entering]
+            inside_distance = distance[entering]
+            normal = geometry.normals(inside_points, angle)
+            resolved = inside_points - (
+                inside_distance[:, None] - collision_margin
+            ) * normal
+            positions[selected] = resolved
+            collision_control = ControlState(
+                start_control.time + fraction * (control.time - start_control.time),
+                angle,
+                control.angular_velocity_degrees,
+            )
+            wall = geometry.wall_velocity(resolved, collision_control)
+            relative = particle_velocity[selected] - wall
+            inward_speed = np.sum(relative * normal, axis=1)
+            into_wall = inward_speed < 0.0
+            relative[into_wall] -= (
+                inward_speed[into_wall, None] * normal[into_wall]
+            )
+            particle_velocity[selected] = wall + relative
+            hit[entering] = True
+        return int(np.count_nonzero(hit))
 
     def _resolve_particle_collisions(self, control: ControlState) -> None:
         _, geometry, positions, particle_velocity, _, _ = self._require()
@@ -303,19 +392,39 @@ class PicFlipSolver:
             abs(scenario.freestream[0]),
             1.0e-6,
         )
-        stable_dt = 0.6 * min(scenario.domain.dx, scenario.domain.dy) / max_speed
+        actual_angular_velocity = (
+            control.angle_degrees - self._control.angle_degrees
+        ) / target_dt
+        boundary_angular_velocity = (
+            actual_angular_velocity
+            if abs(actual_angular_velocity) > 1.0e-9
+            else control.angular_velocity_degrees
+        )
+        wall_speed = geometry.maximum_radius * max(
+            abs(np.deg2rad(control.angular_velocity_degrees)),
+            abs(np.deg2rad(actual_angular_velocity)),
+        )
+        transport_speed = max(max_speed, wall_speed)
+        stable_dt = (
+            0.6
+            * min(scenario.domain.dx, scenario.domain.dy)
+            / max(transport_speed, 1.0e-6)
+        )
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
         self._reseeded_last_step = 0
+        self._swept_collisions_last_step = 0
         for substep in range(substeps):
             fraction = (substep + 1) / substeps
             sub_control = ControlState(
                 self._time + fraction * target_dt,
                 self._control.angle_degrees
                 + fraction * (control.angle_degrees - self._control.angle_degrees),
-                control.angular_velocity_degrees,
+                boundary_angular_velocity,
             )
             self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+            start_control = self._control
+            self._resolve_particle_collisions(sub_control)
             transferred = self._particle_to_grid()
             pre_projection_grid = transferred.copy()
             self._grid_velocity = self._project(transferred, sub_control, dt)
@@ -329,7 +438,7 @@ class PicFlipSolver:
                 particle_velocity + delta
             )
             self._control = sub_control
-            self._advect_particles(sub_control, dt)
+            self._advect_particles(start_control, sub_control, dt)
             if self._settling_steps > 0:
                 self._settling_steps -= 1
         self._advance_count += 1
@@ -340,7 +449,7 @@ class PicFlipSolver:
             self._time, control.angle_degrees, control.angular_velocity_degrees
         )
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        return StepReport(target_dt, target_dt, substeps, max_speed, warnings)
+        return StepReport(target_dt, target_dt, substeps, transport_speed, warnings)
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _, grid_velocity, _ = self._require()
@@ -381,7 +490,7 @@ class PicFlipSolver:
         )
 
     def diagnostics(self) -> Diagnostics:
-        scenario, _, positions, _, grid_velocity, solid = self._require()
+        scenario, geometry, positions, _, grid_velocity, solid = self._require()
         counts = particle_cell_counts(positions, scenario.domain).reshape(
             scenario.domain.ny,
             scenario.domain.nx,
@@ -402,6 +511,15 @@ class PicFlipSolver:
             "p95_particles_per_fluid_cell": float(np.percentile(fluid_counts, 95.0)),
             "max_particles_per_fluid_cell": float(np.max(fluid_counts)),
             "reseeded_last_step": float(self._reseeded_last_step),
+            "swept_collisions_last_step": float(self._swept_collisions_last_step),
+            "particles_inside_solid": float(
+                np.count_nonzero(
+                    geometry.contains(
+                        positions,
+                        self._control.angle_degrees,
+                    )
+                )
+            ),
             "wake_width": wake_width(grid_velocity, scenario.domain, scenario.foil.pivot[0]),
             "recirculation_area": recirculation_area(
                 grid_velocity, scenario.domain, scenario.foil.pivot[0]

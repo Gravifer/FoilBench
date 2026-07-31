@@ -20,3 +20,12 @@ def test_outline_rotates_about_quarter_chord() -> None:
     rotated = foil.outline(20.0, samples=64)
     assert horizontal.shape == rotated.shape == (64, 2)
     assert not np.allclose(horizontal, rotated)
+
+
+def test_maximum_radius_bounds_rotated_outline() -> None:
+    foil = NacaFoil(FoilSpec("2412", 1.0, (0.0, 0.0)))
+    pivot = np.asarray(foil.spec.pivot[:2], dtype=np.float32)
+
+    for angle in (-30.0, 0.0, 27.0):
+        radius = np.linalg.norm(foil.outline(angle) - pivot, axis=1)
+        assert float(np.max(radius)) <= foil.maximum_radius
