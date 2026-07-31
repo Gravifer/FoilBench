@@ -1,6 +1,8 @@
 import numpy as np
 
 from foilbench_py.core.grid import (
+    advect_faces,
+    advect_faces_skew_rk2,
     advect_velocity,
     apply_domain_boundaries,
     cell_to_faces,
@@ -77,3 +79,27 @@ def test_limited_maccormack_stays_inside_local_component_bounds() -> None:
 
     assert np.all(advected >= lower - 1.0e-12)
     assert np.all(advected <= upper + 1.0e-12)
+
+
+def test_face_advection_preserves_constant_mac_velocity() -> None:
+    domain = DomainSpec(2, ((-2.0, 2.0), (-1.0, 1.0)), (32, 16))
+    u = np.full((domain.ny, domain.nx + 1), 1.25, dtype=np.float64)
+    v = np.full((domain.ny + 1, domain.nx), -0.2, dtype=np.float64)
+
+    advected_u, advected_v = advect_faces(u, v, 0.03, domain, maccormack=True)
+
+    np.testing.assert_allclose(advected_u, u)
+    np.testing.assert_allclose(advected_v, v)
+
+
+def test_skew_rk2_advection_preserves_constant_mac_velocity() -> None:
+    domain = DomainSpec(2, ((-2.0, 2.0), (-1.0, 1.0)), (32, 16))
+    u = np.full((domain.ny, domain.nx + 1), 1.25, dtype=np.float64)
+    v = np.full((domain.ny + 1, domain.nx), -0.2, dtype=np.float64)
+    solid = np.zeros((domain.ny, domain.nx), dtype=np.bool_)
+    wall = np.zeros((domain.ny, domain.nx, 2), dtype=np.float64)
+
+    advected_u, advected_v = advect_faces_skew_rk2(u, v, 0.03, domain, solid, wall, (1.25, -0.2))
+
+    np.testing.assert_allclose(advected_u, u)
+    np.testing.assert_allclose(advected_v, v)

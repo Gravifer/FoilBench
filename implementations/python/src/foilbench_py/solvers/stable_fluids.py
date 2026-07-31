@@ -4,10 +4,13 @@ import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
 from foilbench_py.core.grid import (
+    advect_faces,
+    advect_faces_skew_rk2,
     advect_velocity,
     cell_to_faces,
     faces_to_cell,
     implicit_diffuse,
+    implicit_diffuse_faces,
     project_faces,
 )
 from foilbench_py.core.interpolation import sample_vector
@@ -50,6 +53,8 @@ class StableFluidsSolver:
         self._time = 0.0
         self._projection_warning = ""
         self._maccormack = True
+        self._face_advection = False
+        self._skew_rk2 = False
 
     def initialize(self, scenario: Scenario, geometry: NacaFoil, seed: int) -> None:
         del seed
@@ -74,9 +79,10 @@ class StableFluidsSolver:
             velocity[:, :, 1] = 0.0
         self._u, self._v = cell_to_faces(velocity)
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
-        self._maccormack = (
-            str(scenario.solver_options.get("stable_advection", "maccormack")) == "maccormack"
-        )
+        advection = str(scenario.solver_options.get("stable_advection", "maccormack"))
+        self._maccormack = advection == "maccormack"
+        self._skew_rk2 = advection == "skew-rk2"
+        self._face_advection = bool(scenario.solver_options.get("stable_face_advection", False))
         self._apply_projection(max(scenario.output_dt, 1.0e-4))
 
     def _require(self) -> tuple[Scenario, NacaFoil, FaceVelocityX, FaceVelocityY, MaskField]:
@@ -131,6 +137,8 @@ class StableFluidsSolver:
         if not isinstance(cfl_option, (int, float)):
             raise TypeError("stable_cfl must be numeric")
         cfl = float(cfl_option)
+        if self._skew_rk2:
+            cfl = min(cfl, 0.4)
         stable_dt = cfl * min(scenario.domain.dx, scenario.domain.dy) / max_speed
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
         dt = target_dt / substeps
@@ -143,11 +151,36 @@ class StableFluidsSolver:
                 + fraction * (control.angle_degrees - self._control.angle_degrees),
                 control.angular_velocity_degrees,
             )
-            _, _, current_u, current_v, _ = self._require()
-            velocity = faces_to_cell(current_u, current_v)
-            velocity = advect_velocity(velocity, dt, scenario.domain, self._maccormack)
-            velocity = implicit_diffuse(velocity, viscosity, dt, scenario.domain)
-            self._u, self._v = cell_to_faces(velocity)
+            _, _, current_u, current_v, current_solid = self._require()
+            if self._skew_rk2:
+                self._u, self._v = advect_faces_skew_rk2(
+                    current_u,
+                    current_v,
+                    dt,
+                    scenario.domain,
+                    current_solid,
+                    self._wall_grid(sub_control),
+                    scenario.freestream,
+                )
+                self._u, self._v = implicit_diffuse_faces(
+                    self._u, self._v, viscosity, dt, scenario.domain
+                )
+            elif self._face_advection:
+                advected_u, advected_v = advect_faces(
+                    current_u,
+                    current_v,
+                    dt,
+                    scenario.domain,
+                    self._maccormack,
+                )
+                self._u, self._v = implicit_diffuse_faces(
+                    advected_u, advected_v, viscosity, dt, scenario.domain
+                )
+            else:
+                velocity = faces_to_cell(current_u, current_v)
+                velocity = advect_velocity(velocity, dt, scenario.domain, self._maccormack)
+                velocity = implicit_diffuse(velocity, viscosity, dt, scenario.domain)
+                self._u, self._v = cell_to_faces(velocity)
             self._control = sub_control
             self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
             self._apply_projection(dt)

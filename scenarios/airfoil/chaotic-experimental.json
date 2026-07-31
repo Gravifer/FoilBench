@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "naca2412-chaotic-experimental",
+  "dimension": 2,
+  "bounds": [[-1.5, 3.5], [-1.5, 1.5]],
+  "resolution": [160, 96],
+  "periodic_axes": [],
+  "reynolds": 10000.0,
+  "freestream": [1.0, 0.0],
+  "foil": {"naca": "2412", "chord": 1.0, "pivot": [0.0, 0.0]},
+  "controls": [
+    {"time": 0.0, "angle_degrees": 35.0},
+    {"time": 12.0, "angle_degrees": 35.0}
+  ],
+  "duration": 12.0,
+  "output_dt": 0.016666666666666666,
+  "precision": "float32",
+  "seed": 0,
+  "solver_options": {
+    "pic_flip_blend": 0.95,
+    "pic_cfl": 0.75,
+    "pic_population_interval": 8,
+    "pressure_tolerance": 0.001,
+    "stable_advection": "skew-rk2",
+    "stable_cfl": 0.4
+  }
+}
