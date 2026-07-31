@@ -24,6 +24,7 @@
   "seed": 0,
   "solver_options": {
     "pic_flip_blend": 0.95,
+    "pic_cfl": 0.75,
     "stable_advection": "maccormack"
   }
 }

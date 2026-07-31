@@ -18,6 +18,7 @@
   "seed": 0,
   "solver_options": {
     "pic_flip_blend": 0.95,
+    "pic_cfl": 0.75,
     "pic_population_interval": 8,
     "pressure_tolerance": 0.001,
     "stable_advection": "maccormack",

@@ -28,7 +28,13 @@ from foilbench_py.core.particle_population import (
 )
 from foilbench_py.core.rng import PCG32
 from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
-from foilbench_py.types import MaskField, ParticleVelocity, PointCloud, VelocityField
+from foilbench_py.types import (
+    CoordinateField,
+    MaskField,
+    ParticleVelocity,
+    PointCloud,
+    VelocityField,
+)
 
 
 class PicFlipSolver:
@@ -47,6 +53,8 @@ class PicFlipSolver:
         self._particle_velocity: ParticleVelocity | None = None
         self._grid_velocity: VelocityField | None = None
         self._solid: MaskField | None = None
+        self._centers: CoordinateField | None = None
+        self._solid_angle: float | None = None
         self._control = ControlState(0.0, 0.0, 0.0)
         self._time = 0.0
         self._blend = 0.95
@@ -56,6 +64,7 @@ class PicFlipSolver:
         self._reseeded_last_step = 0
         self._advance_count = 0
         self._population_interval = 8
+        self._cfl = 0.75
         self._swept_collisions_last_step = 0
 
     @property
@@ -104,13 +113,21 @@ class PicFlipSolver:
         if configured_interval < 1:
             raise ValueError("pic_population_interval must be positive")
         self._population_interval = configured_interval
+        configured_cfl = scenario.solver_options.get("pic_cfl", 0.75)
+        if not isinstance(configured_cfl, (int, float)):
+            raise TypeError("pic_cfl must be numeric")
+        if not 0.0 < float(configured_cfl) <= 1.0:
+            raise ValueError("pic_cfl must be in (0, 1]")
+        self._cfl = float(configured_cfl)
         self._advance_count = 0
         self._rng = PCG32(seed, stream=71)
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
+        self._solid_angle = self._control.angle_degrees
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
         centers = cell_centers(scenario.domain)
+        self._centers = centers
         if initial == "taylor-green":
             velocity[:, :, 0] = np.sin(centers[:, :, 0]) * np.cos(centers[:, :, 1])
             velocity[:, :, 1] = -np.cos(centers[:, :, 0]) * np.sin(centers[:, :, 1])
@@ -206,7 +223,9 @@ class PicFlipSolver:
     def _project(self, velocity: VelocityField, control: ControlState, dt: float) -> VelocityField:
         scenario, geometry, _, _, _, solid = self._require()
         u, v = cell_to_faces(velocity)
-        points = cell_centers(scenario.domain).reshape(-1, 2)
+        if self._centers is None:
+            raise RuntimeError("PIC/FLIP grid cache has not been initialized")
+        points = self._centers.reshape(-1, 2)
         wall = geometry.wall_velocity(points, control).reshape(
             scenario.domain.ny, scenario.domain.nx, 2
         )
@@ -234,10 +253,10 @@ class PicFlipSolver:
         start_control: ControlState,
         control: ControlState,
         dt: float,
+        velocity_0: ParticleVelocity,
     ) -> None:
         scenario, _geometry, positions, particle_velocity, grid_velocity, _solid = self._require()
         start_positions = positions.copy()
-        velocity_0 = self._grid_to_particle(grid_velocity, positions)
         midpoint = positions + 0.5 * dt * velocity_0
         velocity_mid = self._grid_to_particle(grid_velocity, midpoint)
         positions += dt * velocity_mid
@@ -406,7 +425,7 @@ class PicFlipSolver:
         )
         transport_speed = max(max_speed, wall_speed)
         stable_dt = (
-            0.6
+            self._cfl
             * min(scenario.domain.dx, scenario.domain.dy)
             / max(transport_speed, 1.0e-6)
         )
@@ -422,7 +441,9 @@ class PicFlipSolver:
                 + fraction * (control.angle_degrees - self._control.angle_degrees),
                 boundary_angular_velocity,
             )
-            self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+            if self._solid_angle != sub_control.angle_degrees:
+                self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+                self._solid_angle = sub_control.angle_degrees
             start_control = self._control
             self._resolve_particle_collisions(sub_control)
             transferred = self._particle_to_grid()
@@ -438,7 +459,7 @@ class PicFlipSolver:
                 particle_velocity + delta
             )
             self._control = sub_control
-            self._advect_particles(start_control, sub_control, dt)
+            self._advect_particles(start_control, sub_control, dt, pic_velocity)
             if self._settling_steps > 0:
                 self._settling_steps -= 1
         self._advance_count += 1
@@ -480,6 +501,7 @@ class PicFlipSolver:
         self._time = state.time
         self._control = control
         self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+        self._solid_angle = control.angle_degrees
         self._seed_particles(self._grid_velocity)
         self._settling_steps = 1
         return ImportReport(

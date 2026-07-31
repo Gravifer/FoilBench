@@ -165,3 +165,17 @@ def test_pic_flip_large_angle_change_uses_wall_cfl_and_swept_collisions(
     assert diagnostics["swept_collisions_last_step"] > 0.0
     assert diagnostics["particles_inside_solid"] == 0.0
     assert np.isfinite(solver.export_state().velocity).all()
+
+
+def test_pic_flip_rejects_an_unsafe_configured_cfl(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    scenario = replace(
+        scenario,
+        solver_options={**scenario.solver_options, "pic_cfl": 1.01},
+    )
+    solver = create_solver("pic-flip")
+
+    with pytest.raises(ValueError, match="pic_cfl"):
+        solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
