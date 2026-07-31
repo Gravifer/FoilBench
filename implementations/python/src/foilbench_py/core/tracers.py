@@ -83,6 +83,17 @@ class TracerSystem:
             self.ages[:] = self.rng.random(self.ages.shape) * self.lifetimes
         return self.mode
 
+    def reseed_all(self, angle_degrees: float) -> None:
+        """Redistribute every visible tracer and clear its path memory."""
+        selected = np.ones(self.positions.shape[0], dtype=np.bool_)
+        self._respawn(
+            selected,
+            throughout_domain=True,
+            angle_degrees=angle_degrees,
+        )
+        self.ages[:] = self.rng.random(self.ages.shape) * self.lifetimes
+        self.history_index = 0
+
     def update(self, solver: FlowSolver, control: ControlState, dt: float) -> None:
         velocity_0 = solver.sample_velocity(self.positions)
         midpoint = self.positions + 0.5 * dt * velocity_0

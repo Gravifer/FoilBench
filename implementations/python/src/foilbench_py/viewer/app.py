@@ -141,6 +141,7 @@ class ViewerModel:
         self.time = 0.0
         self.angle_override = current_angle
         self.previous_angle = current_angle
+        self.tracers.reseed_all(current_angle)
         self.last_report = None
         self.diagnostic_elapsed = 0.0
         self.solver_steps_per_second = 0.0
