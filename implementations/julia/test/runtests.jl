@@ -322,6 +322,48 @@ end
     @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
 end
 
+@testset "D2Q9 TRT kernels and scaling" begin
+    for T in (Float32, Float64), shape in ((5, 4), (11, 7))
+        density = fill(T(1.07), shape)
+        velocity = zeros(T, shape..., 2)
+        for j in axes(density, 2), i in axes(density, 1)
+            velocity[i, j, 1] = T(0.03) * sin(T(i))
+            velocity[i, j, 2] = T(0.02) * cos(T(j))
+        end
+        populations = lbm_equilibrium(density, velocity)
+        recovered_density, recovered_velocity = lbm_macroscopic(populations)
+        tolerance = T === Float32 ? 2.0f-6 : 2.0e-14
+        @test size(populations) == (9, shape...)
+        @test recovered_density ≈ density atol = tolerance
+        @test recovered_velocity ≈ velocity atol = tolerance
+
+        collision_density, post = lbm_trt_collision(populations, T(1.3), T(0.8))
+        @test collision_density ≈ density atol = tolerance
+        @test post ≈ populations atol = tolerance
+
+        disturbed = copy(populations)
+        disturbed[2, 3, 2] += T(0.005)
+        disturbed[4, 3, 2] -= T(0.005)
+        before_density, before_velocity = lbm_macroscopic(disturbed)
+        _, relaxed = lbm_trt_collision(disturbed, T(1.1), T(0.9))
+        after_density, after_velocity = lbm_macroscopic(relaxed)
+        @test after_density ≈ before_density atol = tolerance
+        @test after_velocity ≈ before_velocity atol = 4 * tolerance
+        @test all(isfinite, relaxed)
+    end
+
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (40, 24),
+    )
+    scaling = lbm_scaling(scenario)
+    @test scaling.lattice_speed <= 0.08f0
+    @test 0.0f0 < scaling.omega_plus < 2.0f0
+    @test 0.0f0 < scaling.omega_minus < 2.0f0
+    @test scaling.effective_reynolds <= scenario.reynolds
+    @test_throws ArgumentError lbm_scaling(scenario, 0)
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
