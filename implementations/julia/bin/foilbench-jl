@@ -1,0 +1,38 @@
+#!/usr/bin/env julia
+
+using FoilBenchJulia
+
+function usage()
+    println("Usage: foilbench-jl view SCENARIO [--solver SOLVER_ID]")
+end
+
+function main(arguments::Vector{String})
+    isempty(arguments) && (usage(); return 2)
+    first(arguments) in ("-h", "--help") && (usage(); return 0)
+    command = first(arguments)
+    command == "view" || begin
+        println(stderr, "Only the early Phase 2A 'view' command is available currently.")
+        usage()
+        return 2
+    end
+    length(arguments) >= 2 || begin
+        println(stderr, "view requires a scenario path")
+        usage()
+        return 2
+    end
+    scenario_path = arguments[2]
+    solver_id = "stable-fluids"
+    if length(arguments) > 2
+        length(arguments) == 4 && arguments[3] == "--solver" || begin
+            println(stderr, "unexpected view arguments")
+            usage()
+            return 2
+        end
+        solver_id = arguments[4]
+    end
+    include(joinpath(@__DIR__, "..", "src", "viewer", "glmakie_app.jl"))
+    FoilBenchGLMakie.run_viewer(scenario_path; solver_id)
+    return 0
+end
+
+exit(main(ARGS))

@@ -17,6 +17,8 @@ include("projection.jl")
 include("advection.jl")
 include("metrics.jl")
 include("stable_fluids.jl")
+include("viewer/model.jl")
+include("viewer/worker.jl")
 
 export AbstractFlowSolver
 export CanonicalFlowState
@@ -91,5 +93,41 @@ export reference_speed
 export vorticity
 export wake_width
 export wall_velocity_grid
+export AdjustReynoldsCommand
+export AdjustBlendCommand
+export ReleaseAngleCommand
+export ResetReynoldsCommand
+export ResetViewerCommand
+export SetAngleCommand
+export StopViewerCommand
+export SwitchSolverCommand
+export ToggleCropCommand
+export TogglePauseCommand
+export ToggleTracerCommand
+export ToggleVorticityCommand
+export TracerState
+export ViewerModel
+export ViewerSnapshot
+export ViewerWorker
+export advance_tracers!
+export adjust_reynolds!
+export adjust_blend!
+export close!
+export enqueue!
+export foil_outline
+export latest_snapshot
+export path_segments
+export release_angle!
+export set_angle!
+export snapshot
+export start!
+export toggle_crop!
+export toggle_pause!
+export toggle_tracer_mode!
+export toggle_vorticity!
+export update!
+export reset_reynolds!
+export reset_viewer!
+export switch_solver!
 
 end

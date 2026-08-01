@@ -12,5 +12,19 @@ julia --project=implementations/julia implementations/julia/benchmark/benchmarks
 ```
 
 Compilation and first-call costs will be reported separately from steady-state
-solver timings. GLMakie is deliberately deferred until the headless solver
-contracts and fidelity cases are established.
+solver timings.
+
+The first native GLMakie viewer is available for Stable Fluids:
+
+```powershell
+julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view scenarios/airfoil/default.json
+```
+
+Use the mouse to drag the foil. The early viewer already supports Space
+pause, `R` reset, `-`/`+`/`0` Reynolds control, `V` vorticity, `T` tracer
+mode, and `C` diagnostic cropping. Keys `2`, `3`, `[` and `]` visibly report
+that LBM and PIC/FLIP are not yet available; they will be enabled as those
+native Julia solvers land. Run the viewer with at least two Julia threads so
+the GLMakie render loop remains independent from solver work. GLMakie has its
+own committed `viewer/` environment so solver-only tests and benchmarks do not
+pay its dependency or precompile cost.

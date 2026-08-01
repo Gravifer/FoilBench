@@ -31,6 +31,16 @@ function resized_scenario(scenario::Scenario{D,T}, resolution::NTuple{D,Int}) wh
     )
 end
 
+function wait_for_snapshot(worker::ViewerWorker; timeout::Float64 = 10.0)
+    deadline = time() + timeout
+    while time() < deadline
+        selected = latest_snapshot(worker)
+        selected === nothing || return selected
+        sleep(0.01)
+    end
+    error("timed out waiting for viewer snapshot")
+end
+
 @testset "PCG32 shared vectors" begin
     document = JSON3.read(read(joinpath(FIXTURES, "pcg32.json"), String))
     for case in document.cases
@@ -345,4 +355,56 @@ end
     )
     @test chaotic_report.advanced_dt == chaotic.output_dt
     @test all(isfinite, export_state(chaotic_solver).velocity)
+end
+
+@testset "Headless viewer model and worker" begin
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
+        (24, 12),
+    )
+    model = ViewerModel(scenario; tracer_count = 32, history_length = 5)
+    initial = snapshot(model)
+    @test initial.time == 0.0
+    @test size(initial.tracer_positions) == (2, 32)
+    @test size(initial.path_segments) == (2, 2 * 32 * 4)
+    @test size(foil_outline(model.geometry, initial.angle_degrees; samples = 32)) == (2, 32)
+    updated = update!(model)
+    @test updated.time == scenario.output_dt
+    @test all(isfinite, updated.tracer_positions)
+    @test all(isfinite, updated.path_segments)
+
+    set_angle!(model, 12.0, 0.1)
+    @test model.manual_angle == 12.0
+    @test model.angular_velocity == 120.0
+    release_angle!(model)
+    @test model.angular_velocity == 0.0
+    adjust_reynolds!(model, 1.0)
+    @test reynolds(model.solver) ≈ 10 * scenario.reynolds
+    @test model.playback_rate ≈ 1.5
+    reset_reynolds!(model)
+    @test reynolds(model.solver) == scenario.reynolds
+    @test toggle_tracer_mode!(model) == :material
+    @test toggle_vorticity!(model)
+    @test toggle_pause!(model)
+    @test update!(model).time == updated.time
+    @test !switch_solver!(model, "lbm-d2q9")
+    @test occursin("not available", model.status_message)
+    @test !adjust_blend!(model, 0.05)
+    reset_viewer!(model)
+    @test diagnostics(model.solver).values["time"] == 0.0
+    @test model.status_message == "reset"
+
+    worker_model = ViewerModel(scenario; tracer_count = 16, history_length = 3)
+    worker = start!(ViewerWorker(worker_model))
+    first_snapshot = wait_for_snapshot(worker)
+    @test first_snapshot.solver_id == "stable-fluids"
+    enqueue!(worker, TogglePauseCommand())
+    paused_snapshot = wait_for_snapshot(worker)
+    deadline = time() + 5.0
+    while !paused_snapshot.paused && time() < deadline
+        paused_snapshot = wait_for_snapshot(worker)
+    end
+    @test paused_snapshot.paused
+    close!(worker)
+    @test worker.task === nothing
 end

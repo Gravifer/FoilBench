@@ -35,3 +35,34 @@ function wall_velocity_grid(
     end
     return output
 end
+
+function foil_outline(
+    foil::NacaFoil{2,T},
+    angle_degrees::Real;
+    samples::Int = 256,
+) where {T}
+    samples >= 8 || throw(ArgumentError("foil outline requires at least eight samples"))
+    half_samples = samples ÷ 2
+    beta = range(zero(T), T(pi); length = half_samples)
+    x = @. foil.spec.chord * T(0.5) * (one(T) - cos(beta))
+    upper, lower = surfaces(foil, collect(x))
+    local_points = Matrix{T}(undef, 2, 2 * half_samples)
+    for index in 1:half_samples
+        local_points[1, index] = x[index]
+        local_points[2, index] = upper[index]
+        reverse_index = half_samples - index + 1
+        local_points[1, half_samples + index] = x[reverse_index]
+        local_points[2, half_samples + index] = lower[reverse_index]
+    end
+    angle = T(deg2rad(angle_degrees))
+    cosine = cos(angle)
+    sine = sin(angle)
+    output = similar(local_points)
+    for index in axes(local_points, 2)
+        shifted_x = local_points[1, index] - T(0.25) * foil.spec.chord
+        local_y = local_points[2, index]
+        output[1, index] = cosine * shifted_x - sine * local_y + foil.spec.pivot[1]
+        output[2, index] = sine * shifted_x + cosine * local_y + foil.spec.pivot[2]
+    end
+    return output
+end
