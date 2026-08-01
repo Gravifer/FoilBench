@@ -364,6 +364,52 @@ end
     @test_throws ArgumentError lbm_scaling(scenario, 0)
 end
 
+@testset "Quadratic PIC/FLIP transfers" begin
+    for T in (Float32, Float64), shape in ((5, 4), (8, 6))
+        domain = DomainSpec(
+            ((T(-1.0), T(1.0)), (T(-0.75), T(0.75))),
+            shape,
+            (),
+        )
+        grid = Array{T,3}(undef, shape..., 2)
+        for component in 1:2, j in axes(grid, 2), i in axes(grid, 1)
+            grid[i, j, component] = T(i + 3 * j + 7 * component) / T(17)
+        end
+        positions = T[
+            -0.99 -0.4 0.97
+            -0.74 0.11 0.73
+        ]
+        gathered = grid_to_particle(grid, positions, domain)
+        @test size(gathered) == size(positions)
+        @test all(isfinite, gathered)
+
+        constant_grid = zeros(T, shape..., 2)
+        constant_grid[:, :, 1] .= T(1.25)
+        constant_grid[:, :, 2] .= T(-0.375)
+        constant = grid_to_particle(constant_grid, positions, domain)
+        tolerance = T === Float32 ? 1.0f-6 : 1.0e-13
+        @test constant ≈ repeat(T[1.25, -0.375], 1, 3) atol = tolerance
+
+        particle_velocity = repeat(T[0.75, -0.25], 1, 3)
+        scattered = particle_to_grid(positions, particle_velocity, domain, SVector{2,T}(0, 0))
+        @test all(isfinite, scattered)
+        occupied = particle_cell_counts(positions, domain)
+        @test sum(occupied) == 3
+        @test length(particle_cell_ids(positions, domain)) == 3
+    end
+
+    periodic = DomainSpec(((-1.0f0, 1.0f0), (-0.75f0, 0.75f0)), (8, 6), (:x, :y))
+    periodic_grid = reshape(Float32.(1:(8 * 6 * 2)), 8, 6, 2)
+    positions = Float32[
+        -1.07 0.93 -0.57 -0.57
+        -0.44 -0.44 -0.84 0.66
+    ]
+    gathered = grid_to_particle(periodic_grid, positions, periodic)
+    @test gathered[:, 1] ≈ gathered[:, 2] atol = 1.0f-5
+    @test gathered[:, 3] ≈ gathered[:, 4] atol = 1.0f-5
+    @test_throws DimensionMismatch grid_to_particle(periodic_grid, zeros(Float32, 3, 2), periodic)
+end
+
 @testset "D2Q9 LBM solver contract" begin
     uniform = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
