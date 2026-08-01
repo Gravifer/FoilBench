@@ -56,6 +56,23 @@ The canonical state uses semantic axes `z y x component`. Two-dimensional
 states store a singleton `z` axis. Private pressure history, lattice
 populations, and solver particles are deliberately excluded.
 
+## Julia data flow
+
+Julia is an independent peer implementation rather than a Python extension.
+Its solvers use Julia-native x-major arrays internally and transpose only at
+the canonical artifact boundary. Stable Fluids, D2Q9 TRT LBM, and blended
+PIC/FLIP implement the same typed behavioral contract while retaining private
+native state.
+
+The GLMakie frontend owns a simulation `Task` and consumes immutable,
+latest-only snapshots. It keeps visible tracers and path histories outside the
+solver so all six directed warm swaps preserve the presentation. A failed
+import falls back atomically to fresh solver state at the visible foil pose;
+coverage-aware tracer replenishment repairs only depleted regions. Repeated
+rapid-motion failures temporarily suppress moving-wall angular velocity while
+continuing to track the pointer, then restore normal coupling after release or
+sustained gentle motion.
+
 ## Viewer GPU smoke test
 
 The automated viewer tests exercise state, controls, immutable worker
@@ -71,6 +88,20 @@ diagnostic overlay render. Drag the foil, pause and reset, select each solver
 with `1`/`2`/`3`, and adjust PIC/FLIP blending with `[`/`]`. Switching must
 retain visible tracer paths and show the conversion transient without a
 crossfade.
+
+For the Julia viewer, run:
+
+```powershell
+julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view scenarios/airfoil/default.json
+```
+
+Confirm the same three solver selections and persistent tracer histories,
+then exercise Reynolds control, PIC/FLIP blending, vorticity, tracer mode, and
+diagnostic cropping. Violent dragging followed by a warm swap must produce a
+bounded recovery or a deliberate pause rather than a frozen solver loop. The
+headless suite covers snapshot publication, controls, switching, and recovery;
+creating and visually inspecting the platform OpenGL context remains this
+documented manual smoke test.
 
 Use `-` and `+` to change the requested Reynolds number in quarter-decade
 steps; `0` restores the scenario value. The selection changes solver viscosity

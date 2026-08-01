@@ -1,7 +1,9 @@
 # Benchmark methodology
 
 The latest local Phase 1 interactive snapshot is recorded in
-[benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md).
+[benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Julia emits
+the same result-schema fields and canonical snapshot semantics for offline
+cross-language comparison.
 
 Runs are matched by physical domain, resolution, Reynolds number, control
 history, precision, seed, and simulated duration. Each solver may choose the
@@ -13,7 +15,9 @@ visible in `initialization_seconds`, while first-use compilation is visible in
 `cold_step_seconds`. It then creates a fresh solver after process-global kernels
 are warm, so the measured physical run starts at scenario time zero. Timed
 steady-state regions exclude schema validation, serialization, viewer
-rendering, wake-probe sampling, and Jaxtyping runtime checks.
+rendering, and wake-probe sampling. Python also excludes Jaxtyping runtime
+checks. Julia reports package startup/compilation, initialization, its first
+cold step, and warmed steady-state work separately.
 
 Reported performance includes median and p95 step latency, simulated seconds
 per wall second, update throughput, peak resident memory, and internal

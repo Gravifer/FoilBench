@@ -3,8 +3,8 @@
 FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
 is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
-2A is underway with an independent Julia package; TypeScript follows in Phase
-2B, and Rust/WASM in Phase 3.
+2A is complete with an independent Julia implementation; TypeScript follows
+in Phase 2B, and Rust/WASM in Phase 3.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -28,12 +28,16 @@ uv run --project implementations/python pytest -c implementations/python/pyproje
 
 ## Julia quick start
 
-The Phase 2A package currently implements the shared scenario, geometry, RNG,
-and canonical-state contracts. From the repository root:
+The Phase 2A package independently implements the three solvers, result and
+canonical-state artifacts, benchmarks, graceful warm switching, and a native
+GLMakie viewer. From the repository root:
 
 ```powershell
 julia --project=implementations/julia -e "using Pkg; Pkg.instantiate()"
 julia --project=implementations/julia -e "using Pkg; Pkg.test()"
+julia --project=implementations/julia implementations/julia/bin/foilbench-jl describe
+julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view scenarios/airfoil/default.json
+julia --project=implementations/julia implementations/julia/bin/foilbench-jl bench benchmark-matrices/smoke.json
 ```
 
 Run every implemented language's native checks through the root convenience
@@ -53,6 +57,7 @@ git show f71d1fb:particle_airfoil_stall.py
 ```
 
 See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-acceptance.md),
+[Phase 2A acceptance](docs/phase2a-acceptance.md),
 [benchmark methodology](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
