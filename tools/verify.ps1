@@ -58,6 +58,13 @@ try {
             '--project=implementations/julia',
             '-e', 'using Pkg; Pkg.test()'
         )
+
+        Write-Host '==> Julia: viewer environment load'
+        Invoke-Checked julia @(
+            '--startup-file=no', '--history-file=no',
+            '--project=implementations/julia/viewer',
+            '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); println("Julia viewer environment loaded")'
+        )
     }
 }
 finally {
