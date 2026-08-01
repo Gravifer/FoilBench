@@ -9,6 +9,24 @@ in Phase 2B, and Rust/WASM in Phase 3.
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
 
+## Command shortcuts
+
+With [`just`](https://just.systems/) installed, run `just` at the repository
+root to list the available shortcuts. Common commands are:
+
+```powershell
+just setup
+just py-view
+just jl-view
+just py-chaos
+just verify
+```
+
+Viewer and benchmark recipes accept optional paths and solver IDs; for
+example, `just jl-view scenarios/airfoil/fixed-stall.json pic-flip` and
+`just py-bench benchmark-matrices/smoke.json`. The full commands remain
+documented below and continue to work directly.
+
 ## Python quick start
 
 ```powershell
