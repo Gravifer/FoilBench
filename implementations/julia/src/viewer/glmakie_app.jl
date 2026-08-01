@@ -116,6 +116,7 @@ function run_viewer(
     )
 
     last_crop = Ref(initial.crop_enabled)
+    last_revision = Ref(initial.revision)
     function apply_snapshot!(selected)
         tracer_data[] = _points(selected.tracer_positions)
         path_data[] = _points(selected.path_segments)
@@ -132,7 +133,10 @@ function run_viewer(
 
     on(events(figure).tick) do _
         selected = latest_snapshot(worker)
-        selected === nothing || apply_snapshot!(selected)
+        if selected !== nothing && selected.revision != last_revision[]
+            apply_snapshot!(selected)
+            last_revision[] = selected.revision
+        end
         return Consume(false)
     end
 
@@ -172,11 +176,9 @@ function run_viewer(
     end
 
     dragging = Ref(false)
-    last_drag_time = Ref(time())
     on(events(figure).mousebutton, priority = 2) do event
         if event.button == Mouse.left && event.action == Mouse.press
             dragging[] = true
-            last_drag_time[] = time()
             return Consume(true)
         elseif event.button == Mouse.left && event.action == Mouse.release
             dragging[] = false
@@ -190,10 +192,8 @@ function run_viewer(
         world_x, world_y = mouseposition(axis)
         pivot = scenario.foil.pivot
         angle = rad2deg(atan(world_y - pivot[2], world_x - pivot[1]))
-        current_time = time()
-        elapsed = max(current_time - last_drag_time[], 1.0e-4)
-        last_drag_time[] = current_time
-        enqueue!(worker, SetAngleCommand(T(angle), T(elapsed)))
+        timestamp = time_ns() / 1.0e9
+        enqueue!(worker, SetAngleCommand(T(angle), timestamp))
         return Consume(true)
     end
 

@@ -3,6 +3,7 @@ module FoilBenchJulia
 using JSON3
 using LinearAlgebra
 using NPZ
+using Printf
 using StaticArrays
 using Dates
 
@@ -28,6 +29,8 @@ include("viewer/model.jl")
 include("viewer/worker.jl")
 
 export AbstractFlowSolver
+export ImportOutcome
+export accepted
 export CanonicalFlowState
 export ControlKeyframe
 export ControlState
@@ -132,6 +135,7 @@ export TogglePauseCommand
 export ToggleTracerCommand
 export ToggleVorticityCommand
 export TracerState
+export PresentationState
 export ViewerModel
 export ViewerSnapshot
 export ViewerWorker
@@ -159,6 +163,8 @@ export close!
 export enqueue!
 export foil_outline
 export latest_snapshot
+export wait_for_command
+export wait_for_revision
 export path_segments
 export reseed_tracers!
 export rapid_drag_attempted

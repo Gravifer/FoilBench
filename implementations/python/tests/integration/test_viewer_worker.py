@@ -34,6 +34,10 @@ def test_worker_publishes_detached_snapshots_and_processes_paused_commands(
         assert tuned.simulation_time == paused_time
         assert "adv=skew-rk2" in tuned.status
 
+        cropped = worker.wait_for_command(worker.toggle_crop())
+        assert cropped.simulation_time == paused_time
+        assert cropped.crop_enabled == model.crop_enabled
+
         switched = worker.wait_for_command(worker.switch_solver("pic-flip"))
         assert switched.simulation_time == paused_time
         assert "PIC/FLIP" in switched.status
@@ -95,7 +99,7 @@ def test_worker_recovers_once_from_failed_advance(
         recovered = worker.wait_for_revision(1)
         assert recovered.failure is None
         assert recovered.angle_degrees == -30.0
-        assert "recovered=fresh restart after FloatingPointError" in recovered.status
+        assert "recovered=fresh restart reason=nonfinite_state" in recovered.status
 
         resumed = worker.wait_for_revision(2)
         assert resumed.failure is None
@@ -224,7 +228,7 @@ def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
         worker.close()
 
 
-def test_worker_recovers_stable_fluids_from_unresolved_wall_cfl(
+def test_worker_advances_stable_fluids_with_capped_rapid_drag(
     scenario_factory: ScenarioFactory,
 ) -> None:
     scenario = scenario_factory(resolution=(64, 32))
@@ -234,14 +238,10 @@ def test_worker_recovers_stable_fluids_from_unresolved_wall_cfl(
     worker = SimulationWorker(model, maximum_steps_per_second=10.0)
     worker.start()
     try:
-        recovered = worker.wait_for_revision(1, timeout=10.0)
-        assert recovered.failure is None
-        assert recovered.angle_degrees == -30.0
-        assert np.isfinite(recovered.positions).all()
-        assert "recovered=fresh restart after FloatingPointError" in recovered.status
-
-        resumed = worker.wait_for_revision(2, timeout=10.0)
-        assert resumed.failure is None
-        assert resumed.simulation_time > 0.0
+        advanced = worker.wait_for_revision(2, timeout=10.0)
+        assert advanced.failure is None
+        assert advanced.angle_degrees == -30.0
+        assert np.isfinite(advanced.positions).all()
+        assert advanced.simulation_time > 0.0
     finally:
         worker.close()

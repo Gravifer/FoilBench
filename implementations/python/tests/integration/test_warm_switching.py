@@ -7,6 +7,7 @@ from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import ControlState
 from foilbench_py.core.switching import SolverManager
 from foilbench_py.solvers.factory import create_solver, solver_ids
+from foilbench_py.solvers.lbm import LBMSolver
 from tests.helpers import ScenarioFactory
 
 
@@ -26,7 +27,10 @@ def test_all_directed_warm_switches(
     manager = SolverManager(create_solver, scenario, geometry, source)
     control = type(scenario.control_at(0.01))(0.01, angle, 0.0)
     manager.solver.advance(control, 0.01)
-    report = manager.switch(destination, control)
+    outcome = manager.switch(destination, control)
+    assert outcome.accepted
+    assert outcome.report is not None
+    report = outcome.report
     state = manager.solver.export_state()
     assert report.source_solver == source
     assert report.destination_solver == destination
@@ -50,6 +54,33 @@ def test_stable_to_lbm_warm_switch_stays_finite(
 
     state = manager.solver.export_state()
     assert np.isfinite(state.velocity).all()
+
+
+def test_warm_import_rejection_is_structured_and_retains_source(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    manager = SolverManager(
+        create_solver,
+        scenario,
+        NacaFoil(scenario.foil),
+        "stable-fluids",
+    )
+
+    def reject_import(
+        _solver: LBMSolver,
+        _state: object,
+        _control: ControlState,
+    ) -> object:
+        raise ValueError("warm import requires the same 2D resolution")
+
+    monkeypatch.setattr(LBMSolver, "import_state", reject_import)
+    outcome = manager.switch("lbm-d2q9", scenario.control_at(scenario.output_dt))
+
+    assert not outcome.accepted
+    assert outcome.reason == "incompatible_domain"
+    assert manager.solver.info.id == "stable-fluids"
 
 
 def test_runtime_reynolds_survives_warm_switch_and_restart(

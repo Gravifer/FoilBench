@@ -11,6 +11,8 @@ mutable struct TracerState{T<:AbstractFloat}
 end
 
 struct ViewerSnapshot{T<:AbstractFloat}
+    revision::UInt64
+    applied_command::UInt64
     time::T
     angle_degrees::T
     solver_id::String
@@ -247,14 +249,25 @@ function reseed_tracers!(
     return size(tracers.positions, 2)
 end
 
+mutable struct PresentationState{T<:AbstractFloat}
+    vorticity_visible::Bool
+    crop_enabled::Bool
+    tracer_mode::Symbol
+    diagnostic_interval::T
+    diagnostic_elapsed::T
+    diagnostics::Diagnostics
+    velocity::Array{T,3}
+    vorticity::Matrix{T}
+    diagnostic_revision::UInt64
+end
+
 mutable struct ViewerModel{T<:AbstractFloat}
     scenario::Scenario{2,T}
     geometry::NacaFoil{2,T}
     solver::AbstractFlowSolver{2,T}
     tracers::TracerState{T}
+    presentation::PresentationState{T}
     paused::Bool
-    vorticity_visible::Bool
-    crop_enabled::Bool
     manual_angle::Union{Nothing,T}
     angular_velocity::T
     playback_rate::T
@@ -271,6 +284,9 @@ mutable struct ViewerModel{T<:AbstractFloat}
     pose_only_calm_steps::Int
     last_requested_angular_velocity::T
     recovery_count::Int
+    pose_samples::Vector{Tuple{Float64,T}}
+    metrics_warming::Bool
+    warm_validation_pending::Bool
 end
 
 function _create_solver(::Type{T}, solver_id::AbstractString) where {T<:AbstractFloat}
@@ -306,14 +322,24 @@ function ViewerModel(
         count = selected_count,
         history_length,
     )
-    return ViewerModel(
+    presentation = PresentationState(
+        true,
+        crop_available && crop_enabled,
+        tracers.mode,
+        T(0.1),
+        zero(T),
+        Diagnostics(Dict{String,Float64}(), String[]),
+        zeros(T, nx(scenario.domain), ny(scenario.domain), 2),
+        zeros(T, nx(scenario.domain), ny(scenario.domain)),
+        UInt64(0),
+    )
+    model = ViewerModel(
         scenario,
         geometry,
         solver,
         tracers,
+        presentation,
         false,
-        true,
-        crop_available && crop_enabled,
         nothing,
         zero(T),
         one(T),
@@ -330,7 +356,12 @@ function ViewerModel(
         0,
         zero(T),
         0,
+        Tuple{Float64,T}[],
+        true,
+        false,
     )
+    _refresh_presentation!(model; force_vorticity = true)
+    return model
 end
 
 function requested_tip_speed_ratio(model::ViewerModel{T}) where {T}
@@ -366,12 +397,14 @@ function update!(model::ViewerModel{T}) where {T}
         ControlState(next_time, requested_control.angle_degrees, zero(T)) : requested_control
     started = time_ns()
     report = advance!(model.solver, control, target_dt)
+    model.warm_validation_pending = false
     model.simulation_time = next_time
     elapsed = (time_ns() - started) / 1.0e9
     model.step_rate = elapsed > 0 ? inv(elapsed) : Inf
     model.simulated_seconds_per_wall_second = elapsed > 0 ? target_dt / elapsed : Inf
     model.last_substeps = report.substeps
     model.last_max_speed = report.max_speed
+    model.metrics_warming = false
     advance_tracers!(
         model.tracers,
         model.solver,
@@ -380,6 +413,10 @@ function update!(model::ViewerModel{T}) where {T}
         control,
         target_dt,
     )
+    model.presentation.diagnostic_elapsed += target_dt
+    if model.presentation.diagnostic_elapsed >= model.presentation.diagnostic_interval
+        _refresh_presentation!(model)
+    end
     if model.pose_only_drag
         if model.pose_only_release_pending && !model.drag_active
             _disable_pose_only_drag!(model)
@@ -415,11 +452,34 @@ function _viewer_vorticity(
     return tanh.(omega ./ scale)
 end
 
+function _refresh_presentation!(
+    model::ViewerModel{T};
+    force_vorticity::Bool = false,
+) where {T<:AbstractFloat}
+    model.presentation.diagnostics = diagnostics(model.solver)
+    model.presentation.velocity = copy(cell_velocity(model.solver))
+    if model.presentation.vorticity_visible || force_vorticity
+        angle = something(
+            model.manual_angle,
+            control_at(model.scenario, model.simulation_time).angle_degrees,
+        )
+        model.presentation.vorticity = _viewer_vorticity(
+            model.presentation.velocity,
+            model.scenario,
+            model.geometry,
+            angle,
+        )
+    end
+    model.presentation.diagnostic_elapsed = zero(T)
+    model.presentation.diagnostic_revision += 1
+    return nothing
+end
+
 function snapshot(model::ViewerModel{T}) where {T}
-    solver_diagnostics = diagnostics(model.solver)
-    velocity = cell_velocity(model.solver)
+    solver_diagnostics = model.presentation.diagnostics
+    velocity = model.presentation.velocity
     angle = model.manual_angle === nothing ?
-        control_at(model.scenario, T(solver_diagnostics.values["time"])).angle_degrees :
+        control_at(model.scenario, model.simulation_time).angle_degrees :
         something(model.manual_angle)
     energy = get(solver_diagnostics.values, "kinetic_energy", 0.0)
     enstrophy_value = get(solver_diagnostics.values, "enstrophy", 0.0)
@@ -433,50 +493,70 @@ function snapshot(model::ViewerModel{T}) where {T}
         string("  Re_eff=", round(Int, solver_diagnostics.values["effective_reynolds"])) : ""
     motion = model.pose_only_drag ? "  motion=pose-only" : ""
     paused = model.paused ? "  PAUSED" : ""
+    recovery_epoch = model.recovery_count > 0 ? "  recovery_epoch=$(model.recovery_count)" : ""
+    measurements = model.metrics_warming ?
+        "step=     —/s  sim/wall=     —  sub=—  max|u|=     —" :
+        @sprintf(
+            "step=%6.1f/s  sim/wall=%6.2f  sub=%d  max|u|=%6.2f",
+            model.step_rate,
+            model.simulated_seconds_per_wall_second,
+            model.last_substeps,
+            model.last_max_speed,
+        )
     status = string(
         solver_info(model.solver).display_name,
-        "  t=", round(model.simulation_time; digits = 2),
-        "  AoA=", round(angle; digits = 1), "°",
-        "  Re=", round(Int, reynolds(model.solver)),
-        "  rate=", round(model.playback_rate; digits = 2), "x",
-        "  step=", round(model.step_rate; digits = 1), "/s",
-        "  sim/wall=", round(model.simulated_seconds_per_wall_second; digits = 2),
-        "  sub=", model.last_substeps,
-        "  max|u|=", round(model.last_max_speed; digits = 2),
+        @sprintf(
+            "  t=%7.2f  AoA=%6.1f°  Re=%7.0f  rate=%4.2fx  ",
+            model.simulation_time,
+            angle,
+            reynolds(model.solver),
+            model.playback_rate,
+        ),
+        measurements,
         "\nE=", round(energy; digits = 3),
         "  Ω=", round(enstrophy_value; digits = 3),
         "  div=", round(divergence; sigdigits = 3),
         "  leak=", round(leakage; sigdigits = 3),
         "  tracers=", model.tracers.mode,
-        "  vort=", model.vorticity_visible ? "on" : "off",
-        "  view=", model.crop_enabled ? "cropped" : "full",
+        "  vort=", model.presentation.vorticity_visible ? "on" : "off",
+        "  view=", model.presentation.crop_enabled ? "cropped" : "full",
         transport,
         blend,
         effective_reynolds,
         motion,
+        recovery_epoch,
         paused,
         "  ", model.status_message,
     )
     return ViewerSnapshot(
-        T(solver_diagnostics.values["time"]),
+        UInt64(0),
+        UInt64(0),
+        model.simulation_time,
         angle,
         solver_info(model.solver).id,
         copy(model.tracers.positions),
         path_segments(model.tracers),
         copy(velocity),
-        _viewer_vorticity(velocity, model.scenario, model.geometry, angle),
+        copy(model.presentation.vorticity),
         copy(solver_diagnostics.values),
         status,
         model.paused,
-        model.vorticity_visible,
-        model.crop_enabled,
+        model.presentation.vorticity_visible,
+        model.presentation.crop_enabled,
         model.tracers.mode,
     )
 end
 
 toggle_pause!(model::ViewerModel) = (model.paused = !model.paused)
-toggle_vorticity!(model::ViewerModel) = (model.vorticity_visible = !model.vorticity_visible)
-toggle_crop!(model::ViewerModel) = (model.crop_enabled = !model.crop_enabled)
+function toggle_vorticity!(model::ViewerModel)
+    model.presentation.vorticity_visible = !model.presentation.vorticity_visible
+    model.presentation.vorticity_visible &&
+        _refresh_presentation!(model; force_vorticity = true)
+    return model.presentation.vorticity_visible
+end
+
+toggle_crop!(model::ViewerModel) =
+    (model.presentation.crop_enabled = !model.presentation.crop_enabled)
 
 function toggle_tracer_mode!(model::ViewerModel)
     model.tracers.mode = model.tracers.mode == :display ? :material : :display
@@ -487,16 +567,38 @@ function toggle_tracer_mode!(model::ViewerModel)
                 model.tracers.lifetimes[index]
         end
     end
+    model.presentation.tracer_mode = model.tracers.mode
     return model.tracers.mode
 end
 
-function set_angle!(model::ViewerModel{T}, angle_degrees::Real, elapsed::Real = 1 / 60) where {T}
+function set_angle!(
+    model::ViewerModel{T},
+    angle_degrees::Real,
+    timestamp::Real = time_ns() / 1.0e9,
+) where {T}
     selected = clamp(T(angle_degrees), T(-30), T(30))
     current_time = model.simulation_time
     scripted_angle = control_at(model.scenario, current_time).angle_degrees
     previous = something(model.manual_angle, scripted_angle)
+    selected_time = Float64(timestamp)
+    if !isempty(model.pose_samples) && selected_time <= last(model.pose_samples)[1]
+        selected_time = last(model.pose_samples)[1] + 1.0e-6
+    end
+    isempty(model.pose_samples) &&
+        push!(model.pose_samples, (selected_time - 1 / 60, previous))
+    push!(model.pose_samples, (selected_time, selected))
+    cutoff = selected_time - 0.08
+    while length(model.pose_samples) > 2 && model.pose_samples[2][1] < cutoff
+        popfirst!(model.pose_samples)
+    end
+    first_time, first_angle = first(model.pose_samples)
+    elapsed = max(selected_time - first_time, 1.0e-6)
+    measured = (selected - first_angle) / T(elapsed)
+    maximum = T(rad2deg(
+        8 * reference_speed(model.scenario) / model.scenario.foil.chord,
+    ))
     model.manual_angle = selected
-    model.angular_velocity = (selected - previous) / max(T(elapsed), T(1.0e-4))
+    model.angular_velocity = clamp(measured, -maximum, maximum)
     model.last_requested_angular_velocity = model.angular_velocity
     model.drag_active = true
     return selected
@@ -505,6 +607,7 @@ end
 function release_angle!(model::ViewerModel{T}) where {T}
     model.angular_velocity = zero(T)
     model.last_requested_angular_velocity = zero(T)
+    empty!(model.pose_samples)
     model.drag_active = false
     model.pose_only_release_pending = model.pose_only_drag
     return nothing
@@ -540,17 +643,28 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
         history_length,
         mode = tracer_mode,
     )
+    model.presentation.tracer_mode = tracer_mode
     model.paused = false
     model.manual_angle = nothing
     model.angular_velocity = zero(T)
     model.playback_rate = one(T)
     model.simulation_time = zero(T)
     model.step_rate = 0.0
+    model.simulated_seconds_per_wall_second = 0.0
+    model.last_substeps = 0
+    model.last_max_speed = zero(T)
     model.status_message = "reset"
     model.drag_active = false
     _disable_pose_only_drag!(model)
     model.last_requested_angular_velocity = zero(T)
     model.recovery_count = 0
+    empty!(model.pose_samples)
+    model.metrics_warming = true
+    model.warm_validation_pending = false
+    _refresh_presentation!(
+        model;
+        force_vorticity = model.presentation.vorticity_visible,
+    )
     return nothing
 end
 
@@ -591,10 +705,27 @@ function _fresh_solver_at_control(
     return incoming
 end
 
+function classify_viewer_failure(error)::Symbol
+    message = lowercase(replace(sprint(showerror, error), "-" => ""))
+    (occursin("nonfinite", message) || occursin("must be finite", message) ||
+        occursin("nan", message)) &&
+        return :nonfinite_state
+    occursin("density", message) && return :invalid_density
+    (occursin("projection", message) || occursin("pressure cg", message)) &&
+        return :projection_failure
+    occursin("geometry", message) && return :incompatible_geometry
+    any(token -> occursin(token, message), ("resolution", "dimension", "domain", "bounds")) &&
+        return :incompatible_domain
+    any(token -> occursin(token, message), ("velocity", "wall", "cfl", "mach")) &&
+        return :excessive_velocity
+    return :unsupported_conversion
+end
+
 function recover_solver!(
     model::ViewerModel{T},
     failure;
     reset_reynolds::Bool = false,
+    post_import::Bool = false,
 ) where {T}
     current_time = model.simulation_time
     current_angle = something(
@@ -616,25 +747,54 @@ function recover_solver!(
         current_angle,
     )
     model.angular_velocity = zero(T)
+    model.manual_angle = current_angle
+    empty!(model.pose_samples)
     model.recovery_count += 1
+    model.step_rate = 0.0
+    model.simulated_seconds_per_wall_second = 0.0
+    model.last_substeps = 0
+    model.last_max_speed = zero(T)
+    model.metrics_warming = true
+    model.warm_validation_pending = false
     reset_notice = reset_reynolds ? "; Re reset" : ""
-    model.status_message = "fresh restart after $(typeof(failure)); replenished=$moved$reset_notice"
+    reason = classify_viewer_failure(failure)
+    stage = post_import ? "post-import" : "ordinary-step"
+    model.status_message =
+        "fresh restart reason=$reason; stage=$stage; private-state-discarded; " *
+        "reseeded=$moved$reset_notice"
+    _refresh_presentation!(
+        model;
+        force_vorticity = model.presentation.vorticity_visible,
+    )
     return nothing
 end
 
 function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where {T}
     if solver_id == solver_info(model.solver).id
         model.status_message = "solver already active"
-        return true
+        report = ImportReport(solver_id, solver_id, String[], String[])
+        return ImportOutcome(:accepted, :none; report)
     end
     incoming = try
         _create_solver(T, solver_id)
     catch error
         model.status_message = "solver $solver_id is not available yet"
-        return false
+        return ImportOutcome(
+            :rejected,
+            :unsupported_conversion;
+            warnings = [sprint(showerror, error)],
+        )
     end
     selected_reynolds = reynolds(model.solver)
-    state = export_state(model.solver)
+    state = try
+        export_state(model.solver)
+    catch error
+        (error isa ArgumentError || error isa DimensionMismatch) || rethrow()
+        reason = classify_viewer_failure(error)
+        detail = sprint(showerror, error)
+        model.status_message = "warm export rejected ($reason); source retained"
+        return ImportOutcome(:rejected, reason; warnings = [detail])
+    end
     control = ControlState(
         T(state.time),
         something(model.manual_angle, T(state.angle_degrees)),
@@ -648,28 +808,23 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
         model.solver = incoming
         model.status_message = isempty(report.warnings) ? "switched from $(state.source_solver)" :
             first(report.warnings)
-        return true
+        model.last_substeps = 0
+        model.last_max_speed = zero(T)
+        model.step_rate = 0.0
+        model.simulated_seconds_per_wall_second = 0.0
+        model.metrics_warming = true
+        model.warm_validation_pending = true
+        _refresh_presentation!(
+            model;
+            force_vorticity = model.presentation.vorticity_visible,
+        )
+        return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
     catch error
-        try
-            incoming = _fresh_solver_at_control(
-                model,
-                solver_id,
-                ControlState(T(state.time), control.angle_degrees, zero(T));
-                selected_reynolds,
-            )
-            model.solver = incoming
-            moved = reseed_tracers!(
-                model.tracers,
-                model.scenario,
-                model.geometry,
-                T(control.angle_degrees),
-            )
-            model.status_message = "fresh restart after failed warm import; replenished=$moved"
-            return true
-        catch recovery_error
-            model.status_message = "switch failed: $(typeof(error)); restart failed: $(typeof(recovery_error))"
-            return false
-        end
+        (error isa ArgumentError || error isa DimensionMismatch) || rethrow()
+        reason = classify_viewer_failure(error)
+        detail = sprint(showerror, error)
+        model.status_message = "warm import rejected ($reason); source retained"
+        return ImportOutcome(:rejected, reason; warnings = [detail])
     end
 end
 

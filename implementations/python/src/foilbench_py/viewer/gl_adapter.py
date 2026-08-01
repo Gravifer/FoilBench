@@ -17,7 +17,6 @@ from pyglet.window import key, mouse
 from foilbench_py.viewer.app import (
     ViewerModel,
     viewer_bounds,
-    viewer_crop_enabled_by_default,
 )
 from foilbench_py.viewer.worker import SimulationWorker
 
@@ -100,7 +99,8 @@ class FoilWindow(pyglet.window.Window):
         self.full_view_bounds = viewer_bounds(self.scenario, cropped=False)
         self.cropped_view_bounds = viewer_bounds(self.scenario, cropped=True)
         self.crop_available = self.cropped_view_bounds != self.full_view_bounds
-        self.crop_enabled = viewer_crop_enabled_by_default(self.scenario)
+        self.snapshot = self.worker.latest_snapshot()
+        self.crop_enabled = self.snapshot.crop_enabled
         self.view_bounds = (
             self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
         )
@@ -189,9 +189,13 @@ class FoilWindow(pyglet.window.Window):
 
     def _tick(self, dt: float) -> None:
         del dt
-        self.snapshot = self.worker.latest_snapshot()
-        view_status = "cropped" if self.crop_enabled else "full"
-        self.label.text = f"{self.snapshot.status}  view={view_status}"
+        if self.snapshot.crop_enabled != self.crop_enabled:
+            self.crop_enabled = self.snapshot.crop_enabled
+            self.view_bounds = (
+                self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
+            )
+            self._update_field_view()
+        self.label.text = self.snapshot.status
         self.label.y = self.height - 12
         self.help_label.y = self.height - 32
         self.invalid = True
@@ -255,11 +259,7 @@ class FoilWindow(pyglet.window.Window):
         elif symbol == key.T:
             self.worker.toggle_tracer_mode()
         elif symbol == key.C and self.crop_available:
-            self.crop_enabled = not self.crop_enabled
-            self.view_bounds = (
-                self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
-            )
-            self._update_field_view()
+            self.worker.toggle_crop()
 
     def on_mouse_drag(
         self,

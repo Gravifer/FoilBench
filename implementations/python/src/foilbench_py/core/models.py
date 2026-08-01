@@ -10,6 +10,17 @@ from foilbench_py.types import ScalarVolume, VelocityVolume
 
 Precision = Literal["float32", "float64"]
 AxisName = Literal["x", "y", "z"]
+ImportStatus = Literal["accepted", "rejected"]
+ImportFailureReason = Literal[
+    "none",
+    "excessive_velocity",
+    "nonfinite_state",
+    "incompatible_geometry",
+    "incompatible_domain",
+    "projection_failure",
+    "invalid_density",
+    "unsupported_conversion",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +171,18 @@ class ImportReport:
     destination_solver: str
     discarded_state: tuple[str, ...]
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ImportOutcome:
+    status: ImportStatus
+    reason: ImportFailureReason
+    report: ImportReport | None = None
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def accepted(self) -> bool:
+        return self.status == "accepted"
 
 
 @dataclass(frozen=True, slots=True)

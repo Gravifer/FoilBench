@@ -74,6 +74,40 @@ def test_runtime_reynolds_mildly_scales_physical_playback(
     assert model.manager.reynolds == scenario.reynolds
 
 
+def test_manual_pose_cancels_schedule_while_solver_and_reynolds_changes_do_not(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+
+    model.adjust_reynolds(0.25)
+    assert model.angle_override is None
+    assert model.switch_solver("lbm-d2q9").accepted
+    assert model.angle_override is None
+
+    model.set_angle(18.0, 1.0)
+    assert model.angle_override == 18.0
+    model.recover_solver(FloatingPointError("non-finite injected state"))
+    assert model.angle_override == 18.0
+    model.reset()
+    assert model.angle_override is None
+
+
+def test_hidden_vorticity_stops_field_refresh_until_reenabled(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    model.presentation.diagnostic_interval = 0.001
+    assert not model.toggle_vorticity()
+    hidden_revision = model.vorticity_revision
+
+    model.update(model.scenario.output_dt)
+
+    assert model.vorticity_revision == hidden_revision
+    assert model.toggle_vorticity()
+    assert model.vorticity_revision == hidden_revision + 1
+
+
 def test_solver_tuning_is_context_sensitive_and_stable_mode_persists(
     scenario_factory: ScenarioFactory,
 ) -> None:
@@ -118,7 +152,7 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
 ) -> None:
     scenario = scenario_factory(resolution=(32, 16))
     model = ViewerModel.create(scenario, "stable-fluids")
-    model.set_angle(12.0)
+    model.set_angle(12.0, 1.0)
 
     assert model.control(scenario.output_dt).angular_velocity_degrees != 0.0
     model.enable_pose_only_drag()
@@ -137,9 +171,9 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
     assert not model.pose_only_release_pending
     assert "motion=pose-only" not in model.status()
 
-    model.set_angle(90.0)
+    model.set_angle(90.0, 2.0)
     assert model.angle_override == 30.0
-    model.set_angle(-90.0)
+    model.set_angle(-90.0, 3.0)
     assert model.angle_override == -30.0
 
 
@@ -148,33 +182,33 @@ def test_pose_only_drag_clears_after_sustained_slow_motion(
 ) -> None:
     scenario = scenario_factory(resolution=(32, 16))
     model = ViewerModel.create(scenario, "stable-fluids")
-    model.set_angle(12.0)
+    model.set_angle(12.0, 1.0)
     model.enable_pose_only_drag()
     model.update(scenario.output_dt)
     assert model.pose_only_drag
 
-    model.set_angle(12.1)
+    model.set_angle(12.1, 1.1)
     model.update(scenario.output_dt)
     assert model.pose_only_drag
     assert model.pose_only_calm_steps == 1
 
-    model.set_angle(12.2)
+    model.set_angle(12.2, 1.2)
     model.update(scenario.output_dt)
     assert model.drag_active
     assert not model.pose_only_drag
     assert model.pose_only_calm_steps == 0
 
 
-def test_stable_fluids_rejects_unresolved_wall_motion_before_pressure_cg(
+def test_drag_velocity_uses_timestamped_samples_and_a_generous_cap(
     scenario_factory: ScenarioFactory,
 ) -> None:
     scenario = scenario_factory(resolution=(64, 32))
     scenario.solver_options["stable_advection"] = "skew-rk2"
     model = ViewerModel.create(scenario, "stable-fluids")
-    model.set_angle(-30.0)
+    model.set_angle(-30.0, 1.0)
 
-    with pytest.raises(FloatingPointError, match="projection CFL"):
-        model.update(scenario.output_dt)
+    assert model.rapid_drag_attempted
+    assert model.requested_tip_speed_ratio <= 8.0 + 1.0e-6
 
 
 def test_display_tracers_expire_without_leaving_empty_regions(
@@ -228,6 +262,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
         "stable-fluids",
     )
     model.update(model.scenario.output_dt)
+    recovery_time = model.time
     model.switch_solver("pic-flip")
     model.set_angle(30.0)
     positions = model.tracers.positions.copy()
@@ -239,9 +274,9 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     state = model.manager.solver.export_state()
     assert model.manager.solver.info.id == "pic-flip"
     assert model.manager.last_import is None
-    assert state.time == 0.0
+    assert state.time == pytest.approx(recovery_time)
     assert state.angle_degrees == 30.0
-    assert model.time == 0.0
+    assert model.time == pytest.approx(recovery_time)
     assert model.angle_override == 30.0
     assert model.previous_angle == 30.0
     assert not np.array_equal(model.tracers.positions, positions)
@@ -259,4 +294,6 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     assert np.all(model.tracers.ages < model.tracers.lifetimes)
     for history_slice in model.tracers.history:
         np.testing.assert_array_equal(history_slice, model.tracers.positions)
-    assert "recovered=fresh restart after FloatingPointError" in model.status()
+    assert "recovered=fresh restart reason=nonfinite_state" in model.status()
+    assert "recovery_epoch=1" in model.status()
+    assert "step=   —/s" in model.status()

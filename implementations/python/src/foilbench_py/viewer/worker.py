@@ -22,14 +22,21 @@ type CommandKind = Literal[
     "reset_reynolds",
     "toggle_vorticity",
     "toggle_tracer",
+    "toggle_crop",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class TimestampedPose:
+    angle_degrees: float
+    timestamp: float
 
 
 @dataclass(frozen=True, slots=True)
 class ViewerCommand:
     sequence: int
     kind: CommandKind
-    value: float | str | None = None
+    value: float | str | TimestampedPose | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +51,7 @@ class ViewerSnapshot:
     vorticity: ScalarField | None
     vorticity_revision: int
     show_vorticity: bool
+    crop_enabled: bool
     failure: str | None = None
 
 
@@ -127,7 +135,11 @@ class SimulationWorker:
                 raise TimeoutError(f"simulation did not apply command {sequence}")
             return self._snapshot
 
-    def _enqueue(self, kind: CommandKind, value: float | str | None = None) -> int:
+    def _enqueue(
+        self,
+        kind: CommandKind,
+        value: float | str | TimestampedPose | None = None,
+    ) -> int:
         with self._condition:
             if self._stop_requested:
                 raise RuntimeError("simulation worker is closed")
@@ -150,8 +162,9 @@ class SimulationWorker:
     def switch_solver(self, solver_id: str) -> int:
         return self._enqueue("switch_solver", solver_id)
 
-    def set_angle(self, angle_degrees: float) -> int:
-        return self._enqueue("set_angle", angle_degrees)
+    def set_angle(self, angle_degrees: float, timestamp: float | None = None) -> int:
+        selected_time = perf_counter() if timestamp is None else timestamp
+        return self._enqueue("set_angle", TimestampedPose(angle_degrees, selected_time))
 
     def release_angle(self) -> int:
         return self._enqueue("release_angle")
@@ -170,6 +183,9 @@ class SimulationWorker:
 
     def toggle_tracer_mode(self) -> int:
         return self._enqueue("toggle_tracer")
+
+    def toggle_crop(self) -> int:
+        return self._enqueue("toggle_crop")
 
     def _drain_commands(self) -> list[ViewerCommand]:
         with self._condition:
@@ -203,9 +219,9 @@ class SimulationWorker:
             self._recovery_pending = False
             self._clear_failure_history()
         elif command.kind == "set_angle":
-            if not isinstance(command.value, (int, float)):
-                raise TypeError("set_angle requires a numeric angle")
-            self._model.set_angle(float(command.value))
+            if not isinstance(command.value, TimestampedPose):
+                raise TypeError("set_angle requires a timestamped pose")
+            self._model.set_angle(command.value.angle_degrees, command.value.timestamp)
         elif command.kind == "release_angle":
             self._model.release_angle()
         elif command.kind == "adjust_tuning":
@@ -226,6 +242,8 @@ class SimulationWorker:
             self._model.toggle_vorticity()
         elif command.kind == "toggle_tracer":
             self._model.toggle_tracer_mode()
+        elif command.kind == "toggle_crop":
+            self._model.toggle_crop()
 
     @staticmethod
     def _immutable_positions(array: TracerPositions) -> TracerPositions:
@@ -274,6 +292,7 @@ class SimulationWorker:
             vorticity=vorticity,
             vorticity_revision=self._model.vorticity_revision,
             show_vorticity=self._model.show_vorticity,
+            crop_enabled=self._model.crop_enabled,
             failure=self._failure,
         )
 
@@ -315,6 +334,11 @@ class SimulationWorker:
                 self._model.update(self._model.scenario.output_dt)
                 self._recovery_pending = False
             except Exception as error:
+                if not isinstance(error, (ValueError, FloatingPointError)):
+                    self._failure = f"{type(error).__name__}: {error}"
+                    self._model.paused = True
+                    self._publish(applied_command)
+                    continue
                 failure_count = self._record_failure(perf_counter())
                 reynolds_is_modified = (
                     self._model.manager.reynolds != self._model.scenario.reynolds
@@ -334,7 +358,11 @@ class SimulationWorker:
                     try:
                         if pose_only_recovery:
                             self._model.enable_pose_only_drag()
-                        self._model.recover_solver(error, reset_reynolds=reset_reynolds)
+                        self._model.recover_solver(
+                            error,
+                            reset_reynolds=reset_reynolds,
+                            post_import=self._model.warm_validation_pending,
+                        )
                     except Exception as recovery_error:
                         self._failure = (
                             f"{type(error).__name__}: {error}; fresh restart failed: "

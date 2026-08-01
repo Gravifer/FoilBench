@@ -8,7 +8,7 @@ struct ResetViewerCommand <: ViewerCommand end
 struct StopViewerCommand <: ViewerCommand end
 struct SetAngleCommand{T<:AbstractFloat} <: ViewerCommand
     angle_degrees::T
-    elapsed::T
+    timestamp::Float64
 end
 struct ReleaseAngleCommand <: ViewerCommand end
 struct AdjustReynoldsCommand{T<:AbstractFloat} <: ViewerCommand
@@ -21,14 +21,24 @@ struct AdjustTuningCommand{T<:AbstractFloat} <: ViewerCommand
     amount::T
 end
 
+struct QueuedViewerCommand
+    sequence::UInt64
+    command::ViewerCommand
+end
+
 mutable struct ViewerWorker{T<:AbstractFloat}
     model::ViewerModel{T}
-    commands::Channel{ViewerCommand}
-    snapshots::Channel{ViewerSnapshot{T}}
-    latest_angle::Base.RefValue{Union{Nothing,SetAngleCommand{T}}}
-    angle_lock::ReentrantLock
+    commands::Channel{QueuedViewerCommand}
+    latest_angle::Base.RefValue{Union{Nothing,QueuedViewerCommand}}
+    command_lock::ReentrantLock
+    next_sequence::UInt64
     task::Union{Nothing,Task}
     running::Base.RefValue{Bool}
+    wake_signal::Channel{Nothing}
+    snapshot_lock::ReentrantLock
+    latest::Base.RefValue{Union{Nothing,ViewerSnapshot{T}}}
+    revision::UInt64
+    applied_command::UInt64
     recovery_pending::Bool
     recent_failures::Vector{Float64}
 end
@@ -36,12 +46,17 @@ end
 function ViewerWorker(model::ViewerModel{T}) where {T}
     return ViewerWorker(
         model,
-        Channel{ViewerCommand}(32),
-        Channel{ViewerSnapshot{T}}(1),
-        Ref{Union{Nothing,SetAngleCommand{T}}}(nothing),
+        Channel{QueuedViewerCommand}(32),
+        Ref{Union{Nothing,QueuedViewerCommand}}(nothing),
         ReentrantLock(),
+        UInt64(1),
         nothing,
         Ref(false),
+        Channel{Nothing}(1),
+        ReentrantLock(),
+        Ref{Union{Nothing,ViewerSnapshot{T}}}(nothing),
+        UInt64(0),
+        UInt64(0),
         false,
         Float64[],
     )
@@ -58,9 +73,40 @@ function _record_failure!(worker::ViewerWorker, now::Float64)
     return length(worker.recent_failures)
 end
 
+function _with_revision(
+    selected::ViewerSnapshot{T},
+    revision::UInt64,
+    applied_command::UInt64,
+) where {T}
+    return ViewerSnapshot(
+        revision,
+        applied_command,
+        selected.time,
+        selected.angle_degrees,
+        selected.solver_id,
+        selected.tracer_positions,
+        selected.path_segments,
+        selected.velocity,
+        selected.vorticity,
+        selected.diagnostics,
+        selected.status,
+        selected.paused,
+        selected.vorticity_visible,
+        selected.crop_enabled,
+        selected.tracer_mode,
+    )
+end
+
 function _publish_latest!(worker::ViewerWorker, selected::ViewerSnapshot)
-    isready(worker.snapshots) && take!(worker.snapshots)
-    put!(worker.snapshots, selected)
+    lock(worker.snapshot_lock) do
+        worker.revision += 1
+        worker.latest[] = _with_revision(selected, worker.revision, worker.applied_command)
+    end
+    return nothing
+end
+
+function _signal!(worker::ViewerWorker)
+    isready(worker.wake_signal) || put!(worker.wake_signal, nothing)
     return nothing
 end
 
@@ -80,7 +126,7 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
         worker.recovery_pending = false
         _clear_failure_history!(worker)
     end
-    command isa SetAngleCommand && set_angle!(model, command.angle_degrees, command.elapsed)
+    command isa SetAngleCommand && set_angle!(model, command.angle_degrees, command.timestamp)
     command isa ReleaseAngleCommand && release_angle!(model)
     if command isa AdjustReynoldsCommand
         adjust_reynolds!(model, command.decades)
@@ -97,25 +143,50 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
     return nothing
 end
 
+function _drain_commands!(worker::ViewerWorker)
+    queued = QueuedViewerCommand[]
+    lock(worker.command_lock) do
+        selected = worker.latest_angle[]
+        worker.latest_angle[] = nothing
+        selected === nothing || push!(queued, selected)
+    end
+    while isready(worker.commands)
+        push!(queued, take!(worker.commands))
+    end
+    sort!(queued; by = command -> command.sequence)
+    return queued
+end
+
 function _worker_loop(worker::ViewerWorker)
     worker.running[] = true
     _publish_latest!(worker, snapshot(worker.model))
     while worker.running[]
-        started = time_ns()
-        angle_command = lock(worker.angle_lock) do
-            selected = worker.latest_angle[]
-            worker.latest_angle[] = nothing
-            selected
+        while isready(worker.wake_signal)
+            take!(worker.wake_signal)
         end
-        angle_command === nothing || _apply_command!(worker, angle_command)
-        while isready(worker.commands)
-            _apply_command!(worker, take!(worker.commands))
+        queued = _drain_commands!(worker)
+        for selected in queued
+            _apply_command!(worker, selected.command)
+            worker.applied_command = max(worker.applied_command, selected.sequence)
         end
         worker.running[] || break
+        if worker.model.paused
+            isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
+            take!(worker.wake_signal)
+            continue
+        end
+        started = time_ns()
         try
             _publish_latest!(worker, update!(worker.model))
             worker.recovery_pending = false
         catch error
+            if !(error isa ArgumentError || error isa DimensionMismatch)
+                worker.model.paused = true
+                worker.model.status_message =
+                    "worker error $(typeof(error)): " * sprint(showerror, error)
+                _publish_latest!(worker, snapshot(worker.model))
+                continue
+            end
             failure_count = _record_failure!(worker, time())
             reynolds_modified = reynolds(worker.model.solver) != worker.model.scenario.reynolds
             pose_only_recovery = worker.recovery_pending &&
@@ -124,23 +195,34 @@ function _worker_loop(worker::ViewerWorker)
                 (worker.recovery_pending || failure_count >= 3)
             if worker.recovery_pending && !reset_reynolds && !pose_only_recovery
                 worker.model.paused = true
-                worker.model.status_message = "paused after repeated $(typeof(error))"
+                worker.model.status_message =
+                    "paused after repeated $(classify_viewer_failure(error))"
             else
                 try
                     pose_only_recovery && enable_pose_only_drag!(worker.model)
-                    recover_solver!(worker.model, error; reset_reynolds)
+                    recover_solver!(
+                        worker.model,
+                        error;
+                        reset_reynolds,
+                        post_import = worker.model.warm_validation_pending,
+                    )
                     worker.recovery_pending = true
                     (reset_reynolds || pose_only_recovery) && _clear_failure_history!(worker)
                 catch recovery_error
                     worker.model.paused = true
                     worker.model.status_message =
-                        "$(typeof(error)); fresh restart failed: $(typeof(recovery_error))"
+                        "$(classify_viewer_failure(error)); fresh restart failed: " *
+                        sprint(showerror, recovery_error)
                 end
             end
             _publish_latest!(worker, snapshot(worker.model))
         end
-        elapsed = (time_ns() - started) / 1.0e9
-        sleep(max(0.0, 1 / 60 - elapsed))
+        remaining = 1 / 60 - (time_ns() - started) / 1.0e9
+        remaining > 0 && timedwait(
+            () -> isready(worker.wake_signal),
+            remaining;
+            pollint = min(0.001, remaining),
+        )
     end
     return nothing
 end
@@ -151,20 +233,62 @@ function start!(worker::ViewerWorker)
     return worker
 end
 
-function enqueue!(
-    worker::ViewerWorker{T},
-    command::SetAngleCommand{T},
-) where {T<:AbstractFloat}
-    lock(worker.angle_lock) do
-        worker.latest_angle[] = command
+function _next_queued!(worker::ViewerWorker, command::ViewerCommand)
+    return lock(worker.command_lock) do
+        selected = QueuedViewerCommand(worker.next_sequence, command)
+        worker.next_sequence += 1
+        selected
     end
-    return command
 end
 
-enqueue!(worker::ViewerWorker, command::ViewerCommand) = put!(worker.commands, command)
+function enqueue!(worker::ViewerWorker, command::SetAngleCommand)
+    selected = _next_queued!(worker, command)
+    lock(worker.command_lock) do
+        worker.latest_angle[] = selected
+    end
+    _signal!(worker)
+    return selected.sequence
+end
+
+function enqueue!(worker::ViewerWorker, command::ViewerCommand)
+    selected = _next_queued!(worker, command)
+    put!(worker.commands, selected)
+    _signal!(worker)
+    return selected.sequence
+end
 
 function latest_snapshot(worker::ViewerWorker)
-    return isready(worker.snapshots) ? take!(worker.snapshots) : nothing
+    return lock(worker.snapshot_lock) do
+        worker.latest[]
+    end
+end
+
+function wait_for_revision(
+    worker::ViewerWorker,
+    revision::Integer;
+    timeout::Float64 = 10.0,
+)
+    deadline = time() + timeout
+    while time() < deadline
+        selected = latest_snapshot(worker)
+        selected !== nothing && selected.revision >= revision && return selected
+        sleep(0.001)
+    end
+    error("timed out waiting for viewer revision $revision")
+end
+
+function wait_for_command(
+    worker::ViewerWorker,
+    sequence::Integer;
+    timeout::Float64 = 10.0,
+)
+    deadline = time() + timeout
+    while time() < deadline
+        selected = latest_snapshot(worker)
+        selected !== nothing && selected.applied_command >= sequence && return selected
+        sleep(0.001)
+    end
+    error("timed out waiting for viewer command $sequence")
 end
 
 function close!(worker::ViewerWorker)

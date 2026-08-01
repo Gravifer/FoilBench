@@ -29,6 +29,39 @@ struct ImportReport
     warnings::Vector{String}
 end
 
+struct ImportOutcome
+    status::Symbol
+    reason::Symbol
+    report::Union{Nothing,ImportReport}
+    warnings::Vector{String}
+
+    function ImportOutcome(
+        status::Symbol,
+        reason::Symbol;
+        report::Union{Nothing,ImportReport} = nothing,
+        warnings::Vector{String} = String[],
+    )
+        status in (:accepted, :rejected) || throw(ArgumentError("invalid import status"))
+        reason in (
+            :none,
+            :excessive_velocity,
+            :nonfinite_state,
+            :incompatible_geometry,
+            :incompatible_domain,
+            :projection_failure,
+            :invalid_density,
+            :unsupported_conversion,
+        ) || throw(ArgumentError("invalid import failure reason"))
+        status == :accepted && reason != :none &&
+            throw(ArgumentError("accepted import cannot have a failure reason"))
+        status == :rejected && reason == :none &&
+            throw(ArgumentError("rejected import needs a failure reason"))
+        new(status, reason, report, warnings)
+    end
+end
+
+accepted(outcome::ImportOutcome) = outcome.status == :accepted
+
 struct Diagnostics
     values::Dict{String,Float64}
     warnings::Vector{String}

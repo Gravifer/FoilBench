@@ -4,10 +4,49 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from foilbench_py.core.geometry import NacaFoil
-from foilbench_py.core.models import ControlKeyframe, ControlState, ImportReport, Scenario
+from foilbench_py.core.models import (
+    CanonicalFlowState,
+    ControlKeyframe,
+    ControlState,
+    ImportFailureReason,
+    ImportOutcome,
+    ImportReport,
+    Scenario,
+)
 from foilbench_py.core.protocol import FlowSolver
 
 SolverFactory = Callable[[str], FlowSolver]
+
+
+def classify_import_failure(error: ValueError | FloatingPointError) -> ImportFailureReason:
+    message = str(error).lower().replace("-", "")
+    if "nonfinite" in message or "must be finite" in message or "nan" in message:
+        return "nonfinite_state"
+    if "density" in message:
+        return "invalid_density"
+    if "projection" in message or "pressure cg" in message:
+        return "projection_failure"
+    if "geometry" in message:
+        return "incompatible_geometry"
+    if any(token in message for token in ("resolution", "dimension", "domain", "bounds")):
+        return "incompatible_domain"
+    if any(token in message for token in ("velocity", "wall", "cfl", "mach")):
+        return "excessive_velocity"
+    if isinstance(error, FloatingPointError):
+        return "nonfinite_state"
+    return "unsupported_conversion"
+
+
+def state_at_control(
+    state: CanonicalFlowState,
+    control: ControlState,
+) -> CanonicalFlowState:
+    return replace(
+        state,
+        time=control.time,
+        angle_degrees=control.angle_degrees,
+        angular_velocity_degrees=control.angular_velocity_degrees,
+    )
 
 
 class SolverManager:
@@ -42,18 +81,26 @@ class SolverManager:
         self._solver.set_reynolds(reynolds)
         self._reynolds = self._solver.reynolds
 
-    def switch(self, destination: str, control: ControlState) -> ImportReport:
+    def switch(self, destination: str, control: ControlState) -> ImportOutcome:
         if destination == self._solver.info.id:
-            return ImportReport(destination, destination, ())
-        state = self._solver.export_state()
-        candidate = self._factory(destination)
-        candidate.initialize(self._scenario, self._geometry, self._scenario.seed)
-        candidate.set_reynolds(self._reynolds)
-        report = candidate.import_state(state, control)
-        candidate.diagnostics()
+            report = ImportReport(destination, destination, ())
+            return ImportOutcome("accepted", "none", report)
+        try:
+            state = self._solver.export_state()
+            candidate = self._factory(destination)
+            candidate.initialize(self._scenario, self._geometry, self._scenario.seed)
+            candidate.set_reynolds(self._reynolds)
+            report = candidate.import_state(state, control)
+            candidate.diagnostics()
+        except (ValueError, FloatingPointError) as error:
+            return ImportOutcome(
+                "rejected",
+                classify_import_failure(error),
+                warnings=(str(error),),
+            )
         self._solver = candidate
         self._last_import = report
-        return report
+        return ImportOutcome("accepted", "none", report, report.warnings)
 
     def restart_at(self, control: ControlState) -> None:
         """Atomically replace the active solver with a fresh state at ``control``."""
@@ -69,11 +116,12 @@ class SolverManager:
             self._scenario.seed,
         )
         candidate.set_reynolds(self._reynolds)
-        candidate.diagnostics()
-        state = candidate.export_state()
+        state = state_at_control(candidate.export_state(), control)
         if state.source_solver != solver_id:
             raise RuntimeError(
                 f"fresh {solver_id!r} solver exported state for {state.source_solver!r}"
             )
+        candidate.import_state(state, control)
+        candidate.diagnostics()
         self._solver = candidate
         self._last_import = None

@@ -31,14 +31,12 @@ function resized_scenario(scenario::Scenario{D,T}, resolution::NTuple{D,Int}) wh
     )
 end
 
-function wait_for_snapshot(worker::ViewerWorker; timeout::Float64 = 10.0)
-    deadline = time() + timeout
-    while time() < deadline
-        selected = latest_snapshot(worker)
-        selected === nothing || return selected
-        sleep(0.01)
-    end
-    error("timed out waiting for viewer snapshot")
+function wait_for_snapshot(
+    worker::ViewerWorker;
+    after_revision::Integer = 0,
+    timeout::Float64 = 10.0,
+)
+    return wait_for_revision(worker, after_revision + 1; timeout)
 end
 
 @testset "PCG32 shared vectors" begin
@@ -580,6 +578,35 @@ end
     @test occursin("tracers=display", initial.status)
     @test initial.vorticity_visible
 
+    hidden_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
+    diagnostic_type = scalar_type(scenario)
+    hidden_model.presentation.diagnostic_interval = diagnostic_type(0.001)
+    @test !toggle_vorticity!(hidden_model)
+    hidden_vorticity = copy(hidden_model.presentation.vorticity)
+    update!(hidden_model)
+    @test hidden_model.presentation.vorticity == hidden_vorticity
+    @test toggle_vorticity!(hidden_model)
+    @test hidden_model.presentation.diagnostic_elapsed == zero(diagnostic_type)
+
+    schedule_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
+    adjust_reynolds!(schedule_model, 0.25)
+    @test schedule_model.manual_angle === nothing
+    @test accepted(switch_solver!(schedule_model, "lbm-d2q9"))
+    @test schedule_model.manual_angle === nothing
+    set_angle!(schedule_model, 18.0, 1.0)
+    recover_solver!(schedule_model, ArgumentError("non-finite injected state"))
+    @test schedule_model.manual_angle == 18.0
+    reset_viewer!(schedule_model)
+    @test schedule_model.manual_angle === nothing
+
+    rejected_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
+    rejected_solver = rejected_model.solver::StableFluidsSolver{Float64}
+    rejected_solver.u[1, 1] = NaN
+    rejected = switch_solver!(rejected_model, "lbm-d2q9")
+    @test !accepted(rejected)
+    @test rejected.reason == :nonfinite_state
+    @test solver_info(rejected_model.solver).id == "stable-fluids"
+
     tracer_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
         (24, 12),
@@ -589,10 +616,10 @@ end
     tracer_solver = tracer_model.solver
     inlet_tracers = tracer_model.tracers
     @test option(tracer_scenario, "viewer_crop_cells", 0) == 4
-    @test !tracer_model.crop_enabled
+    @test !tracer_model.presentation.crop_enabled
     @test toggle_crop!(tracer_model)
-    @test set_angle!(tracer_model, 90) == 30
-    @test set_angle!(tracer_model, -90) == -30
+    @test set_angle!(tracer_model, 90, 1.0) == 30
+    @test set_angle!(tracer_model, -90, 2.0) == -30
     x0, x1 = tracer_scenario.domain.bounds[1]
     y0, y1 = tracer_scenario.domain.bounds[2]
     inlet_tracers.positions[:, 1] .=
@@ -636,9 +663,9 @@ end
     @test export_state(model.solver).velocity == stable_velocity
     @test occursin("adv=skew-rk2", snapshot(model).status)
 
-    set_angle!(model, 12.0, 0.1)
+    set_angle!(model, 12.0, 1.0)
     @test model.manual_angle == 12.0
-    @test model.angular_velocity == 120.0
+    @test 0 < requested_tip_speed_ratio(model) <= 8
     release_angle!(model)
     @test model.angular_velocity == 0.0
     adjust_reynolds!(model, 1.0)
@@ -653,19 +680,19 @@ end
     @test occursin("vort=off", toggled.status)
     @test toggle_pause!(model)
     @test update!(model).time == updated.time
-    @test switch_solver!(model, "lbm-d2q9")
+    @test accepted(switch_solver!(model, "lbm-d2q9"))
     @test solver_info(model.solver).id == "lbm-d2q9"
     @test diagnostics(model.solver).values["time"] ≈ updated.time
     @test !adjust_tuning!(model, 0.05)
     @test occursin("no adjustable tuning", model.status_message)
-    @test switch_solver!(model, "stable-fluids")
+    @test accepted(switch_solver!(model, "stable-fluids"))
     @test solver_info(model.solver).id == "stable-fluids"
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
-    @test switch_solver!(model, "pic-flip")
+    @test accepted(switch_solver!(model, "pic-flip"))
     @test solver_info(model.solver).id == "pic-flip"
     @test adjust_tuning!(model, -0.05)
     @test pic_flip_blend(model.solver) ≈ 0.9
-    @test switch_solver!(model, "stable-fluids")
+    @test accepted(switch_solver!(model, "stable-fluids"))
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
     reset_viewer!(model)
     @test diagnostics(model.solver).values["time"] == 0.0
@@ -699,9 +726,11 @@ end
     @test model.simulation_time == recovery_time
     @test all(isfinite, export_state(model.solver).velocity)
     @test occursin("fresh restart", model.status_message)
+    @test model.metrics_warming
+    @test occursin("recovery_epoch=1", snapshot(model).status)
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
-    set_angle!(model, 30.0, 0.001)
+    set_angle!(model, 30.0, 2.0)
     @test rapid_drag_attempted(model)
     enable_pose_only_drag!(model)
     @test model.pose_only_drag
@@ -716,23 +745,22 @@ end
     float32_worker = ViewerWorker(
         ViewerModel(float32_scenario; tracer_count = 16, history_length = 3),
     )
-    drag_command = SetAngleCommand(12.0f0, 0.1f0)
-    @test enqueue!(float32_worker, drag_command) === drag_command
-    @test float32_worker.latest_angle[] === drag_command
+    drag_command = SetAngleCommand(12.0f0, 1.0)
+    drag_sequence = enqueue!(float32_worker, drag_command)
+    @test drag_sequence == 1
+    @test float32_worker.latest_angle[] !== nothing
+    @test something(float32_worker.latest_angle[]).command === drag_command
     tuning_command = AdjustTuningCommand(0.05f0)
-    @test enqueue!(float32_worker, tuning_command) === tuning_command
+    @test enqueue!(float32_worker, tuning_command) == 2
 
     worker_model = ViewerModel(scenario; tracer_count = 16, history_length = 3)
     worker = ViewerWorker(worker_model)
     start!(worker)
     first_snapshot = wait_for_snapshot(worker)
     @test first_snapshot.solver_id == "stable-fluids"
-    enqueue!(worker, TogglePauseCommand())
-    paused_snapshot = wait_for_snapshot(worker)
-    deadline = time() + 5.0
-    while !paused_snapshot.paused && time() < deadline
-        paused_snapshot = wait_for_snapshot(worker)
-    end
+    @test latest_snapshot(worker) === latest_snapshot(worker)
+    pause_sequence = enqueue!(worker, TogglePauseCommand())
+    paused_snapshot = wait_for_command(worker, pause_sequence)
     @test paused_snapshot.paused
     close!(worker)
     @test worker.task === nothing
@@ -752,8 +780,8 @@ end
             tracer_count = 12,
             history_length = 3,
         )
-        set_angle!(model, angle, 0.5)
-        @test switch_solver!(model, destination)
+        set_angle!(model, angle, 1.0)
+        @test accepted(switch_solver!(model, destination))
         @test solver_info(model.solver).id == destination
         @test model.manual_angle == angle
         @test all(isfinite, export_state(model.solver).velocity)
