@@ -64,7 +64,7 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 445 passing checks. On the development
+The automated Julia suite contains 454 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads

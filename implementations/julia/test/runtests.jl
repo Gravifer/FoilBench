@@ -566,6 +566,9 @@ end
     )
     model = ViewerModel(scenario; tracer_count = 32, history_length = 5)
     initial = snapshot(model)
+    @test all(model.tracers.ages .>= 0)
+    @test all(model.tracers.ages .< model.tracers.lifetimes)
+    @test any(model.tracers.ages .> 0)
     @test initial.time == 0.0
     @test size(initial.tracer_positions) == (2, 32)
     @test size(initial.path_segments) == (2, 2 * 32 * 4)
@@ -575,6 +578,45 @@ end
     @test occursin("AoA=", initial.status)
     @test occursin("sim/wall=", initial.status)
     @test occursin("tracers=display", initial.status)
+
+    tracer_scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (24, 12),
+    )
+    tracer_geometry = NacaFoil(tracer_scenario.foil)
+    tracer_solver = StableFluidsSolver(Float32)
+    initialize!(tracer_solver, tracer_scenario, tracer_geometry, tracer_scenario.seed)
+    inlet_tracers = TracerState(
+        tracer_scenario,
+        tracer_geometry,
+        control_at(tracer_scenario, 0).angle_degrees;
+        count = 4,
+        history_length = 3,
+    )
+    x0, x1 = tracer_scenario.domain.bounds[1]
+    y0, y1 = tracer_scenario.domain.bounds[2]
+    inlet_tracers.positions[:, 1] .=
+        (x1 + dx(tracer_scenario.domain), (y0 + y1) / 2)
+    inlet_tracers.positions[:, 2] .=
+        (x0 + dx(tracer_scenario.domain), y1 - dy(tracer_scenario.domain))
+    inlet_tracers.ages[2] = 0
+    inlet_tracers.lifetimes[2] = 7
+    advance_tracers!(
+        inlet_tracers,
+        tracer_solver,
+        tracer_scenario,
+        tracer_geometry,
+        control_at(tracer_scenario, tracer_scenario.output_dt),
+        tracer_scenario.output_dt,
+    )
+    @test x0 <= inlet_tracers.positions[1, 1] <=
+        x0 + 0.5 * dx(tracer_scenario.domain)
+    @test inlet_tracers.ages[1] == 0
+    @test inlet_tracers.ages[2] == tracer_scenario.output_dt
+    for history_index in axes(inlet_tracers.history, 3)
+        @test inlet_tracers.history[:, 1, history_index] == inlet_tracers.positions[:, 1]
+    end
+
     updated = update!(model)
     @test updated.time == scenario.output_dt
     @test all(isfinite, updated.tracer_positions)

@@ -2,8 +2,8 @@ mutable struct TracerState{T<:AbstractFloat}
     positions::Matrix{T}
     history::Array{T,3}
     history_cursor::Int
-    ages::Vector{Int}
-    lifetimes::Vector{Int}
+    ages::Vector{T}
+    lifetimes::Vector{T}
     mode::Symbol
     rng::PCG32
 end
@@ -33,12 +33,14 @@ function _seed_position!(
     scenario::Scenario{2,T},
     geometry::NacaFoil{2,T},
     angle_degrees::T,
-    mode::Symbol,
+    placement::Symbol,
 ) where {T}
+    placement in (:domain, :inlet) || throw(ArgumentError("unknown tracer placement"))
     x0, x1 = scenario.domain.bounds[1]
     y0, y1 = scenario.domain.bounds[2]
     for _ in 1:64
-        x = mode == :material ? x0 + T(0.25) * dx(scenario.domain) :
+        x = placement == :inlet ?
+            x0 + T(0.5) * _random_fraction(rng, T) * dx(scenario.domain) :
             x0 + _random_fraction(rng, T) * (x1 - x0)
         y = y0 + _random_fraction(rng, T) * (y1 - y0)
         signed_distance(geometry, SVector{2,T}(x, y), angle_degrees) > zero(T) || continue
@@ -65,18 +67,14 @@ function TracerState(
     rng = PCG32(scenario.seed, 71)
     positions = Matrix{T}(undef, 2, count)
     for index in 1:count
-        _seed_position!(positions, index, rng, scenario, geometry, angle_degrees, mode)
+        _seed_position!(positions, index, rng, scenario, geometry, angle_degrees, :domain)
     end
     history = Array{T,3}(undef, 2, count, history_length)
     for history_index in 1:history_length
         history[:, :, history_index] = positions
     end
-    ages = zeros(Int, count)
-    base_lifetime = max(2, round(Int, T(4) / scenario.output_dt))
-    lifetimes = [
-        base_lifetime + round(Int, _random_fraction(rng, T) * T(base_lifetime))
-        for _ in 1:count
-    ]
+    lifetimes = [T(3) + T(4) * _random_fraction(rng, T) for _ in 1:count]
+    ages = [_random_fraction(rng, T) * lifetimes[index] for index in 1:count]
     return TracerState(positions, history, history_length, ages, lifetimes, mode, rng)
 end
 
@@ -90,6 +88,12 @@ end
 function _outside_domain(position::AbstractVector{T}, domain::DomainSpec{2,T}) where {T}
     return position[1] < domain.bounds[1][1] || position[1] > domain.bounds[1][2] ||
         position[2] < domain.bounds[2][1] || position[2] > domain.bounds[2][2]
+end
+
+function _reset_tracer_lifetime!(tracers::TracerState{T}, index::Int) where {T}
+    tracers.ages[index] = zero(T)
+    tracers.lifetimes[index] = T(3) + T(4) * _random_fraction(tracers.rng, T)
+    return nothing
 end
 
 function advance_tracers!(
@@ -112,12 +116,14 @@ function advance_tracers!(
             (tracers.positions[1, index] = x0 + mod(tracers.positions[1, index] - x0, x1 - x0))
         :y in scenario.domain.periodic_axes &&
             (tracers.positions[2, index] = y0 + mod(tracers.positions[2, index] - y0, y1 - y0))
-        tracers.ages[index] += 1
+        tracers.ages[index] += timestep
         point = SVector{2,T}(tracers.positions[:, index])
         expired = tracers.mode == :display && tracers.ages[index] >= tracers.lifetimes[index]
-        invalid = _outside_domain(view(tracers.positions, :, index), scenario.domain) ||
-            signed_distance(geometry, point, control.angle_degrees) <= zero(T)
+        outside = _outside_domain(view(tracers.positions, :, index), scenario.domain)
+        inside_solid = signed_distance(geometry, point, control.angle_degrees) <= zero(T)
+        invalid = outside || inside_solid
         if expired || invalid
+            placement = outside || tracers.mode == :material ? :inlet : :domain
             _seed_position!(
                 tracers.positions,
                 index,
@@ -125,9 +131,9 @@ function advance_tracers!(
                 scenario,
                 geometry,
                 control.angle_degrees,
-                tracers.mode,
+                placement,
             )
-            tracers.ages[index] = 0
+            _reset_tracer_lifetime!(tracers, index)
             _reset_tracer_history!(tracers, index)
         else
             tracers.history[:, index, tracers.history_cursor] = tracers.positions[:, index]
@@ -211,9 +217,9 @@ function replenish_tracers!(
             scenario,
             geometry,
             angle_degrees,
-            tracers.mode,
+            :domain,
         )
-        tracers.ages[tracer] = 0
+        _reset_tracer_lifetime!(tracers, tracer)
         _reset_tracer_history!(tracers, tracer)
     end
     return length(donors)
@@ -449,6 +455,13 @@ toggle_crop!(model::ViewerModel) = (model.crop_enabled = !model.crop_enabled)
 
 function toggle_tracer_mode!(model::ViewerModel)
     model.tracers.mode = model.tracers.mode == :display ? :material : :display
+    if model.tracers.mode == :display
+        for index in eachindex(model.tracers.ages)
+            model.tracers.ages[index] =
+                _random_fraction(model.tracers.rng, eltype(model.tracers.ages)) *
+                model.tracers.lifetimes[index]
+        end
+    end
     return model.tracers.mode
 end
 
