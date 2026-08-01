@@ -118,3 +118,66 @@ end
     @test !supports(info, scenario3)
     @test_throws ArgumentError require_supported(info, scenario3)
 end
+
+@testset "Interpolation and MAC grid" begin
+    domain = DomainSpec(((0.0, 2.0), (-1.0, 1.0)), (8, 6), ())
+    centers = cell_centers(domain)
+    scalar = @. 2.0 * centers[:, :, 1] - 3.0 * centers[:, :, 2]
+    points = Matrix{Float64}(undef, 2, 3)
+    points[:, 1] = centers[3, 2, :]
+    points[:, 2] = centers[5, 4, :]
+    points[:, 3] = centers[7, 5, :]
+    @test sample_scalar(scalar, points, domain) ≈
+          [2.0 * points[1, index] - 3.0 * points[2, index] for index in axes(points, 2)]
+
+    velocity = zeros(Float64, 8, 6, 2)
+    velocity[:, :, 1] .= 1.25
+    velocity[:, :, 2] .= -0.5
+    sampled = sample_velocity_field(velocity, points, domain)
+    @test sampled == repeat([1.25, -0.5], 1, 3)
+    @test rk2_backtrace(velocity, points, 0.2, domain) ≈
+          points .- [0.25, -0.1]
+
+    u, v = cell_to_faces(velocity)
+    @test size(u) == (9, 6)
+    @test size(v) == (8, 7)
+    @test faces_to_cell(u, v) == velocity
+    @test face_divergence(u, v, domain) == zeros(8, 6)
+    @test canonical_to_cell(
+        CanonicalFlowState(
+            1,
+            domain.bounds,
+            domain.resolution,
+            domain.periodic_axes,
+            0.0,
+            0.0,
+            0.0,
+            "julia",
+            "test",
+            cell_to_canonical(velocity),
+        ),
+    ) == velocity
+end
+
+@testset "Geometry grids and metrics" begin
+    domain = DomainSpec(((-1.0f0, 2.0f0), (-1.0f0, 1.0f0)), (48, 32), ())
+    foil = NacaFoil(FoilSpec("0012", 1.0f0, SVector{2,Float32}(0, 0)))
+    solid = solid_mask(foil, domain, 10.0f0)
+    @test any(solid)
+    @test !all(solid)
+    control = ControlState(0.0f0, 10.0f0, 30.0f0)
+    wall = wall_velocity_grid(foil, domain, control)
+    @test size(wall) == (48, 32, 2)
+    @test all(isfinite, wall)
+
+    velocity = zeros(Float32, 48, 32, 2)
+    velocity[:, :, 1] .= 1.0f0
+    velocity[:, :, 2] .= 0.5f0
+    @test kinetic_energy(velocity) ≈ 0.625f0
+    @test momentum(velocity) ≈ SVector{2,Float32}(1, 0.5)
+    @test enstrophy(velocity, domain) ≈ 0.0f0 atol = 1.0f-6
+    @test divergence_l2(velocity, domain) ≈ 0.0f0 atol = 1.0f-6
+    @test solid_leakage(velocity, falses(48, 32)) == 0.0f0
+    @test wake_width(velocity, domain, 0.0f0) == 0.0f0
+    @test recirculation_area(velocity, domain, 0.0f0) == 0.0f0
+end

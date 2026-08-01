@@ -37,6 +37,11 @@ end
 dimension(::DomainSpec{D}) where {D} = D
 dimension(::Scenario{D}) where {D} = D
 scalar_type(::Scenario{D,T}) where {D,T} = T
+nx(domain::DomainSpec) = domain.resolution[1]
+ny(domain::DomainSpec{D}) where {D} = D >= 2 ? domain.resolution[2] : 1
+nz(domain::DomainSpec{D}) where {D} = D == 3 ? domain.resolution[3] : 1
+dx(domain::DomainSpec) = (domain.bounds[1][2] - domain.bounds[1][1]) / nx(domain)
+dy(domain::DomainSpec) = (domain.bounds[2][2] - domain.bounds[2][1]) / ny(domain)
 
 function control_at(scenario::Scenario{D,T}, time::Real) where {D,T}
     selected_time = T(time)
