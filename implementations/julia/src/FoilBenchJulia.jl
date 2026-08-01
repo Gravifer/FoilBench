@@ -18,6 +18,7 @@ include("advection.jl")
 include("metrics.jl")
 include("lbm_kernels.jl")
 include("stable_fluids.jl")
+include("lbm.jl")
 include("viewer/model.jl")
 include("viewer/worker.jl")
 
@@ -39,6 +40,7 @@ export D2Q9_C
 export D2Q9_OPPOSITE
 export D2Q9_W
 export LBMScaling
+export LBMSolver
 export advance!
 export advect_faces
 export advect_faces_skew_rk2

@@ -364,6 +364,62 @@ end
     @test_throws ArgumentError lbm_scaling(scenario, 0)
 end
 
+@testset "D2Q9 LBM solver contract" begin
+    uniform = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
+        (32, 16),
+    )
+    geometry = NacaFoil(uniform.foil)
+    solver = LBMSolver(Float64)
+    initialize!(solver, uniform, geometry, uniform.seed)
+    @test solver_info(solver).id == "lbm-d2q9"
+    @test reynolds(solver) == uniform.reynolds
+    initial = diagnostics(solver)
+    for step in 1:4
+        report = advance!(solver, control_at(uniform, step * uniform.output_dt), uniform.output_dt)
+        @test report.advanced_dt == uniform.output_dt
+        @test report.substeps >= 1
+    end
+    final = diagnostics(solver)
+    @test final.values["time"] ≈ 4 * uniform.output_dt
+    @test final.values["kinetic_energy"] ≈ initial.values["kinetic_energy"] atol = 1.0e-10
+    @test abs(final.values["density_drift"]) < 1.0e-12
+    @test final.values["divergence_l2"] < 1.0e-10
+
+    set_reynolds!(solver, 750.0)
+    @test reynolds(solver) == 750.0
+    @test diagnostics(solver).values["effective_reynolds"] <= 750.0
+    @test_throws ArgumentError set_reynolds!(solver, -1.0)
+    state = export_state(solver)
+    @test state.source_solver == "lbm-d2q9"
+    @test state.density !== nothing
+    @test all(isfinite, state.velocity)
+
+    imported = LBMSolver(Float64)
+    initialize!(imported, uniform, geometry, uniform.seed)
+    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    @test "non-equilibrium lattice populations" in import_report.discarded_state
+    @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
+
+    points = Matrix{Float64}(undef, 2, 2)
+    centers = cell_centers(uniform.domain)
+    points[:, 1] = centers[4, 4, :]
+    points[:, 2] = centers[12, 9, :]
+    @test sample_velocity(imported, points) ≈ repeat([1.0, 0.0], 1, 2) atol = 1.0e-10
+
+    open_scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (40, 24),
+    )
+    moving = LBMSolver(Float32)
+    initialize!(moving, open_scenario, NacaFoil(open_scenario.foil), open_scenario.seed)
+    moving_control = ControlState(open_scenario.output_dt, 12.0f0, 120.0f0)
+    moving_report = advance!(moving, moving_control, open_scenario.output_dt)
+    @test moving_report.advanced_dt == open_scenario.output_dt
+    @test all(isfinite, export_state(moving).velocity)
+    @test all(isfinite, values(diagnostics(moving).values))
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
