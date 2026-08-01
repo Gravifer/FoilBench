@@ -763,3 +763,110 @@ end
     @test length(sensitivity["times"]) == length(sensitivity["wake_rms_differences"])
     @test all(isfinite, sensitivity["wake_rms_differences"])
 end
+
+@testset "Matched canonical fidelity cases" begin
+    for solver_id in solver_ids()
+        uniform = resized_scenario(
+            load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
+            (32, 16),
+        )
+        solver = create_solver(solver_id, Float64)
+        initialize!(solver, uniform, NacaFoil(uniform.foil), 0)
+        before = cell_velocity(solver)
+        for step in 1:5
+            advance!(solver, control_at(uniform, step * uniform.output_dt), uniform.output_dt)
+        end
+        after = cell_velocity(solver)
+        @test sqrt(sum(abs2, after .- before) / length(after)) < 1.0e-5
+        @test sqrt(sum(abs2, vorticity(after, uniform.domain)) / prod(size(after)[1:2])) < 1.0e-5
+
+        taylor_base = load_scenario(
+            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json"),
+        )
+        taylor = scenario_with_run(taylor_base, (32, 32), 0.1)
+        solver = create_solver(solver_id, Float64)
+        initialize!(solver, taylor, NacaFoil(taylor.foil), 0)
+        initial_energy = diagnostics(solver).values["kinetic_energy"]
+        for step in 1:5
+            advance!(solver, control_at(taylor, step * taylor.output_dt), taylor.output_dt)
+        end
+        centers = cell_centers(taylor.domain)
+        expected = Array{Float64,3}(undef, 32, 32, 2)
+        decay = exp(-2 * reference_speed(taylor) * taylor.foil.chord /
+            taylor.reynolds * taylor.duration)
+        for j in 1:32, i in 1:32
+            x, y = centers[i, j, 1], centers[i, j, 2]
+            expected[i, j, 1] = sin(x) * cos(y) * decay
+            expected[i, j, 2] = -cos(x) * sin(y) * decay
+        end
+        actual = cell_velocity(solver)
+        @test sqrt(sum(abs2, actual .- expected) / length(actual)) < 0.08
+        @test 0 <= diagnostics(solver).values["kinetic_energy"] <= 1.01 * initial_energy
+
+        poiseuille_base = load_scenario(
+            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "poiseuille.json"),
+        )
+        poiseuille = scenario_with_run(poiseuille_base, (32, 16), 0.1)
+        solver = create_solver(solver_id, Float64)
+        initialize!(solver, poiseuille, NacaFoil(poiseuille.foil), 0)
+        for step in 1:5
+            advance!(solver, control_at(poiseuille, step * poiseuille.output_dt), poiseuille.output_dt)
+        end
+        velocity = cell_velocity(solver)
+        centers = cell_centers(poiseuille.domain)
+        y0, y1 = poiseuille.domain.bounds[2]
+        radius = 0.5 * (y1 - y0)
+        center_y = 0.5 * (y0 + y1)
+        profile_error = 0.0
+        for j in axes(velocity, 2), i in axes(velocity, 1)
+            expected_u = 1.5 * (1 - ((centers[i, j, 2] - center_y) / radius)^2)
+            profile_error += (velocity[i, j, 1] - expected_u)^2
+        end
+        profile_error = sqrt(profile_error / (size(velocity, 1) * size(velocity, 2)))
+        center_speed = sum(view(velocity, :, cld(size(velocity, 2), 2), 1)) / size(velocity, 1)
+        top_row = size(velocity, 2)
+        wall_speed = 0.5 * (sum(view(velocity, :, 1, 1)) +
+            sum(view(velocity, :, top_row, 1))) /
+            size(velocity, 1)
+        normal_leakage = max(maximum(abs, view(velocity, :, 1, 2)),
+            maximum(abs, view(velocity, :, top_row, 2)))
+        @test center_speed > wall_speed
+        @test profile_error < 0.25
+        @test normal_leakage < 0.01
+
+        naca_base = load_scenario(
+            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "naca0012-zero.json"),
+        )
+        naca = scenario_with_run(naca_base, (40, 24), 0.1)
+        solver = create_solver(solver_id, Float32)
+        initialize!(solver, naca, NacaFoil(naca.foil), naca.seed)
+        for step in 1:6
+            advance!(solver, control_at(naca, step * naca.output_dt), naca.output_dt)
+        end
+        velocity = cell_velocity(solver)
+        symmetry_error = 0.0f0
+        for component in 1:2, j in axes(velocity, 2), i in axes(velocity, 1)
+            mirror = size(velocity, 2) - j + 1
+            delta = component == 1 ? velocity[i, j, component] - velocity[i, mirror, component] :
+                velocity[i, j, component] + velocity[i, mirror, component]
+            symmetry_error += delta^2
+        end
+        @test sqrt(symmetry_error / length(velocity)) < 0.01
+        @test diagnostics(solver).values["solid_leakage"] < 1.0e-6
+
+        dynamic_base = load_scenario(
+            joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"),
+        )
+        dynamic = scenario_with_run(dynamic_base, (32, 20), 0.05)
+        solver = create_solver(solver_id, Float32)
+        initialize!(solver, dynamic, NacaFoil(dynamic.foil), dynamic.seed)
+        for step in 1:3
+            advance!(solver, control_at(dynamic, step * dynamic.output_dt), dynamic.output_dt)
+        end
+        dynamic_diagnostics = diagnostics(solver).values
+        for name in ("wake_width", "recirculation_area", "enstrophy", "solid_leakage")
+            @test haskey(dynamic_diagnostics, name)
+            @test isfinite(dynamic_diagnostics[name])
+        end
+    end
+end
