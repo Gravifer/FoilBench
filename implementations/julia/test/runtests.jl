@@ -648,8 +648,20 @@ end
     update!(model)
     @test !model.pose_only_drag
 
+    float32_scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (20, 12),
+    )
+    float32_worker = ViewerWorker(
+        ViewerModel(float32_scenario; tracer_count = 16, history_length = 3),
+    )
+    drag_command = SetAngleCommand(12.0f0, 0.1f0)
+    @test enqueue!(float32_worker, drag_command) === drag_command
+    @test float32_worker.latest_angle[] === drag_command
+
     worker_model = ViewerModel(scenario; tracer_count = 16, history_length = 3)
-    worker = start!(ViewerWorker(worker_model))
+    worker = ViewerWorker(worker_model)
+    start!(worker)
     first_snapshot = wait_for_snapshot(worker)
     @test first_snapshot.solver_id == "stable-fluids"
     enqueue!(worker, TogglePauseCommand())

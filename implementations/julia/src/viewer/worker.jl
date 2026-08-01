@@ -151,7 +151,10 @@ function start!(worker::ViewerWorker)
     return worker
 end
 
-function enqueue!(worker::ViewerWorker{T}, command::SetAngleCommand{T}) where {T}
+function enqueue!(
+    worker::ViewerWorker{T},
+    command::SetAngleCommand{T},
+) where {T<:AbstractFloat}
     lock(worker.angle_lock) do
         worker.latest_angle[] = command
     end
