@@ -439,7 +439,7 @@ uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 version = "0.8.6"
 
 [[deps.FoilBenchJulia]]
-deps = ["BenchmarkTools", "JSON3", "LinearAlgebra", "NPZ", "StaticArrays"]
+deps = ["BenchmarkTools", "Dates", "JSON3", "LinearAlgebra", "NPZ", "StaticArrays"]
 path = ".."
 uuid = "8809d7b8-a162-4693-b92f-fa1350ebf7ff"
 version = "0.1.0"
