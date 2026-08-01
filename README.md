@@ -2,9 +2,9 @@
 
 FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
 is complete and contains the robustly typed Python reference implementation,
-including an accepted opt-in deterministic 2D chaotic-wake extension. Julia
-and TypeScript peers are planned for Phase 2; Rust and WASM are planned for
-Phase 3.
+including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
+2A is underway with an independent Julia package; TypeScript follows in Phase
+2B, and Rust/WASM in Phase 3.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -24,6 +24,23 @@ Run checks:
 uv run --project implementations/python ruff check implementations/python
 uv run --project implementations/python pyright implementations/python
 uv run --project implementations/python pytest -c implementations/python/pyproject.toml
+```
+
+## Julia quick start
+
+The Phase 2A package currently implements the shared scenario, geometry, RNG,
+and canonical-state contracts. From the repository root:
+
+```powershell
+julia --project=implementations/julia -e "using Pkg; Pkg.instantiate()"
+julia --project=implementations/julia -e "using Pkg; Pkg.test()"
+```
+
+Run every implemented language's native checks through the root convenience
+entry point (or pass `-Python` / `-Julia` to select one):
+
+```powershell
+pwsh -NoProfile -File tools/verify.ps1
 ```
 
 ## Legacy visualization
