@@ -63,7 +63,7 @@ try {
         Invoke-Checked julia @(
             '--startup-file=no', '--history-file=no',
             '--project=implementations/julia/viewer',
-            '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); println("Julia viewer environment loaded")'
+            '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); viewer_dispatch_visible() = applicable(FoilBenchGLMakie.run_viewer, "scenario.json"); @assert viewer_dispatch_visible(); println("Julia viewer environment loaded")'
         )
     }
 }

@@ -3,6 +3,11 @@
 using FoilBenchJulia
 using JSON3
 
+const _VIEW_REQUESTED = !isempty(ARGS) && first(ARGS) == "view"
+if _VIEW_REQUESTED
+    include(joinpath(@__DIR__, "..", "src", "viewer", "glmakie_app.jl"))
+end
+
 function usage()
     println("Usage:")
     println("  foilbench-jl view SCENARIO [--solver SOLVER_ID]")
@@ -64,7 +69,6 @@ function main(arguments::Vector{String})
         end
         solver_id = arguments[4]
     end
-    include(joinpath(@__DIR__, "..", "src", "viewer", "glmakie_app.jl"))
     FoilBenchGLMakie.run_viewer(scenario_path; solver_id)
     return 0
 end
