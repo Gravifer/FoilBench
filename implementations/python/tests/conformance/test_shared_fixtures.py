@@ -47,26 +47,39 @@ def test_shared_naca_vectors_match_python_reference() -> None:
         )
     )
     tolerances = cast(dict[str, float], document["absolute_tolerances"])
-    surface_x = np.asarray(document["surface_x"], dtype=np.float64)
+    surface_x = np.asarray(cast(list[float], document["surface_x"]), dtype=np.float64)
+    expected_upper = np.asarray(
+        cast(list[float], document["surface_upper"]), dtype=np.float64
+    )
+    expected_lower = np.asarray(
+        cast(list[float], document["surface_lower"]), dtype=np.float64
+    )
     upper, lower = foil.surfaces(surface_x)
-    np.testing.assert_allclose(upper, document["surface_upper"], atol=tolerances["surface"])
-    np.testing.assert_allclose(lower, document["surface_lower"], atol=tolerances["surface"])
+    np.testing.assert_allclose(upper, expected_upper, atol=tolerances["surface"])
+    np.testing.assert_allclose(lower, expected_lower, atol=tolerances["surface"])
 
     for query in cast(list[dict[str, object]], document["queries"]):
-        points = np.asarray(query["points"], dtype=np.float64)
+        points = np.asarray(cast(list[list[float]], query["points"]), dtype=np.float64)
         angle = float(cast(float, query["angle_degrees"]))
         distance = foil.signed_distance(points, angle)
+        expected_distance = np.asarray(
+            cast(list[float], query["signed_distance"]), dtype=np.float64
+        )
+        expected_normals = np.asarray(
+            cast(list[list[float]], query["normals"]), dtype=np.float64
+        )
+        expected_contains = np.asarray(cast(list[bool], query["contains"]), dtype=np.bool_)
         np.testing.assert_allclose(
             distance,
-            query["signed_distance"],
+            expected_distance,
             atol=tolerances["signed_distance"],
         )
         np.testing.assert_allclose(
             foil.normals(points, angle),
-            query["normals"],
+            expected_normals,
             atol=tolerances["normal"],
         )
-        np.testing.assert_array_equal(distance <= 0.0, query["contains"])
+        np.testing.assert_array_equal(distance <= 0.0, expected_contains)
 
 
 def test_shared_canonical_state_loads_with_declared_layout() -> None:
