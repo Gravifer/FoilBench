@@ -55,6 +55,14 @@ function option(scenario::Scenario, name::AbstractString, default::Bool)
     return value
 end
 
+
+function option(scenario::Scenario, name::AbstractString, default::Int)
+    value = get(scenario.solver_options, String(name), default)
+    value isa Integer && !(value isa Bool) ||
+        throw(ArgumentError("solver option $name must be an integer"))
+    return Int(value)
+end
+
 function option(scenario::Scenario, name::AbstractString, default::AbstractString)
     value = get(scenario.solver_options, String(name), String(default))
     value isa AbstractString || throw(ArgumentError("solver option $name must be a string"))

@@ -13,6 +13,24 @@ function rows_to_matrix(rows)
     return reduce(vcat, (permutedims(Float64.(row)) for row in rows))
 end
 
+function resized_scenario(scenario::Scenario{D,T}, resolution::NTuple{D,Int}) where {D,T}
+    domain = DomainSpec(scenario.domain.bounds, resolution, scenario.domain.periodic_axes)
+    return Scenario(
+        scenario.schema_version,
+        scenario.id,
+        domain,
+        scenario.reynolds,
+        scenario.freestream,
+        scenario.foil,
+        scenario.controls,
+        scenario.duration,
+        scenario.output_dt,
+        scenario.precision,
+        scenario.seed,
+        copy(scenario.solver_options),
+    )
+end
+
 @testset "PCG32 shared vectors" begin
     document = JSON3.read(read(joinpath(FIXTURES, "pcg32.json"), String))
     for case in document.cases
@@ -255,4 +273,76 @@ end
     )
     @test skew_u ≈ u atol = 1.0f-6
     @test skew_v ≈ v atol = 1.0f-6
+end
+
+@testset "Stable Fluids solver contract" begin
+    uniform = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
+        (32, 16),
+    )
+    geometry = NacaFoil(uniform.foil)
+    solver = StableFluidsSolver(Float64)
+    initialize!(solver, uniform, geometry, uniform.seed)
+    @test solver_info(solver).id == "stable-fluids"
+    @test reynolds(solver) == uniform.reynolds
+    initial = diagnostics(solver)
+    report = advance!(solver, control_at(uniform, uniform.output_dt), uniform.output_dt)
+    final = diagnostics(solver)
+    @test report.requested_dt == uniform.output_dt
+    @test report.advanced_dt == uniform.output_dt
+    @test report.substeps >= 1
+    @test final.values["time"] ≈ uniform.output_dt
+    @test final.values["kinetic_energy"] ≈ initial.values["kinetic_energy"] atol = 1.0e-10
+    @test final.values["divergence_l2"] < 1.0e-10
+
+    set_reynolds!(solver, 750.0)
+    @test reynolds(solver) == 750.0
+    @test_throws ArgumentError set_reynolds!(solver, 0.0)
+    state = export_state(solver)
+    @test state.source_language == "julia"
+    @test state.source_solver == "stable-fluids"
+    @test state.time ≈ uniform.output_dt
+    @test all(isfinite, state.velocity)
+
+    imported = StableFluidsSolver(Float64)
+    initialize!(imported, uniform, geometry, uniform.seed)
+    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    @test import_report.source_solver == "stable-fluids"
+    @test import_report.destination_solver == "stable-fluids"
+    @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
+end
+
+@testset "Stable Fluids validation modes" begin
+    taylor_green = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
+        (32, 32),
+    )
+    taylor_solver = StableFluidsSolver(Float64)
+    initialize!(taylor_solver, taylor_green, NacaFoil(taylor_green.foil), 0)
+    initial_energy = diagnostics(taylor_solver).values["kinetic_energy"]
+    advance!(
+        taylor_solver,
+        control_at(taylor_green, taylor_green.output_dt),
+        taylor_green.output_dt,
+    )
+    taylor_diagnostics = diagnostics(taylor_solver)
+    @test 0.0 < taylor_diagnostics.values["kinetic_energy"] <= initial_energy
+    @test taylor_diagnostics.values["divergence_l2"] < 0.12
+
+    chaotic = resized_scenario(
+        load_scenario(
+            joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "chaotic-experimental.json"),
+        ),
+        (40, 24),
+    )
+    chaotic_solver = StableFluidsSolver(Float32)
+    initialize!(chaotic_solver, chaotic, NacaFoil(chaotic.foil), 0)
+    @test chaotic_solver.skew_rk2
+    chaotic_report = advance!(
+        chaotic_solver,
+        control_at(chaotic, chaotic.output_dt),
+        chaotic.output_dt,
+    )
+    @test chaotic_report.advanced_dt == chaotic.output_dt
+    @test all(isfinite, export_state(chaotic_solver).velocity)
 end

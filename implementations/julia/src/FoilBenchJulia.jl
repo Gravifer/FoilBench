@@ -16,6 +16,7 @@ include("grid.jl")
 include("projection.jl")
 include("advection.jl")
 include("metrics.jl")
+include("stable_fluids.jl")
 
 export AbstractFlowSolver
 export CanonicalFlowState
@@ -30,6 +31,7 @@ export PCG32
 export Scenario
 export SolverInfo
 export StepReport
+export StableFluidsSolver
 export advance!
 export advect_faces
 export advect_faces_skew_rk2
@@ -39,6 +41,7 @@ export canonical_to_cell
 export cell_centers
 export cell_to_canonical
 export cell_to_faces
+export cell_velocity
 export control_at
 export diagnostics
 export dimension
