@@ -570,10 +570,19 @@ end
     @test size(initial.tracer_positions) == (2, 32)
     @test size(initial.path_segments) == (2, 2 * 32 * 4)
     @test size(foil_outline(model.geometry, initial.angle_degrees; samples = 32)) == (2, 32)
+    @test occursin("AoA=", initial.status)
+    @test occursin("sim/wall=", initial.status)
+    @test occursin("tracers=display", initial.status)
     updated = update!(model)
     @test updated.time == scenario.output_dt
     @test all(isfinite, updated.tracer_positions)
     @test all(isfinite, updated.path_segments)
+    @test model.last_substeps >= 1
+    @test isfinite(model.last_max_speed)
+    @test model.simulated_seconds_per_wall_second > 0
+    @test occursin("max|u|=", updated.status)
+    @test occursin("E=", updated.status)
+    @test occursin("Ω=", updated.status)
 
     set_angle!(model, 12.0, 0.1)
     @test model.manual_angle == 12.0
@@ -587,6 +596,9 @@ end
     @test reynolds(model.solver) == scenario.reynolds
     @test toggle_tracer_mode!(model) == :material
     @test toggle_vorticity!(model)
+    toggled = snapshot(model)
+    @test occursin("tracers=material", toggled.status)
+    @test occursin("vort=on", toggled.status)
     @test toggle_pause!(model)
     @test update!(model).time == updated.time
     @test switch_solver!(model, "lbm-d2q9")

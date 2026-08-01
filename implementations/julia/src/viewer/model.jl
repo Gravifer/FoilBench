@@ -232,6 +232,9 @@ mutable struct ViewerModel{T<:AbstractFloat}
     playback_rate::T
     simulation_time::T
     step_rate::Float64
+    simulated_seconds_per_wall_second::Float64
+    last_substeps::Int
+    last_max_speed::T
     status_message::String
     drag_active::Bool
     pose_only_drag::Bool
@@ -281,6 +284,9 @@ function ViewerModel(
         one(T),
         zero(T),
         0.0,
+        0.0,
+        0,
+        zero(T),
         "ready",
         false,
         false,
@@ -323,10 +329,13 @@ function update!(model::ViewerModel{T}) where {T}
     control = model.pose_only_drag ?
         ControlState(next_time, requested_control.angle_degrees, zero(T)) : requested_control
     started = time_ns()
-    advance!(model.solver, control, target_dt)
+    report = advance!(model.solver, control, target_dt)
     model.simulation_time = next_time
     elapsed = (time_ns() - started) / 1.0e9
     model.step_rate = elapsed > 0 ? inv(elapsed) : Inf
+    model.simulated_seconds_per_wall_second = elapsed > 0 ? target_dt / elapsed : Inf
+    model.last_substeps = report.substeps
+    model.last_max_speed = report.max_speed
     advance_tracers!(
         model.tracers,
         model.solver,
@@ -354,11 +363,37 @@ function snapshot(model::ViewerModel{T}) where {T}
     angle = model.manual_angle === nothing ?
         control_at(model.scenario, T(solver_diagnostics.values["time"])).angle_degrees :
         something(model.manual_angle)
+    energy = get(solver_diagnostics.values, "kinetic_energy", 0.0)
+    enstrophy_value = get(solver_diagnostics.values, "enstrophy", 0.0)
+    divergence = get(solver_diagnostics.values, "divergence_l2", 0.0)
+    leakage = get(solver_diagnostics.values, "solid_leakage", 0.0)
+    blend = model.solver isa PicFlipSolver ?
+        "  blend=$(round(pic_flip_blend(model.solver); digits = 2))" : ""
+    effective_reynolds = haskey(solver_diagnostics.values, "effective_reynolds") ?
+        string("  Re_eff=", round(Int, solver_diagnostics.values["effective_reynolds"])) : ""
+    motion = model.pose_only_drag ? "  motion=pose-only" : ""
+    paused = model.paused ? "  PAUSED" : ""
     status = string(
         solver_info(model.solver).display_name,
-        "  step=", round(model.step_rate; digits = 1), "/s",
+        "  t=", round(model.simulation_time; digits = 2),
+        "  AoA=", round(angle; digits = 1), "°",
         "  Re=", round(Int, reynolds(model.solver)),
-        model.pose_only_drag ? "  motion=pose-only" : "",
+        "  rate=", round(model.playback_rate; digits = 2), "x",
+        "  step=", round(model.step_rate; digits = 1), "/s",
+        "  sim/wall=", round(model.simulated_seconds_per_wall_second; digits = 2),
+        "  sub=", model.last_substeps,
+        "  max|u|=", round(model.last_max_speed; digits = 2),
+        "\nE=", round(energy; digits = 3),
+        "  Ω=", round(enstrophy_value; digits = 3),
+        "  div=", round(divergence; sigdigits = 3),
+        "  leak=", round(leakage; sigdigits = 3),
+        "  tracers=", model.tracers.mode,
+        "  vort=", model.vorticity_visible ? "on" : "off",
+        "  view=", model.crop_enabled ? "cropped" : "full",
+        blend,
+        effective_reynolds,
+        motion,
+        paused,
         "  ", model.status_message,
     )
     return ViewerSnapshot(

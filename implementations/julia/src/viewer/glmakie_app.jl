@@ -24,6 +24,11 @@ function _apply_limits!(axis, scenario, cropped::Bool)
     return nothing
 end
 
+function _reserve_left_drag!(axis)
+    deactivate_interaction!(axis, :rectanglezoom)
+    return axis
+end
+
 function run_viewer(
     scenario_path::AbstractString;
     solver_id::AbstractString = "stable-fluids",
@@ -48,6 +53,7 @@ function run_viewer(
         ygridvisible = false,
     )
     hidedecorations!(axis)
+    _reserve_left_drag!(axis)
     _apply_limits!(axis, scenario, initial.crop_enabled)
 
     x_centers = range(
@@ -83,7 +89,16 @@ function run_viewer(
         figure[2, 1],
         status_text;
         color = :white,
-        fontsize = 14,
+        fontsize = 12,
+        tellwidth = false,
+        halign = :left,
+    )
+    Label(
+        figure[3, 1],
+        "1/2/3 solver   left-drag foil   Space pause   R reset   -/+ Re   " *
+        "0 Re reset   [/] blend   V vorticity   T tracers   C crop";
+        color = RGBf(0.72, 0.78, 0.88),
+        fontsize = 10,
         tellwidth = false,
         halign = :left,
     )
@@ -146,7 +161,7 @@ function run_viewer(
 
     dragging = Ref(false)
     last_drag_time = Ref(time())
-    on(events(figure).mousebutton) do event
+    on(events(figure).mousebutton, priority = 2) do event
         if event.button == Mouse.left && event.action == Mouse.press
             dragging[] = true
             last_drag_time[] = time()
@@ -158,7 +173,7 @@ function run_viewer(
         end
         return Consume(false)
     end
-    on(events(figure).mouseposition) do _
+    on(events(figure).mouseposition, priority = 2) do _
         dragging[] || return Consume(false)
         world_x, world_y = mouseposition(axis)
         pivot = scenario.foil.pivot
