@@ -202,9 +202,19 @@ function _pic_resolve_particle!(
 end
 
 function _pic_resolve_collisions!(solver::PicFlipSolver{T}, control::ControlState) where {T}
-    scenario, _ = _pic_require(solver)
+    scenario, geometry = _pic_require(solver)
     margin = T(1.0e-4) * scenario.foil.chord
+    radius = hypot(
+        T(0.75) * scenario.foil.chord,
+        (maximum_camber(geometry) + T(0.51) * thickness(geometry)) * scenario.foil.chord,
+    ) + margin
+    radius_squared = radius^2
+    pivot_x = scenario.foil.pivot[1]
+    pivot_y = scenario.foil.pivot[2]
     for particle in axes(solver.positions, 2)
+        relative_x = solver.positions[1, particle] - pivot_x
+        relative_y = solver.positions[2, particle] - pivot_y
+        relative_x^2 + relative_y^2 <= radius_squared || continue
         point = SVector{2,T}(solver.positions[1, particle], solver.positions[2, particle])
         _pic_resolve_particle!(solver, particle, point, control, margin)
     end

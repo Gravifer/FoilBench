@@ -67,11 +67,33 @@ end
 
 function signed_distance(foil::NacaFoil{2,T}, point::SVector{2,T}, angle_degrees::Real) where {T}
     local_point = to_local(foil, point, angle_degrees)
-    upper, lower = surfaces(foil, T[local_point[1]])
     x, y = local_point
-    vertical_outside = max(y - upper[1], lower[1] - y)
-    vertical_inside = -min(upper[1] - y, y - lower[1])
-    vertical = lower[1] <= y <= upper[1] ? vertical_inside : vertical_outside
+    normalized_x = clamp(x / foil.spec.chord, zero(T), one(T))
+    thickness_value = T(5) * thickness(foil) * foil.spec.chord * (
+        T(0.2969) * sqrt(max(normalized_x, zero(T))) -
+        T(0.1260) * normalized_x -
+        T(0.3516) * normalized_x^2 +
+        T(0.2843) * normalized_x^3 -
+        T(0.1036) * normalized_x^4
+    )
+    camber = zero(T)
+    maximum = maximum_camber(foil)
+    position = camber_position(foil)
+    if maximum > zero(T) && position > zero(T)
+        camber = if normalized_x < position
+            maximum / position^2 * (T(2) * position * normalized_x - normalized_x^2)
+        else
+            maximum / (one(T) - position)^2 * (
+                one(T) - T(2) * position + T(2) * position * normalized_x - normalized_x^2
+            )
+        end
+        camber *= foil.spec.chord
+    end
+    upper = camber + thickness_value
+    lower = camber - thickness_value
+    vertical_outside = max(y - upper, lower - y)
+    vertical_inside = -min(upper - y, y - lower)
+    vertical = lower <= y <= upper ? vertical_inside : vertical_outside
     if 0 <= x <= foil.spec.chord
         return vertical
     end
