@@ -594,9 +594,12 @@ end
     @test diagnostics(model.solver).values["time"] ≈ updated.time
     @test switch_solver!(model, "stable-fluids")
     @test solver_info(model.solver).id == "stable-fluids"
-    @test !switch_solver!(model, "pic-flip")
-    @test occursin("not available", model.status_message)
     @test !adjust_blend!(model, 0.05)
+    @test switch_solver!(model, "pic-flip")
+    @test solver_info(model.solver).id == "pic-flip"
+    @test adjust_blend!(model, -0.05)
+    @test pic_flip_blend(model.solver) ≈ 0.9
+    @test switch_solver!(model, "stable-fluids")
     reset_viewer!(model)
     @test diagnostics(model.solver).values["time"] == 0.0
     @test model.status_message == "reset"

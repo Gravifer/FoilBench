@@ -168,6 +168,7 @@ end
 function _create_solver(::Type{T}, solver_id::AbstractString) where {T<:AbstractFloat}
     solver_id == "stable-fluids" && return StableFluidsSolver(T)
     solver_id == "lbm-d2q9" && return LBMSolver(T)
+    solver_id == "pic-flip" && return PicFlipSolver(T)
     throw(ArgumentError("Julia solver $solver_id is not available yet"))
 end
 
@@ -348,6 +349,11 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
 end
 
 function adjust_blend!(model::ViewerModel, amount::Real)
+    if model.solver isa PicFlipSolver
+        selected = set_pic_flip_blend!(model.solver, pic_flip_blend(model.solver) + amount)
+        model.status_message = "PIC/FLIP blend=$(round(selected; digits = 2))"
+        return true
+    end
     model.status_message = "PIC/FLIP blend unavailable ($(amount >= 0 ? "+" : "-") requested)"
     return false
 end
