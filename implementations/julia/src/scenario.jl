@@ -43,6 +43,31 @@ nz(domain::DomainSpec{D}) where {D} = D == 3 ? domain.resolution[3] : 1
 dx(domain::DomainSpec) = (domain.bounds[1][2] - domain.bounds[1][1]) / nx(domain)
 dy(domain::DomainSpec) = (domain.bounds[2][2] - domain.bounds[2][1]) / ny(domain)
 
+function option(scenario::Scenario, name::AbstractString, default::T) where {T<:AbstractFloat}
+    value = get(scenario.solver_options, String(name), default)
+    value isa Real || throw(ArgumentError("solver option $name must be numeric"))
+    return T(value)
+end
+
+function option(scenario::Scenario, name::AbstractString, default::Bool)
+    value = get(scenario.solver_options, String(name), default)
+    value isa Bool || throw(ArgumentError("solver option $name must be boolean"))
+    return value
+end
+
+function option(scenario::Scenario, name::AbstractString, default::AbstractString)
+    value = get(scenario.solver_options, String(name), String(default))
+    value isa AbstractString || throw(ArgumentError("solver option $name must be a string"))
+    return String(value)
+end
+
+function reference_speed(scenario::Scenario{D,T}) where {D,T}
+    speed = sqrt(sum(abs2, scenario.freestream))
+    initial = option(scenario, "initial_condition", "freestream")
+    prescribed = initial in ("taylor-green", "poiseuille") ? one(T) : zero(T)
+    return max(speed, prescribed, eps(T))
+end
+
 function control_at(scenario::Scenario{D,T}, time::Real) where {D,T}
     selected_time = T(time)
     controls = scenario.controls

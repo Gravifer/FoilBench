@@ -181,3 +181,78 @@ end
     @test wake_width(velocity, domain, 0.0f0) == 0.0f0
     @test recirculation_area(velocity, domain, 0.0f0) == 0.0f0
 end
+
+@testset "Matrix-free projection and diffusion" begin
+    domain = DomainSpec(((0.0, 2.0), (-1.0, 1.0)), (24, 16), ())
+    u = zeros(Float64, 25, 16)
+    v = zeros(Float64, 24, 17)
+    for j in axes(u, 2), i in axes(u, 1)
+        u[i, j] = 0.2 * sin(0.31 * i + 0.17 * j)
+    end
+    for j in axes(v, 2), i in axes(v, 1)
+        v[i, j] = 0.2 * cos(0.23 * i - 0.19 * j)
+    end
+    solid = falses(24, 16)
+    wall = zeros(Float64, 24, 16, 2)
+    freestream = SVector{2,Float64}(0, 0)
+    apply_domain_boundaries!(u, v, domain, freestream)
+    before = sqrt(sum(abs2, face_divergence(u, v, domain)))
+    iterations, converged = project_faces!(
+        u,
+        v,
+        domain,
+        solid,
+        wall,
+        freestream,
+        0.02;
+        tolerance = 1.0e-7,
+    )
+    after = sqrt(sum(abs2, face_divergence(u, v, domain)))
+    @test converged
+    @test iterations > 0
+    @test after < 0.5 * before
+
+    impulse = zeros(Float64, 24, 16)
+    impulse[12, 8] = 1.0
+    diffused, diffusion_iterations, diffusion_converged = implicit_diffuse_scalar(
+        impulse,
+        0.1,
+        0.02,
+        domain;
+        tolerance = 1.0e-8,
+    )
+    @test diffusion_converged
+    @test diffusion_iterations > 0
+    @test 0.0 < maximum(diffused) < 1.0
+    @test sum(diffused) ≈ 1.0 atol = 1.0e-7
+end
+
+@testset "Stable Fluids advection operators" begin
+    domain = DomainSpec(((0.0f0, 2.0f0), (-1.0f0, 1.0f0)), (20, 12), (:x, :y))
+    velocity = zeros(Float32, 20, 12, 2)
+    velocity[:, :, 1] .= 1.0f0
+    velocity[:, :, 2] .= -0.25f0
+    for maccormack in (false, true)
+        advected = advect_velocity(velocity, 0.02f0, domain; maccormack)
+        @test advected ≈ velocity atol = 1.0f-6
+        u, v = cell_to_faces(velocity)
+        advected_u, advected_v = advect_faces(u, v, 0.02f0, domain; maccormack)
+        @test advected_u ≈ u atol = 1.0f-6
+        @test advected_v ≈ v atol = 1.0f-6
+    end
+
+    u, v = cell_to_faces(velocity)
+    solid = falses(20, 12)
+    wall = zeros(Float32, 20, 12, 2)
+    skew_u, skew_v = advect_faces_skew_rk2(
+        u,
+        v,
+        0.02f0,
+        domain,
+        solid,
+        wall,
+        SVector{2,Float32}(1, -0.25),
+    )
+    @test skew_u ≈ u atol = 1.0f-6
+    @test skew_v ≈ v atol = 1.0f-6
+end
