@@ -604,6 +604,38 @@ end
     @test diagnostics(model.solver).values["time"] == 0.0
     @test model.status_message == "reset"
 
+    model.tracers.positions .= reshape(
+        repeat([scenario.domain.bounds[1][1], scenario.domain.bounds[2][1]], 32),
+        2,
+        32,
+    )
+    replenished = replenish_tracers!(
+        model.tracers,
+        scenario,
+        model.geometry,
+        control_at(scenario, 0).angle_degrees,
+    )
+    @test replenished > 0
+    @test all(isfinite, model.tracers.positions)
+
+    update!(model)
+    recovery_time = model.simulation_time
+    stable = model.solver::StableFluidsSolver{Float64}
+    stable.u[1, 1] = NaN
+    recover_solver!(model, ArgumentError("injected finite-state failure"))
+    @test model.recovery_count == 1
+    @test model.simulation_time == recovery_time
+    @test all(isfinite, export_state(model.solver).velocity)
+    @test occursin("fresh restart", model.status_message)
+
+    set_angle!(model, 30.0, 0.001)
+    @test rapid_drag_attempted(model)
+    enable_pose_only_drag!(model)
+    @test model.pose_only_drag
+    release_angle!(model)
+    update!(model)
+    @test !model.pose_only_drag
+
     worker_model = ViewerModel(scenario; tracer_count = 16, history_length = 3)
     worker = start!(ViewerWorker(worker_model))
     first_snapshot = wait_for_snapshot(worker)
@@ -617,4 +649,30 @@ end
     @test paused_snapshot.paused
     close!(worker)
     @test worker.task === nothing
+end
+
+@testset "All directed Julia warm swaps" begin
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (20, 12),
+    )
+    solver_ids = ("stable-fluids", "lbm-d2q9", "pic-flip")
+    for angle in (4.0f0, 25.0f0), source in solver_ids, destination in solver_ids
+        source == destination && continue
+        model = ViewerModel(
+            scenario;
+            solver_id = source,
+            tracer_count = 12,
+            history_length = 3,
+        )
+        set_angle!(model, angle, 0.5)
+        @test switch_solver!(model, destination)
+        @test solver_info(model.solver).id == destination
+        @test model.manual_angle == angle
+        @test all(isfinite, export_state(model.solver).velocity)
+        release_angle!(model)
+        updated = update!(model)
+        @test updated.time == scenario.output_dt
+        @test all(isfinite, updated.velocity)
+    end
 end

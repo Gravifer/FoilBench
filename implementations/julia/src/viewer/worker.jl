@@ -29,6 +29,8 @@ mutable struct ViewerWorker{T<:AbstractFloat}
     angle_lock::ReentrantLock
     task::Union{Nothing,Task}
     running::Base.RefValue{Bool}
+    recovery_pending::Bool
+    recent_failures::Vector{Float64}
 end
 
 function ViewerWorker(model::ViewerModel{T}) where {T}
@@ -40,7 +42,20 @@ function ViewerWorker(model::ViewerModel{T}) where {T}
         ReentrantLock(),
         nothing,
         Ref(false),
+        false,
+        Float64[],
     )
+end
+
+function _clear_failure_history!(worker::ViewerWorker)
+    empty!(worker.recent_failures)
+    return nothing
+end
+
+function _record_failure!(worker::ViewerWorker, now::Float64)
+    push!(worker.recent_failures, now)
+    filter!(failure_time -> failure_time >= now - 5.0, worker.recent_failures)
+    return length(worker.recent_failures)
 end
 
 function _publish_latest!(worker::ViewerWorker, selected::ViewerSnapshot)
@@ -55,12 +70,28 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
     command isa ToggleVorticityCommand && toggle_vorticity!(model)
     command isa ToggleTracerCommand && toggle_tracer_mode!(model)
     command isa ToggleCropCommand && toggle_crop!(model)
-    command isa ResetReynoldsCommand && reset_reynolds!(model)
-    command isa ResetViewerCommand && reset_viewer!(model)
+    if command isa ResetReynoldsCommand
+        reset_reynolds!(model)
+        worker.recovery_pending = false
+        _clear_failure_history!(worker)
+    end
+    if command isa ResetViewerCommand
+        reset_viewer!(model)
+        worker.recovery_pending = false
+        _clear_failure_history!(worker)
+    end
     command isa SetAngleCommand && set_angle!(model, command.angle_degrees, command.elapsed)
     command isa ReleaseAngleCommand && release_angle!(model)
-    command isa AdjustReynoldsCommand && adjust_reynolds!(model, command.decades)
-    command isa SwitchSolverCommand && switch_solver!(model, command.solver_id)
+    if command isa AdjustReynoldsCommand
+        adjust_reynolds!(model, command.decades)
+        worker.recovery_pending = false
+        _clear_failure_history!(worker)
+    end
+    if command isa SwitchSolverCommand
+        switch_solver!(model, command.solver_id)
+        worker.recovery_pending = false
+        _clear_failure_history!(worker)
+    end
     command isa AdjustBlendCommand && adjust_blend!(model, command.amount)
     command isa StopViewerCommand && (worker.running[] = false)
     return nothing
@@ -83,9 +114,29 @@ function _worker_loop(worker::ViewerWorker)
         worker.running[] || break
         try
             _publish_latest!(worker, update!(worker.model))
+            worker.recovery_pending = false
         catch error
-            worker.model.paused = true
-            worker.model.status_message = "paused after $(typeof(error))"
+            failure_count = _record_failure!(worker, time())
+            reynolds_modified = reynolds(worker.model.solver) != worker.model.scenario.reynolds
+            pose_only_recovery = worker.recovery_pending &&
+                rapid_drag_attempted(worker.model) && !worker.model.pose_only_drag
+            reset_reynolds = !pose_only_recovery && reynolds_modified &&
+                (worker.recovery_pending || failure_count >= 3)
+            if worker.recovery_pending && !reset_reynolds && !pose_only_recovery
+                worker.model.paused = true
+                worker.model.status_message = "paused after repeated $(typeof(error))"
+            else
+                try
+                    pose_only_recovery && enable_pose_only_drag!(worker.model)
+                    recover_solver!(worker.model, error; reset_reynolds)
+                    worker.recovery_pending = true
+                    (reset_reynolds || pose_only_recovery) && _clear_failure_history!(worker)
+                catch recovery_error
+                    worker.model.paused = true
+                    worker.model.status_message =
+                        "$(typeof(error)); fresh restart failed: $(typeof(recovery_error))"
+                end
+            end
             _publish_latest!(worker, snapshot(worker.model))
         end
         elapsed = (time_ns() - started) / 1.0e9

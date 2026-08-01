@@ -138,6 +138,11 @@ export enqueue!
 export foil_outline
 export latest_snapshot
 export path_segments
+export replenish_tracers!
+export rapid_drag_attempted
+export requested_tip_speed_ratio
+export recover_solver!
+export enable_pose_only_drag!
 export release_angle!
 export set_angle!
 export snapshot

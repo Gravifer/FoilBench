@@ -150,6 +150,75 @@ function path_segments(tracers::TracerState{T}) where {T}
     return output
 end
 
+"""Redistribute only excess tracers so coarse spatial coverage is approximately uniform."""
+function replenish_tracers!(
+    tracers::TracerState{T},
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    angle_degrees::T,
+) where {T}
+    tracer_count = size(tracers.positions, 2)
+    width = scenario.domain.bounds[1][2] - scenario.domain.bounds[1][1]
+    height = scenario.domain.bounds[2][2] - scenario.domain.bounds[2][1]
+    columns = max(1, round(Int, sqrt(tracer_count * width / height)))
+    rows = max(1, ceil(Int, tracer_count / columns))
+    bin_count = columns * rows
+    identifiers = Vector{Int}(undef, tracer_count)
+    counts = zeros(Int, bin_count)
+    x0, x1 = scenario.domain.bounds[1]
+    y0, y1 = scenario.domain.bounds[2]
+    for tracer in 1:tracer_count
+        column = clamp(floor(Int, (tracers.positions[1, tracer] - x0) / width * columns) + 1, 1, columns)
+        row = clamp(floor(Int, (tracers.positions[2, tracer] - y0) / height * rows) + 1, 1, rows)
+        identifier = column + (row - 1) * columns
+        identifiers[tracer] = identifier
+        counts[identifier] += 1
+    end
+    desired = fill(tracer_count ÷ bin_count, bin_count)
+    desired[1:(tracer_count % bin_count)] .+= 1
+    ranks = zeros(Int, bin_count)
+    donors = Int[]
+    for tracer in 1:tracer_count
+        identifier = identifiers[tracer]
+        ranks[identifier] += 1
+        ranks[identifier] > desired[identifier] && push!(donors, tracer)
+    end
+    destinations = Int[]
+    for identifier in 1:bin_count, _ in 1:max(desired[identifier] - counts[identifier], 0)
+        push!(destinations, identifier)
+    end
+    length(donors) == length(destinations) ||
+        throw(ArgumentError("tracer coverage redistribution is unbalanced"))
+    bin_width = width / T(columns)
+    bin_height = height / T(rows)
+    for (tracer, identifier) in zip(donors, destinations)
+        column = mod1(identifier, columns)
+        row = (identifier - 1) ÷ columns + 1
+        placed = false
+        for _ in 1:32
+            x = x0 + (T(column - 1) + _random_fraction(tracers.rng, T)) * bin_width
+            y = y0 + (T(row - 1) + _random_fraction(tracers.rng, T)) * bin_height
+            point = SVector{2,T}(x, y)
+            signed_distance(geometry, point, angle_degrees) > zero(T) || continue
+            tracers.positions[:, tracer] .= point
+            placed = true
+            break
+        end
+        placed || _seed_position!(
+            tracers.positions,
+            tracer,
+            tracers.rng,
+            scenario,
+            geometry,
+            angle_degrees,
+            tracers.mode,
+        )
+        tracers.ages[tracer] = 0
+        _reset_tracer_history!(tracers, tracer)
+    end
+    return length(donors)
+end
+
 mutable struct ViewerModel{T<:AbstractFloat}
     scenario::Scenario{2,T}
     geometry::NacaFoil{2,T}
@@ -161,8 +230,15 @@ mutable struct ViewerModel{T<:AbstractFloat}
     manual_angle::Union{Nothing,T}
     angular_velocity::T
     playback_rate::T
+    simulation_time::T
     step_rate::Float64
     status_message::String
+    drag_active::Bool
+    pose_only_drag::Bool
+    pose_only_release_pending::Bool
+    pose_only_calm_steps::Int
+    last_requested_angular_velocity::T
+    recovery_count::Int
 end
 
 function _create_solver(::Type{T}, solver_id::AbstractString) where {T<:AbstractFloat}
@@ -203,20 +279,52 @@ function ViewerModel(
         nothing,
         zero(T),
         one(T),
+        zero(T),
         0.0,
         "ready",
+        false,
+        false,
+        false,
+        0,
+        zero(T),
+        0,
     )
+end
+
+function requested_tip_speed_ratio(model::ViewerModel{T}) where {T}
+    tip_speed = abs(T(deg2rad(model.last_requested_angular_velocity))) * model.scenario.foil.chord
+    return tip_speed / reference_speed(model.scenario)
+end
+
+rapid_drag_attempted(model::ViewerModel) = model.drag_active && requested_tip_speed_ratio(model) > 1
+
+function enable_pose_only_drag!(model::ViewerModel)
+    model.pose_only_drag = true
+    model.pose_only_release_pending = false
+    model.pose_only_calm_steps = 0
+    return nothing
+end
+
+function _disable_pose_only_drag!(model::ViewerModel)
+    model.pose_only_drag = false
+    model.pose_only_release_pending = false
+    model.pose_only_calm_steps = 0
+    return nothing
 end
 
 function update!(model::ViewerModel{T}) where {T}
     model.paused && return snapshot(model)
     target_dt = model.scenario.output_dt * model.playback_rate
-    current_time = T(diagnostics(model.solver).values["time"])
+    current_time = model.simulation_time
     next_time = current_time + target_dt
-    control = model.manual_angle === nothing ? control_at(model.scenario, next_time) :
+    requested_control = model.manual_angle === nothing ? control_at(model.scenario, next_time) :
         ControlState(next_time, something(model.manual_angle), model.angular_velocity)
+    model.last_requested_angular_velocity = requested_control.angular_velocity_degrees
+    control = model.pose_only_drag ?
+        ControlState(next_time, requested_control.angle_degrees, zero(T)) : requested_control
     started = time_ns()
     advance!(model.solver, control, target_dt)
+    model.simulation_time = next_time
     elapsed = (time_ns() - started) / 1.0e9
     model.step_rate = elapsed > 0 ? inv(elapsed) : Inf
     advance_tracers!(
@@ -227,6 +335,16 @@ function update!(model::ViewerModel{T}) where {T}
         control,
         target_dt,
     )
+    if model.pose_only_drag
+        if model.pose_only_release_pending && !model.drag_active
+            _disable_pose_only_drag!(model)
+        elseif requested_tip_speed_ratio(model) <= T(0.5)
+            model.pose_only_calm_steps += 1
+            model.pose_only_calm_steps >= 2 && _disable_pose_only_drag!(model)
+        else
+            model.pose_only_calm_steps = 0
+        end
+    end
     return snapshot(model)
 end
 
@@ -240,6 +358,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         solver_info(model.solver).display_name,
         "  step=", round(model.step_rate; digits = 1), "/s",
         "  Re=", round(Int, reynolds(model.solver)),
+        model.pose_only_drag ? "  motion=pose-only" : "",
         "  ", model.status_message,
     )
     return ViewerSnapshot(
@@ -270,15 +389,23 @@ end
 
 function set_angle!(model::ViewerModel{T}, angle_degrees::Real, elapsed::Real = 1 / 60) where {T}
     selected = clamp(T(angle_degrees), T(-90), T(90))
-    current_time = T(diagnostics(model.solver).values["time"])
+    current_time = model.simulation_time
     scripted_angle = control_at(model.scenario, current_time).angle_degrees
     previous = something(model.manual_angle, scripted_angle)
     model.manual_angle = selected
     model.angular_velocity = (selected - previous) / max(T(elapsed), T(1.0e-4))
+    model.last_requested_angular_velocity = model.angular_velocity
+    model.drag_active = true
     return selected
 end
 
-release_angle!(model::ViewerModel{T}) where {T} = (model.angular_velocity = zero(T))
+function release_angle!(model::ViewerModel{T}) where {T}
+    model.angular_velocity = zero(T)
+    model.last_requested_angular_velocity = zero(T)
+    model.drag_active = false
+    model.pose_only_release_pending = model.pose_only_drag
+    return nothing
+end
 
 function set_reynolds!(model::ViewerModel{T}, selected::Real) where {T}
     chosen = clamp(T(selected), T(50), T(100_000))
@@ -311,8 +438,74 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     model.manual_angle = nothing
     model.angular_velocity = zero(T)
     model.playback_rate = one(T)
+    model.simulation_time = zero(T)
     model.step_rate = 0.0
     model.status_message = "reset"
+    model.drag_active = false
+    _disable_pose_only_drag!(model)
+    model.last_requested_angular_velocity = zero(T)
+    model.recovery_count = 0
+    return nothing
+end
+
+function _state_at_control(state::CanonicalFlowState{2,T}, control::ControlState) where {T}
+    return CanonicalFlowState(
+        state.schema_version,
+        state.bounds,
+        state.resolution,
+        state.periodic_axes,
+        T(control.time),
+        T(control.angle_degrees),
+        T(control.angular_velocity_degrees),
+        state.source_language,
+        state.source_solver,
+        copy(state.velocity),
+        state.density === nothing ? nothing : copy(state.density),
+    )
+end
+
+function _fresh_solver_at_control(
+    model::ViewerModel{T},
+    solver_id::AbstractString,
+    control::ControlState;
+    selected_reynolds::Real = reynolds(model.solver),
+) where {T}
+    incoming = _create_solver(T, solver_id)
+    initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
+    set_reynolds!(incoming, selected_reynolds)
+    fresh_state = _state_at_control(export_state(incoming), control)
+    import_state!(incoming, fresh_state, control)
+    return incoming
+end
+
+function recover_solver!(
+    model::ViewerModel{T},
+    failure;
+    reset_reynolds::Bool = false,
+) where {T}
+    current_time = model.simulation_time
+    current_angle = something(
+        model.manual_angle,
+        control_at(model.scenario, current_time).angle_degrees,
+    )
+    selected_reynolds = reset_reynolds ? model.scenario.reynolds : reynolds(model.solver)
+    recovery_control = ControlState(current_time, current_angle, zero(T))
+    model.solver = _fresh_solver_at_control(
+        model,
+        solver_info(model.solver).id,
+        recovery_control;
+        selected_reynolds,
+    )
+    moved = replenish_tracers!(
+        model.tracers,
+        model.scenario,
+        model.geometry,
+        current_angle,
+    )
+    model.angular_velocity = zero(T)
+    model.recovery_count += 1
+    reset_notice = reset_reynolds ? "; Re reset" : ""
+    model.status_message = "fresh restart after $(typeof(failure)); replenished=$moved$reset_notice"
     return nothing
 end
 
@@ -343,8 +536,26 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
             first(report.warnings)
         return true
     catch error
-        model.status_message = "switch failed: $(typeof(error))"
-        return false
+        try
+            incoming = _fresh_solver_at_control(
+                model,
+                solver_id,
+                ControlState(T(state.time), control.angle_degrees, zero(T));
+                selected_reynolds,
+            )
+            model.solver = incoming
+            moved = replenish_tracers!(
+                model.tracers,
+                model.scenario,
+                model.geometry,
+                T(control.angle_degrees),
+            )
+            model.status_message = "fresh restart after failed warm import; replenished=$moved"
+            return true
+        catch recovery_error
+            model.status_message = "switch failed: $(typeof(error)); restart failed: $(typeof(recovery_error))"
+            return false
+        end
     end
 end
 
