@@ -54,13 +54,25 @@ end
 
 @testset "Canonical state shared artifact" begin
     state = load_canonical_state(joinpath(FIXTURES, "canonical-state-f32"))
-    @test state.manifest["source_language"] == "conformance"
-    @test state.manifest["source_solver"] == "golden"
+    @test state.source_language == "conformance"
+    @test state.source_solver == "golden"
+    @test state.bounds == ((-1.0f0, 1.0f0), (-0.75f0, 0.75f0))
+    @test state.resolution == (4, 3)
+    @test dimension(state) == 2
+    @test scalar_type(state) == Float32
     @test size(state.velocity) == (1, 3, 4, 2)
     @test eltype(state.velocity) == Float32
     @test state.velocity[1, 1, 1, :] == Float32[-8 / 7, -1]
     @test state.density !== nothing
     @test size(state.density) == (1, 3, 4)
+
+    mktempdir() do directory
+        save_canonical_state(state, directory)
+        roundtrip = load_canonical_state(directory)
+        @test roundtrip.velocity == state.velocity
+        @test roundtrip.density == state.density
+        @test roundtrip.source_solver == state.source_solver
+    end
 end
 
 @testset "Shared scenario loading" begin
@@ -70,4 +82,39 @@ end
     @test scenario.foil.naca == "2412"
     @test scenario.precision == :float32
     @test scenario.reynolds == 1000
+    @test dimension(scenario) == 2
+    @test scalar_type(scenario) == Float32
+    midpoint = control_at(scenario, 3.0)
+    @test midpoint.time == 3.0f0
+    @test isfinite(midpoint.angle_degrees)
+    @test isfinite(midpoint.angular_velocity_degrees)
+end
+
+@testset "Solver capabilities" begin
+    scenario = load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"))
+    info = SolverInfo("test", "Test", (2,), true, :cpu)
+    @test supports(info, scenario)
+    @test isnothing(require_supported(info, scenario))
+
+    domain3 = DomainSpec(
+        ((-1.0f0, 1.0f0), (-1.0f0, 1.0f0), (-0.1f0, 0.1f0)),
+        (16, 16, 4),
+        (:z,),
+    )
+    scenario3 = Scenario(
+        1,
+        "thin-3d",
+        domain3,
+        500.0f0,
+        SVector{3,Float32}(1, 0, 0),
+        FoilSpec("0012", 1.0f0, SVector{3,Float32}(0, 0, 0)),
+        [ControlKeyframe(0.0f0, 0.0f0)],
+        1.0f0,
+        0.01f0,
+        :float32,
+        UInt64(0),
+        Dict{String,Any}(),
+    )
+    @test !supports(info, scenario3)
+    @test_throws ArgumentError require_supported(info, scenario3)
 end

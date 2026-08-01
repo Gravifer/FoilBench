@@ -25,13 +25,42 @@ struct Scenario{D,T<:AbstractFloat}
     domain::DomainSpec{D,T}
     reynolds::T
     freestream::SVector{D,T}
-    foil::FoilSpec{T}
+    foil::FoilSpec{D,T}
     controls::Vector{ControlKeyframe{T}}
     duration::T
     output_dt::T
     precision::Symbol
     seed::UInt64
     solver_options::Dict{String,Any}
+end
+
+dimension(::DomainSpec{D}) where {D} = D
+dimension(::Scenario{D}) where {D} = D
+scalar_type(::Scenario{D,T}) where {D,T} = T
+
+function control_at(scenario::Scenario{D,T}, time::Real) where {D,T}
+    selected_time = T(time)
+    controls = scenario.controls
+    if length(controls) == 1 || selected_time <= first(controls).time
+        return ControlState(selected_time, first(controls).angle_degrees, zero(T))
+    end
+    if selected_time >= last(controls).time
+        return ControlState(selected_time, last(controls).angle_degrees, zero(T))
+    end
+    for index in 1:(length(controls) - 1)
+        left = controls[index]
+        right = controls[index + 1]
+        left.time <= selected_time <= right.time || continue
+        duration = right.time - left.time
+        duration > zero(T) || return ControlState(selected_time, right.angle_degrees, zero(T))
+        linear = (selected_time - left.time) / duration
+        smooth = linear^2 * (T(3) - T(2) * linear)
+        delta = right.angle_degrees - left.angle_degrees
+        angle = left.angle_degrees + smooth * delta
+        angular_velocity = T(6) * linear * (one(T) - linear) * delta / duration
+        return ControlState(selected_time, angle, angular_velocity)
+    end
+    return ControlState(selected_time, last(controls).angle_degrees, zero(T))
 end
 
 function _load_scenario(document::Dict{String,Any}, ::Val{D}) where {D}
@@ -43,7 +72,7 @@ function _load_scenario(document::Dict{String,Any}, ::Val{D}) where {D}
     resolution = ntuple(index -> Int(document["resolution"][index]), D)
     axes = Tuple(Symbol(value) for value in document["periodic_axes"])
     domain = DomainSpec(bounds, resolution, axes)
-    pivot = SVector{2,T}(document["foil"]["pivot"])
+    pivot = SVector{D,T}(document["foil"]["pivot"])
     foil = FoilSpec(document["foil"]["naca"], T(document["foil"]["chord"]), pivot)
     controls = [
         ControlKeyframe(T(value["time"]), T(value["angle_degrees"]))
