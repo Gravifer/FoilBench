@@ -23,6 +23,7 @@ include("stable_fluids.jl")
 include("lbm.jl")
 include("pic_flip.jl")
 include("benchmarking.jl")
+include("chaotic_experiments.jl")
 include("viewer/model.jl")
 include("viewer/worker.jl")
 
@@ -143,6 +144,11 @@ export run_benchmark_matrix
 export scenario_with_run
 export solver_ids
 export validate_benchmark_result
+export WakeSweepCase
+export chaotic_scenario
+export run_chaos_sensitivity
+export run_chaotic_wake_case
+export temporal_spectral_statistics
 export advance_tracers!
 export adjust_reynolds!
 export adjust_blend!

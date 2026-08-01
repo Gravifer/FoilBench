@@ -732,3 +732,34 @@ end
         @test occursin("julia", comparison)
     end
 end
+
+@testset "Julia chaotic-wake experiments" begin
+    coherent = [sin(2pi * index / 32) for index in 0:127]
+    multiscale = [
+        sin(2pi * index / 32) + 0.35 * sin(2pi * index / 11) +
+            0.2 * sin(2pi * index / 7)
+        for index in 0:127
+    ]
+    coherent_spectrum = temporal_spectral_statistics(coherent)
+    multiscale_spectrum = temporal_spectral_statistics(multiscale)
+    @test multiscale_spectrum.entropy > coherent_spectrum.entropy
+    @test multiscale_spectrum.broadband_power_fraction >
+          coherent_spectrum.broadband_power_fraction
+
+    base = load_scenario(
+        joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "chaotic-experimental.json"),
+    )
+    selected = WakeSweepCase(10_000.0, 35.0, (24, 14))
+    scenario = chaotic_scenario(base, selected, 0.1)
+    @test scenario.solver_options["stable_advection"] == "skew-rk2"
+    @test scenario.controls[1].angle_degrees == 35.0f0
+    wake = run_chaotic_wake_case(base, selected; duration = 0.1, burn_in = 0.03)
+    @test wake["spectral_entropy"] >= 0
+    @test wake["enstrophy_coefficient_of_variation"] >= 0
+    @test wake["vorticity_small_scale_fraction"] >= 0
+    sensitivity = run_chaos_sensitivity(base, selected; duration = 0.1, epsilon = 1.0e-4)
+    @test sensitivity["initial_wake_rms_difference"] > 0
+    @test sensitivity["amplification"] > 0
+    @test length(sensitivity["times"]) == length(sensitivity["wake_rms_differences"])
+    @test all(isfinite, sensitivity["wake_rms_differences"])
+end
