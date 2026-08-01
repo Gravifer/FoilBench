@@ -4,6 +4,8 @@ mutable struct TracerState{T<:AbstractFloat}
     history_cursor::Int
     ages::Vector{T}
     lifetimes::Vector{T}
+    generations::Vector{UInt64}
+    history_generations::Matrix{UInt64}
     mode::Symbol
     rng::PCG32
 end
@@ -75,13 +77,49 @@ function TracerState(
     end
     lifetimes = [T(3) + T(4) * _random_fraction(rng, T) for _ in 1:count]
     ages = [_random_fraction(rng, T) * lifetimes[index] for index in 1:count]
-    return TracerState(positions, history, history_length, ages, lifetimes, mode, rng)
+    generations = zeros(UInt64, count)
+    history_generations = zeros(UInt64, count, history_length)
+    return TracerState(
+        positions,
+        history,
+        history_length,
+        ages,
+        lifetimes,
+        generations,
+        history_generations,
+        mode,
+        rng,
+    )
 end
 
 function _reset_tracer_history!(tracers::TracerState, index::Int)
     for history_index in axes(tracers.history, 3)
         tracers.history[:, index, history_index] = tracers.positions[:, index]
+        tracers.history_generations[index, history_index] = tracers.generations[index]
     end
+    return nothing
+end
+
+function _respawn_tracer!(
+    tracers::TracerState{T},
+    index::Int,
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    angle_degrees::T,
+    placement::Symbol,
+) where {T}
+    _seed_position!(
+        tracers.positions,
+        index,
+        tracers.rng,
+        scenario,
+        geometry,
+        angle_degrees,
+        placement,
+    )
+    tracers.generations[index] += 1
+    _reset_tracer_lifetime!(tracers, index)
+    _reset_tracer_history!(tracers, index)
     return nothing
 end
 
@@ -120,23 +158,46 @@ function advance_tracers!(
         point = SVector{2,T}(tracers.positions[:, index])
         expired = tracers.mode == :display && tracers.ages[index] >= tracers.lifetimes[index]
         outside = _outside_domain(view(tracers.positions, :, index), scenario.domain)
-        inside_solid = signed_distance(geometry, point, control.angle_degrees) <= zero(T)
-        invalid = outside || inside_solid
-        if expired || invalid
+        distance = signed_distance(geometry, point, control.angle_degrees)
+        inside_solid = distance <= zero(T)
+        if outside || expired
             placement = outside || tracers.mode == :material ? :inlet : :domain
-            _seed_position!(
-                tracers.positions,
+            _respawn_tracer!(
+                tracers,
                 index,
-                tracers.rng,
                 scenario,
                 geometry,
                 control.angle_degrees,
                 placement,
             )
-            _reset_tracer_lifetime!(tracers, index)
-            _reset_tracer_history!(tracers, index)
+        elseif inside_solid
+            point_matrix = reshape(collect(point), 2, 1)
+            normal = vec(normals(geometry, point_matrix, control.angle_degrees))
+            normal_norm = sqrt(sum(abs2, normal))
+            shallow_limit = T(0.5) * min(dx(scenario.domain), dy(scenario.domain))
+            projectable = distance >= -shallow_limit && isfinite(distance) &&
+                all(isfinite, normal) && normal_norm > T(1.0e-8)
+            if projectable
+                normal ./= normal_norm
+                tracers.positions[:, index] .-= (distance - T(1.0e-4)) .* normal
+                tracers.history[:, index, tracers.history_cursor] = tracers.positions[:, index]
+                tracers.history_generations[index, tracers.history_cursor] =
+                    tracers.generations[index]
+            else
+                placement = tracers.mode == :material ? :inlet : :domain
+                _respawn_tracer!(
+                    tracers,
+                    index,
+                    scenario,
+                    geometry,
+                    control.angle_degrees,
+                    placement,
+                )
+            end
         else
             tracers.history[:, index, tracers.history_cursor] = tracers.positions[:, index]
+            tracers.history_generations[index, tracers.history_cursor] =
+                tracers.generations[index]
         end
     end
     return nothing
@@ -145,10 +206,17 @@ end
 function path_segments(tracers::TracerState{T}) where {T}
     history_length = size(tracers.history, 3)
     tracer_count = size(tracers.positions, 2)
-    output = Matrix{T}(undef, 2, 2 * tracer_count * (history_length - 1))
     chronological = [mod1(tracers.history_cursor + offset, history_length) for offset in 1:history_length]
+    valid_count = count(
+        tracers.history_generations[tracer_index, chronological[history_index]] ==
+            tracers.history_generations[tracer_index, chronological[history_index + 1]]
+        for tracer_index in 1:tracer_count, history_index in 1:(history_length - 1)
+    )
+    output = Matrix{T}(undef, 2, 2 * valid_count)
     output_index = 1
     for tracer_index in 1:tracer_count, history_index in 1:(history_length - 1)
+        tracers.history_generations[tracer_index, chronological[history_index]] ==
+            tracers.history_generations[tracer_index, chronological[history_index + 1]] || continue
         output[:, output_index] = tracers.history[:, tracer_index, chronological[history_index]]
         output[:, output_index + 1] = tracers.history[:, tracer_index, chronological[history_index + 1]]
         output_index += 2
@@ -156,73 +224,27 @@ function path_segments(tracers::TracerState{T}) where {T}
     return output
 end
 
-"""Redistribute only excess tracers so coarse spatial coverage is approximately uniform."""
-function replenish_tracers!(
+"""Deterministically reseed all visible tracers and invalidate their paths."""
+function reseed_tracers!(
     tracers::TracerState{T},
     scenario::Scenario{2,T},
     geometry::NacaFoil{2,T},
     angle_degrees::T,
 ) where {T}
-    tracer_count = size(tracers.positions, 2)
-    width = scenario.domain.bounds[1][2] - scenario.domain.bounds[1][1]
-    height = scenario.domain.bounds[2][2] - scenario.domain.bounds[2][1]
-    columns = max(1, round(Int, sqrt(tracer_count * width / height)))
-    rows = max(1, ceil(Int, tracer_count / columns))
-    bin_count = columns * rows
-    identifiers = Vector{Int}(undef, tracer_count)
-    counts = zeros(Int, bin_count)
-    x0, x1 = scenario.domain.bounds[1]
-    y0, y1 = scenario.domain.bounds[2]
-    for tracer in 1:tracer_count
-        column = clamp(floor(Int, (tracers.positions[1, tracer] - x0) / width * columns) + 1, 1, columns)
-        row = clamp(floor(Int, (tracers.positions[2, tracer] - y0) / height * rows) + 1, 1, rows)
-        identifier = column + (row - 1) * columns
-        identifiers[tracer] = identifier
-        counts[identifier] += 1
-    end
-    desired = fill(tracer_count ÷ bin_count, bin_count)
-    desired[1:(tracer_count % bin_count)] .+= 1
-    ranks = zeros(Int, bin_count)
-    donors = Int[]
-    for tracer in 1:tracer_count
-        identifier = identifiers[tracer]
-        ranks[identifier] += 1
-        ranks[identifier] > desired[identifier] && push!(donors, tracer)
-    end
-    destinations = Int[]
-    for identifier in 1:bin_count, _ in 1:max(desired[identifier] - counts[identifier], 0)
-        push!(destinations, identifier)
-    end
-    length(donors) == length(destinations) ||
-        throw(ArgumentError("tracer coverage redistribution is unbalanced"))
-    bin_width = width / T(columns)
-    bin_height = height / T(rows)
-    for (tracer, identifier) in zip(donors, destinations)
-        column = mod1(identifier, columns)
-        row = (identifier - 1) ÷ columns + 1
-        placed = false
-        for _ in 1:32
-            x = x0 + (T(column - 1) + _random_fraction(tracers.rng, T)) * bin_width
-            y = y0 + (T(row - 1) + _random_fraction(tracers.rng, T)) * bin_height
-            point = SVector{2,T}(x, y)
-            signed_distance(geometry, point, angle_degrees) > zero(T) || continue
-            tracers.positions[:, tracer] .= point
-            placed = true
-            break
-        end
-        placed || _seed_position!(
-            tracers.positions,
+    for tracer in axes(tracers.positions, 2)
+        _respawn_tracer!(
+            tracers,
             tracer,
-            tracers.rng,
             scenario,
             geometry,
             angle_degrees,
             :domain,
         )
-        _reset_tracer_lifetime!(tracers, tracer)
-        _reset_tracer_history!(tracers, tracer)
+        tracers.ages[tracer] =
+            _random_fraction(tracers.rng, T) * tracers.lifetimes[tracer]
     end
-    return length(donors)
+    tracers.history_cursor = size(tracers.history, 3)
+    return size(tracers.positions, 2)
 end
 
 mutable struct ViewerModel{T<:AbstractFloat}
@@ -587,7 +609,7 @@ function recover_solver!(
         recovery_control;
         selected_reynolds,
     )
-    moved = replenish_tracers!(
+    moved = reseed_tracers!(
         model.tracers,
         model.scenario,
         model.geometry,
@@ -636,7 +658,7 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
                 selected_reynolds,
             )
             model.solver = incoming
-            moved = replenish_tracers!(
+            moved = reseed_tracers!(
                 model.tracers,
                 model.scenario,
                 model.geometry,

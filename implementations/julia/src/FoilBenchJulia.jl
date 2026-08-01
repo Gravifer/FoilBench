@@ -160,7 +160,7 @@ export enqueue!
 export foil_outline
 export latest_snapshot
 export path_segments
-export replenish_tracers!
+export reseed_tracers!
 export rapid_drag_attempted
 export requested_tip_speed_ratio
 export recover_solver!

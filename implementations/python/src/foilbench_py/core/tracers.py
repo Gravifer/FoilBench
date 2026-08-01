@@ -10,7 +10,13 @@ from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import ControlState, DomainSpec
 from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.core.rng import PCG32
-from foilbench_py.types import ParticleHistory, ParticleScalar, PointCloud
+from foilbench_py.types import (
+    ParticleGeneration,
+    ParticleGenerationHistory,
+    ParticleHistory,
+    ParticleScalar,
+    PointCloud,
+)
 
 type TracerMode = Literal["display", "material"]
 
@@ -25,6 +31,8 @@ class TracerSystem:
     rng: PCG32
     ages: ParticleScalar
     lifetimes: ParticleScalar
+    generations: ParticleGeneration
+    history_generations: ParticleGenerationHistory
     mode: TracerMode
 
     @classmethod
@@ -46,7 +54,21 @@ class TracerSystem:
         history = np.repeat(positions[None, :, :], history_length, axis=0)
         lifetimes = 3.0 + 4.0 * rng.random((count,))
         ages = rng.random((count,)) * lifetimes
-        return cls(domain, foil, positions, history, 0, rng, ages, lifetimes, mode)
+        generations = np.zeros((count,), dtype=np.int64)
+        history_generations = np.zeros((history_length, count), dtype=np.int64)
+        return cls(
+            domain,
+            foil,
+            positions,
+            history,
+            0,
+            rng,
+            ages,
+            lifetimes,
+            generations,
+            history_generations,
+            mode,
+        )
 
     def _respawn(
         self,
@@ -66,6 +88,7 @@ class TracerSystem:
         self.positions[selected, 1] = self.rng.uniform(y0, y1, (count,))
         self.ages[selected] = 0.0
         self.lifetimes[selected] = 3.0 + 4.0 * self.rng.random((count,))
+        self.generations[selected] += 1
 
         inside = self.foil.contains(self.positions[selected], angle_degrees)
         if np.any(inside):
@@ -76,6 +99,7 @@ class TracerSystem:
             normal = self.foil.normals(points, angle_degrees)
             self.positions[inside_indices] -= (distance[:, None] - 1.0e-4) * normal
         self.history[:, selected, :] = self.positions[selected][None, :, :]
+        self.history_generations[:, selected] = self.generations[selected][None, :]
 
     def toggle_mode(self) -> TracerMode:
         self.mode = "material" if self.mode == "display" else "display"
@@ -116,20 +140,49 @@ class TracerSystem:
 
         inside = self.foil.contains(self.positions, control.angle_degrees)
         if np.any(inside):
-            points = self.positions[inside]
+            inside_indices = np.flatnonzero(inside)
+            points = self.positions[inside_indices]
             distance = self.foil.signed_distance(points, control.angle_degrees)
             normal = self.foil.normals(points, control.angle_degrees)
-            self.positions[inside] -= (distance[:, None] - 1.0e-4) * normal
+            normal_norm = np.linalg.norm(normal, axis=1)
+            shallow_limit = 0.5 * min(self.domain.dx, self.domain.dy)
+            projectable = (
+                (distance >= -shallow_limit)
+                & np.isfinite(distance)
+                & np.isfinite(normal).all(axis=1)
+                & (normal_norm > 1.0e-8)
+            )
+            if np.any(projectable):
+                selected_indices = inside_indices[projectable]
+                selected_distance = distance[projectable]
+                selected_normal = normal[projectable] / normal_norm[projectable, None]
+                self.positions[selected_indices] -= (
+                    selected_distance[:, None] - 1.0e-4
+                ) * selected_normal
+            if np.any(~projectable):
+                respawn = np.zeros(self.positions.shape[0], dtype=np.bool_)
+                respawn[inside_indices[~projectable]] = True
+                self._respawn(
+                    respawn,
+                    throughout_domain=self.mode == "display",
+                    angle_degrees=control.angle_degrees,
+                )
 
         self.history_index = (self.history_index + 1) % self.history.shape[0]
         self.history[self.history_index] = self.positions
+        self.history_generations[self.history_index] = self.generations
 
     def ordered_history(self) -> ParticleHistory:
         return np.roll(self.history, -self.history_index - 1, axis=0)
 
-    def path_segments(self, maximum_jump: float = 0.25) -> PointCloud:
+    def path_segments(self) -> PointCloud:
         ordered = self.ordered_history()
+        ordered_generations = np.roll(
+            self.history_generations,
+            -self.history_index - 1,
+            axis=0,
+        )
         starts = ordered[:-1].reshape(-1, 2)
         ends = ordered[1:].reshape(-1, 2)
-        valid = np.linalg.norm(ends - starts, axis=1) <= maximum_jump
+        valid = (ordered_generations[:-1] == ordered_generations[1:]).reshape(-1)
         return np.stack((starts[valid], ends[valid]), axis=1).reshape(-1, 2)

@@ -183,6 +183,7 @@ def test_display_tracers_expire_without_leaving_empty_regions(
     scenario = scenario_factory(resolution=(32, 16))
     model = ViewerModel.create(scenario, "stable-fluids")
     before = model.tracers.positions.copy()
+    generations = model.tracers.generations.copy()
     model.tracers.ages[:] = model.tracers.lifetimes + 1.0
 
     model.update(0.01)
@@ -190,9 +191,33 @@ def test_display_tracers_expire_without_leaving_empty_regions(
     assert model.tracers.mode == "display"
     assert np.all(model.tracers.ages == 0.0)
     assert not np.array_equal(before, model.tracers.positions)
+    np.testing.assert_array_equal(model.tracers.generations, generations + 1)
     for history_slice in model.tracers.history:
         np.testing.assert_array_equal(history_slice, model.tracers.positions)
     assert model.toggle_tracer_mode() == "material"
+
+
+def test_tracer_paths_use_explicit_continuity_generations(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    tracers = model.tracers
+    full_vertex_count = 2 * tracers.positions.shape[0] * (tracers.history.shape[0] - 1)
+    assert tracers.path_segments().shape == (full_vertex_count, 2)
+
+    chronological = np.roll(
+        tracers.history_generations,
+        -tracers.history_index - 1,
+        axis=0,
+    )
+    chronological[-1, 0] += 1
+    tracers.history_generations[:] = np.roll(
+        chronological,
+        tracers.history_index + 1,
+        axis=0,
+    )
+
+    assert tracers.path_segments().shape == (full_vertex_count - 2, 2)
 
 
 def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
@@ -207,6 +232,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     model.set_angle(30.0)
     positions = model.tracers.positions.copy()
     history = model.tracers.history.copy()
+    generations = model.tracers.generations.copy()
 
     model.recover_solver(FloatingPointError("unstable imported flow"))
 
@@ -220,6 +246,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     assert model.previous_angle == 30.0
     assert not np.array_equal(model.tracers.positions, positions)
     assert not np.array_equal(model.tracers.history, history)
+    np.testing.assert_array_equal(model.tracers.generations, generations + 1)
     assert np.isfinite(model.tracers.positions).all()
     x0, x1 = model.scenario.domain.bounds[0]
     y0, y1 = model.scenario.domain.bounds[1]

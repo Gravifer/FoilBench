@@ -677,13 +677,15 @@ end
         2,
         32,
     )
-    replenished = replenish_tracers!(
+    generations_before_reseed = copy(model.tracers.generations)
+    reseeded = reseed_tracers!(
         model.tracers,
         scenario,
         model.geometry,
         control_at(scenario, 0).angle_degrees,
     )
-    @test replenished > 0
+    @test reseeded == size(model.tracers.positions, 2)
+    @test model.tracers.generations == generations_before_reseed .+ 1
     @test all(isfinite, model.tracers.positions)
 
     update!(model)
