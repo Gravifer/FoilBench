@@ -41,9 +41,10 @@ Python implementation is the eventual performance winner.
   diagnostics are supported. The manual GPU smoke procedure is in
   `architecture.md`; headless state/control/worker behavior is automated.
 - All six directed warm-swap pairs are tested. State conversion happens only
-  at completed steps and preserves controls, time, tracers, and paths. Invalid
-  imported states recover by fresh initialization at the selected foil angle
-  and evenly replenish display tracers, with no visual crossfade.
+  at completed steps and preserves controls, time, tracers, and paths. A
+  rejected import returns a structured reason and retains the source solver.
+  Forced runtime recovery preserves physical time and foil pose, discards
+  private flow history, and fully reseeds display tracers without a crossfade.
 - Repeated rapid-motion failures temporarily degrade to exact pose updates
   with zero moving-wall angular velocity; normal coupling returns when the
   drag calms. Reynolds instability has a separate reset circuit breaker, and
@@ -94,3 +95,9 @@ fallback and release, non-finite pressure rejection, and end-to-end Stable
 Fluids recovery. The original full benchmark matrix was not rerun; the
 extension's separate timing, refinement, spectrum, and paired-trajectory
 evidence is recorded in `chaotic-wake-experiment.md`.
+
+On 2026-08-02, cross-language viewer-contract reconciliation raised the Python
+suite to 113 passing tests. Timestamped drag control, structured warm-import
+rejection, time-preserving recovery epochs, explicit tracer generations,
+typed presentation state, hidden-vorticity throttling, schedule semantics,
+and warming overlays are covered by strict Pyright, Ruff, and pytest.

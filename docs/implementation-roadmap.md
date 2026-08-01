@@ -20,6 +20,11 @@ fixed stall. The accepted extension raises the automated suite to 105 tests
 and adds online Reynolds control, diagnostic cropping, rapid-motion recovery,
 and fail-fast pressure-solver safety.
 
+The 2026-08-02 shared viewer-contract reconciliation raises the Python suite
+to 113 tests and aligns timestamped drag controls, structured switching,
+time-preserving recovery, tracer continuity, presentation state, and snapshot
+semantics with Julia.
+
 ### Accepted wake behavior
 
 The compact Stable Fluids preview produces separated shear-layer roll-up,
@@ -57,14 +62,15 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
 - Native GLMakie frontend with passive tracers, batched path history,
   vorticity, diagnostic crop, context-sensitive Stable/PIC tuning, all
   Python-equivalent controls, and simulation work isolated from rendering.
-- All six directed warm swaps, conversion-transient reporting, fresh-state
-  fallback, coverage-aware tracer replenishment, a Reynolds circuit breaker,
-  and the self-releasing rapid-drag pose-only tier.
+- All six directed warm swaps, conversion-transient reporting, structured
+  rejection with source retention, time-preserving forced recovery,
+  full tracer reseeding with continuity generations, a Reynolds circuit
+  breaker, and the self-releasing rapid-drag pose-only tier.
 - Native `view`, `bench`, `compare`, and `describe` commands; matched fidelity,
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 460 passing checks. On the development
+The automated Julia suite contains 476 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads

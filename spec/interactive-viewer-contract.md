@@ -282,17 +282,16 @@ fails. The exact threshold may scale with the implementation's grid spacing.
 
 ### Julia selective-redistribution archive
 
-The Phase 2A Julia viewer currently has a deterministic, coverage-aware
-selective redistribution algorithm. It is an interesting implementation
-advantage, but observation showed that its visual interruption is not much
-smaller than a full reseed. Future implementations will use full reseeding
-for forced recovery.
+The original Phase 2A Julia viewer had a deterministic, coverage-aware
+selective redistribution algorithm. It was an interesting implementation
+advantage, but observation showed that its visual interruption was not much
+smaller than a full reseed. Commit `95a6387` replaced forced-recovery
+redistribution with full reseeding.
 
-Before removing Julia's selective recovery behavior, preserve the last commit
-that contains it with an archival tag or branch such as
-`archive/julia-selective-tracer-redistribution`. The removal itself should be
-a focused commit. Commit `3feb00c` introduced the current inlet-coverage and
-selective-replenishment behavior and is the initial historical reference.
+The archival tag `archive/julia-selective-tracer-redistribution` preserves
+commit `f06845b`, the last project state before removal. Commit `3feb00c`
+introduced the inlet-coverage and selective-replenishment behavior and remains
+the initial historical reference.
 
 ## Diagnostics and presentation
 
@@ -375,29 +374,26 @@ Headless viewer tests should cover:
 Timing-sensitive tests should use injected clocks or deterministic event
 timestamps rather than depending on render-frame timing.
 
-## Current migration notes
+## Existing implementation status
 
-This draft intentionally describes several behaviors that neither current
-implementation fully satisfies yet:
+Commits `95a6387` and `778654c` reconcile the Python and Julia viewers with
+the normative portions of this draft:
 
-| Area | Python Phase 1 behavior | Julia Phase 2A behavior | Contract direction |
-| --- | --- | --- | --- |
-| Drag velocity | Pose delta divided by simulated step interval. | Pose delta divided by wall event interval with a `1e-4 s` floor. | Timestamped samples, smoothing, and a generous solver-facing cap. |
-| Recovery time | Returns simulation time to zero. | Preserves simulation time. | Preserve time; increment a recovery epoch. |
-| Recovery tracers | Full reseed. | Selective coverage redistribution. | Full deterministic reseed, with Julia history archived first. |
-| Warm-import failure | Some direct switch failures can pause. | Automatically attempts fresh destination state. | Structured rejection; fallback decision remains open. |
-| Tracer collision | Projects penetration using the SDF normal. | Respawns penetrating tracers. | Project shallow penetration; respawn deep or invalid cases. |
-| Path discontinuity | Rejects unusually long segments. | Clears individual history when it relocates a tracer. | Explicit per-tracer continuity generations. |
-| Vorticity cadence | Roughly every `0.2` simulated seconds. | Every published snapshot. | Hidden means no work; configurable cadence near `0.1 s`; immediate invalidation events. |
-| Performance rates | Short EMA. | Latest-step value. | Keep both; stabilize Julia's numeric field widths. |
-| Paused owner | Blocks for commands. | Polls and republishes near 60 Hz. | Event-driven blocking. |
-| Snapshot reads | Persistent latest snapshot. | Reading consumes the latest channel item. | Persistent non-consuming snapshot plus revision. |
-| Presentation state | Split between worker model and frontend. | Mostly stored in `ViewerModel`. | Separate typed presentation state. |
-| Reset metrics | Clears rates and reports. | Some fields remain until another step. | Clear and show warming placeholders. |
+| Area | Implemented shared behavior |
+| --- | --- |
+| Drag velocity | Timestamped samples, a short smoothing window, a generous nondimensional solver-facing cap, and an unrestricted clamped visible pose. |
+| Schedules | Manual drag and forced recovery cancel future angle events; solver and Reynolds changes preserve them; reset restores them. |
+| Recovery | Physical time and visible pose are preserved, recovery epochs are reported, metrics return to warming, and solver-private state is declared discarded. |
+| Recovery tracers | Both languages perform deterministic full reseeding with explicit continuity generations. |
+| Warm-import failure | Both languages return a structured accepted/rejected outcome and retain the source on rejection while fallback remains open. |
+| Tracer collision | Shallow penetration projects along a valid SDF normal; deep or invalid cases respawn. |
+| Diagnostics | Typed presentation state owns visibility and crop state; hidden vorticity stops field refresh; ordinary cadence targets `0.1 s`. |
+| Performance display | Python retains its EMA, Julia retains latest-step values with fixed-width volatile fields, and both show warming placeholders. |
+| Simulation owner | Both block while paused and wake for commands or shutdown. |
+| Snapshots | Both publish detached, persistent, non-consuming latest snapshots; Julia now adds revisions and command acknowledgements. |
 
-These notes are not a request to preserve either implementation's accidental
-behavior. They exist to guide reconciliation and prevent later languages from
-copying a discrepancy merely because one reference happens to do it.
+Later implementations should follow these semantics rather than reconstructing
+the superseded discrepancies from repository history.
 
 ## Open decisions
 

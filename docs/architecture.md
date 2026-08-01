@@ -64,11 +64,14 @@ the canonical artifact boundary. Stable Fluids, D2Q9 TRT LBM, and blended
 PIC/FLIP implement the same typed behavioral contract while retaining private
 native state.
 
-The GLMakie frontend owns a simulation `Task` and consumes immutable,
-latest-only snapshots. It keeps visible tracers and path histories outside the
-solver so all six directed warm swaps preserve the presentation. A failed
-import falls back atomically to fresh solver state at the visible foil pose;
-coverage-aware tracer replenishment repairs only depleted regions. Repeated
+The GLMakie frontend owns a simulation `Task` and publishes detached,
+persistent latest-only snapshots with revisions and command acknowledgements.
+Reading does not consume a snapshot, and the task blocks while paused. Visible
+tracers and path histories remain outside the solver so accepted warm swaps
+preserve presentation. A rejected warm import is structured and retains the
+source solver while the automatic fallback policy remains open. Forced
+recovery preserves physical time and visible pose, records a recovery epoch,
+and fully reseeds tracers with explicit path-continuity generations. Repeated
 rapid-motion failures temporarily suppress moving-wall angular velocity while
 continuing to track the pointer, then restore normal coupling after release or
 sustained gentle motion.
@@ -95,6 +98,17 @@ Both native viewers start with vorticity visible and clamp interactive foil
 dragging to ±30 degrees. Scenario options keep crop geometry separate from its
 initial state: `viewer_crop_cells` defines the inset and `viewer_crop_default`
 selects whether it opens enabled.
+
+Both viewers derive solver-facing angular velocity from timestamped pose
+samples, use a short smoothing window, and cap resolved foil-tip speed without
+damping the visible pose. Manual drag or forced recovery cancels future angle
+events; solver switching and Reynolds changes do not. Reset restores the
+original scenario schedule.
+
+Typed presentation state owns vorticity and crop selection. Hidden vorticity
+does not refresh the field during ordinary evolution, while reset, switch,
+recovery, and reenabling it trigger an immediate refresh. Ordinary diagnostic
+cadence targets approximately 0.1 simulated seconds.
 
 For the Julia viewer, run:
 

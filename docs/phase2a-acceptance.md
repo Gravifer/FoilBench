@@ -21,16 +21,18 @@ Python; it does not import Python code or host Python solvers.
   tracers and path histories, vorticity, cropping, performance overlays,
   Reynolds control, context-sensitive Stable/PIC tuning, inlet tracer
   respawning with staggered display turnover, and all six directed warm swaps.
-- Fresh-state recovery at the visible foil pose, selective tracer
-  replenishment, the Reynolds circuit breaker, and a self-releasing rapid-drag
-  pose-only fallback.
+- Time-preserving fresh recovery at the visible foil pose, deterministic full
+  tracer reseeding with continuity generations, the Reynolds circuit breaker,
+  and a self-releasing rapid-drag pose-only fallback.
+- Structured warm-import outcomes, source retention on rejection, typed
+  presentation state, and persistent non-consuming snapshots with revisions.
 - Native `view`, `bench`, `compare`, and `describe` commands, schema-valid
   JSON/CSV output, optional canonical snapshots, component benchmarks, and
   deterministic chaotic-wake experiments.
 
 ## Automated evidence
 
-The native Julia suite passes 460 checks covering shared RNG and geometry
+The native Julia suite passes 476 checks covering shared RNG and geometry
 fixtures, scenarios and canonical states, malformed input, all solver
 contracts, runtime Reynolds changes, thin-3D rejection, all six swaps at low
 and high attack angles, graceful recovery, and headless viewer behavior.
