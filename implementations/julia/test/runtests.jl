@@ -569,6 +569,8 @@ end
     @test initial.time == 0.0
     @test size(initial.tracer_positions) == (2, 32)
     @test size(initial.path_segments) == (2, 2 * 32 * 4)
+    @test size(initial.vorticity) == (24, 12)
+    @test maximum(abs, initial.vorticity) <= 1
     @test size(foil_outline(model.geometry, initial.angle_degrees; samples = 32)) == (2, 32)
     @test occursin("AoA=", initial.status)
     @test occursin("sim/wall=", initial.status)

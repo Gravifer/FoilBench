@@ -357,6 +357,28 @@ function update!(model::ViewerModel{T}) where {T}
     return snapshot(model)
 end
 
+function _viewer_vorticity(
+    velocity::Array{T,3},
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    angle_degrees::T,
+) where {T<:AbstractFloat}
+    omega = vorticity(velocity, scenario.domain)
+    solid = solid_mask(geometry, scenario.domain, angle_degrees)
+    omega[solid] .= zero(T)
+    fluid_magnitude = abs.(omega[.!solid])
+    isempty(fluid_magnitude) && return omega
+    maximum_magnitude = maximum(fluid_magnitude)
+    percentile_index = clamp(
+        ceil(Int, T(0.995) * T(length(fluid_magnitude))),
+        1,
+        length(fluid_magnitude),
+    )
+    percentile = partialsort!(fluid_magnitude, percentile_index)
+    scale = max(percentile, T(0.2) * maximum_magnitude, T(1.0e-6))
+    return tanh.(omega ./ scale)
+end
+
 function snapshot(model::ViewerModel{T}) where {T}
     solver_diagnostics = diagnostics(model.solver)
     velocity = cell_velocity(model.solver)
@@ -403,7 +425,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         copy(model.tracers.positions),
         path_segments(model.tracers),
         copy(velocity),
-        vorticity(velocity, model.scenario.domain),
+        _viewer_vorticity(velocity, model.scenario, model.geometry, angle),
         copy(solver_diagnostics.values),
         status,
         model.paused,

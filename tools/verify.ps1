@@ -63,7 +63,7 @@ try {
         Invoke-Checked julia @(
             '--startup-file=no', '--history-file=no',
             '--project=implementations/julia/viewer',
-            '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); viewer_dispatch_visible() = applicable(FoilBenchGLMakie.run_viewer, "scenario.json"); @assert viewer_dispatch_visible(); figure = Figure(); axis = Axis(figure[1, 1]); FoilBenchGLMakie._reserve_left_drag!(axis); @assert !interactions(axis)[:rectanglezoom][1]; println("Julia viewer environment loaded")'
+            '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); viewer_dispatch_visible() = applicable(FoilBenchGLMakie.run_viewer, "scenario.json"); @assert viewer_dispatch_visible(); figure = Figure(); axis = Axis(figure[1, 1]); FoilBenchGLMakie._reserve_left_drag!(axis); @assert !interactions(axis)[:rectanglezoom][1]; colormap = FoilBenchGLMakie._vorticity_colormap(); @assert colormap[129].alpha == 0; @assert first(colormap).alpha > 0.3; println("Julia viewer environment loaded")'
         )
     }
 }

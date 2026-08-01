@@ -29,6 +29,19 @@ function _reserve_left_drag!(axis)
     return axis
 end
 
+function _vorticity_colormap()
+    return [
+        begin
+            magnitude = min(abs(value), 1)^0.7
+            ramp = clamp((magnitude - 0.18) / (0.9 - 0.18), 0, 1)
+            visibility = ramp * ramp * (3 - 2 * ramp)
+            red, green, blue = value >= 0 ? (0.65, 0.12, 0.02) : (0.02, 0.28, 0.65)
+            RGBAf(red, green, blue, 0.38 * visibility)
+        end
+        for value in range(-1, 1; length = 257)
+    ]
+end
+
 function run_viewer(
     scenario_path::AbstractString;
     solver_id::AbstractString = "stable-fluids",
@@ -47,8 +60,7 @@ function run_viewer(
     figure = Figure(; size = (1280, 760), backgroundcolor = :black)
     axis = Axis(
         figure[1, 1];
-        aspect = DataAspect(),
-        backgroundcolor = :black,
+        backgroundcolor = RGBf(0.015, 0.02, 0.035),
         xgridvisible = false,
         ygridvisible = false,
     )
@@ -73,9 +85,9 @@ function run_viewer(
         x_centers,
         y_centers,
         vorticity_data;
-        colormap = :balance,
-        colorrange = (-8, 8),
-        alpha = 0.5,
+        colormap = _vorticity_colormap(),
+        colorrange = (-1, 1),
+        interpolate = true,
         visible = vorticity_visible,
     )
     path_data = Observable(_points(initial.path_segments))
