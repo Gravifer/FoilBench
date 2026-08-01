@@ -45,13 +45,18 @@ and `0` to return to `Re=10000`. A fresh 4-degree run becomes near-laminar by
 The current flow is preserved when Reynolds changes, so a developed wake
 relaxes rather than disappearing immediately.
 
-The experimental viewer crops four cells from each edge. This hides the
-far-field vorticity sheet created where the finite-domain boundary condition
+The experimental viewer starts with a four-cell crop on each edge. This hides
+the far-field vorticity sheet created where the finite-domain boundary condition
 meets the differentiated display field. The solver, canonical state, and all
 diagnostics still use the complete domain; this is presentation cropping, not
 deletion of inconvenient numerical data. Press `C` to toggle immediately
 between the cropped student view and the full diagnostic domain; the overlay
 reports `view=cropped` or `view=full`.
+
+The default airfoil scenario exposes the same four-cell crop through `C`, but
+starts in the full view. `viewer_crop_cells` defines the available inset while
+`viewer_crop_default` independently selects its initial state in both native
+frontends.
 
 ## Evidence
 

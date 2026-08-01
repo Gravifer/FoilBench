@@ -14,7 +14,11 @@ import numpy as np
 import pyglet
 from pyglet.window import key, mouse
 
-from foilbench_py.viewer.app import ViewerModel, viewer_bounds
+from foilbench_py.viewer.app import (
+    ViewerModel,
+    viewer_bounds,
+    viewer_crop_enabled_by_default,
+)
 from foilbench_py.viewer.worker import SimulationWorker
 
 _VERTEX_SHADER = """
@@ -96,7 +100,7 @@ class FoilWindow(pyglet.window.Window):
         self.full_view_bounds = viewer_bounds(self.scenario, cropped=False)
         self.cropped_view_bounds = viewer_bounds(self.scenario, cropped=True)
         self.crop_available = self.cropped_view_bounds != self.full_view_bounds
-        self.crop_enabled = self.crop_available
+        self.crop_enabled = viewer_crop_enabled_by_default(self.scenario)
         self.view_bounds = (
             self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
         )

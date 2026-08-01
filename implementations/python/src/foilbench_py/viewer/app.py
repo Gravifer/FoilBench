@@ -49,6 +49,17 @@ def viewer_bounds(
     )
 
 
+def viewer_crop_enabled_by_default(scenario: Scenario) -> bool:
+    """Return whether a configured presentation crop should start enabled."""
+    full_bounds = viewer_bounds(scenario, cropped=False)
+    cropped_bounds = viewer_bounds(scenario, cropped=True)
+    crop_available = cropped_bounds != full_bounds
+    configured = scenario.solver_options.get("viewer_crop_default", crop_available)
+    if not isinstance(configured, bool):
+        raise TypeError("viewer_crop_default must be a boolean")
+    return crop_available and configured
+
+
 @dataclass(slots=True)
 class ViewerModel:
     scenario: Scenario

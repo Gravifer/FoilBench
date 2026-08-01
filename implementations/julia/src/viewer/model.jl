@@ -271,6 +271,9 @@ function ViewerModel(
     stable_transport = String(option(scenario, "stable_advection", "maccormack"))
     stable_transport in ("maccormack", "semi-lagrangian", "skew-rk2") ||
         throw(ArgumentError("unsupported Stable Fluids advection: $stable_transport"))
+    crop_available = option(scenario, "viewer_crop_cells", 0) > 0
+    crop_enabled = option(scenario, "viewer_crop_default", crop_available)
+    crop_enabled isa Bool || throw(ArgumentError("viewer_crop_default must be a boolean"))
     area = (scenario.domain.bounds[1][2] - scenario.domain.bounds[1][1]) *
         (scenario.domain.bounds[2][2] - scenario.domain.bounds[2][1])
     selected_count = something(tracer_count, clamp(round(Int, T(256) * area), 2048, 8192))
@@ -287,8 +290,8 @@ function ViewerModel(
         solver,
         tracers,
         false,
-        false,
-        option(scenario, "viewer_crop_cells", 0) > 0,
+        true,
+        crop_available && crop_enabled,
         nothing,
         zero(T),
         one(T),
@@ -466,7 +469,7 @@ function toggle_tracer_mode!(model::ViewerModel)
 end
 
 function set_angle!(model::ViewerModel{T}, angle_degrees::Real, elapsed::Real = 1 / 60) where {T}
-    selected = clamp(T(angle_degrees), T(-90), T(90))
+    selected = clamp(T(angle_degrees), T(-30), T(30))
     current_time = model.simulation_time
     scripted_angle = control_at(model.scenario, current_time).angle_degrees
     previous = something(model.manual_angle, scripted_angle)

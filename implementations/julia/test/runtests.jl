@@ -578,21 +578,21 @@ end
     @test occursin("AoA=", initial.status)
     @test occursin("sim/wall=", initial.status)
     @test occursin("tracers=display", initial.status)
+    @test initial.vorticity_visible
 
     tracer_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
         (24, 12),
     )
-    tracer_geometry = NacaFoil(tracer_scenario.foil)
-    tracer_solver = StableFluidsSolver(Float32)
-    initialize!(tracer_solver, tracer_scenario, tracer_geometry, tracer_scenario.seed)
-    inlet_tracers = TracerState(
-        tracer_scenario,
-        tracer_geometry,
-        control_at(tracer_scenario, 0).angle_degrees;
-        count = 4,
-        history_length = 3,
-    )
+    tracer_model = ViewerModel(tracer_scenario; tracer_count = 4, history_length = 3)
+    tracer_geometry = tracer_model.geometry
+    tracer_solver = tracer_model.solver
+    inlet_tracers = tracer_model.tracers
+    @test option(tracer_scenario, "viewer_crop_cells", 0) == 4
+    @test !tracer_model.crop_enabled
+    @test toggle_crop!(tracer_model)
+    @test set_angle!(tracer_model, 90) == 30
+    @test set_angle!(tracer_model, -90) == -30
     x0, x1 = tracer_scenario.domain.bounds[1]
     y0, y1 = tracer_scenario.domain.bounds[2]
     inlet_tracers.positions[:, 1] .=
@@ -647,10 +647,10 @@ end
     reset_reynolds!(model)
     @test reynolds(model.solver) == scenario.reynolds
     @test toggle_tracer_mode!(model) == :material
-    @test toggle_vorticity!(model)
+    @test !toggle_vorticity!(model)
     toggled = snapshot(model)
     @test occursin("tracers=material", toggled.status)
-    @test occursin("vort=on", toggled.status)
+    @test occursin("vort=off", toggled.status)
     @test toggle_pause!(model)
     @test update!(model).time == updated.time
     @test switch_solver!(model, "lbm-d2q9")

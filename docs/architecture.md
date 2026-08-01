@@ -91,6 +91,11 @@ LBM reports that no live tuning is available. Switching must
 retain visible tracer paths and show the conversion transient without a
 crossfade.
 
+Both native viewers start with vorticity visible and clamp interactive foil
+dragging to ±30 degrees. Scenario options keep crop geometry separate from its
+initial state: `viewer_crop_cells` defines the inset and `viewer_crop_default`
+selects whether it opens enabled.
+
 For the Julia viewer, run:
 
 ```powershell

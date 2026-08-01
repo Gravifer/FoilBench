@@ -7,6 +7,7 @@ from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import DomainSpec
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver, solver_ids
+from foilbench_py.viewer.app import viewer_crop_enabled_by_default
 from tests.helpers import ScenarioFactory
 
 
@@ -15,6 +16,11 @@ def test_default_scenario_validates() -> None:
     scenario = load_scenario(root / "scenarios" / "airfoil" / "default.json")
     assert scenario.id == "naca2412-dynamic"
     assert scenario.domain.resolution == (160, 96)
+    assert scenario.solver_options["viewer_crop_cells"] == 4
+    assert not viewer_crop_enabled_by_default(scenario)
+
+    chaotic = load_scenario(root / "scenarios" / "airfoil" / "chaotic-experimental.json")
+    assert viewer_crop_enabled_by_default(chaotic)
 
 
 @pytest.mark.parametrize("solver_id", solver_ids())

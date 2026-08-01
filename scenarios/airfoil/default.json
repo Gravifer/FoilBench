@@ -27,6 +27,8 @@
     "pic_cfl": 0.75,
     "pressure_tolerance": 0.001,
     "stable_advection": "maccormack",
-    "stable_cfl": 1.25
+    "stable_cfl": 1.25,
+    "viewer_crop_cells": 4,
+    "viewer_crop_default": false
   }
 }

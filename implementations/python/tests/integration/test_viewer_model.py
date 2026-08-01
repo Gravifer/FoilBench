@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 
 from foilbench_py.solvers.pic_flip import PicFlipSolver
-from foilbench_py.viewer.app import ViewerModel, viewer_bounds
+from foilbench_py.viewer.app import (
+    ViewerModel,
+    viewer_bounds,
+    viewer_crop_enabled_by_default,
+)
 from tests.helpers import ScenarioFactory
 
 
@@ -21,6 +25,13 @@ def test_viewer_bounds_can_crop_only_the_presentation(
     assert bounds[1][1] == pytest.approx(scenario.domain.bounds[1][1] - 3 * scenario.domain.dy)
     assert scenario.domain.bounds != bounds
     assert full_bounds == (scenario.domain.bounds[0], scenario.domain.bounds[1])
+    assert viewer_crop_enabled_by_default(scenario)
+
+    scenario.solver_options["viewer_crop_default"] = False
+    assert not viewer_crop_enabled_by_default(scenario)
+    scenario.solver_options["viewer_crop_default"] = "yes"
+    with pytest.raises(TypeError, match="must be a boolean"):
+        viewer_crop_enabled_by_default(scenario)
 
 
 def test_headless_viewer_update_and_switch(
@@ -125,6 +136,11 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
     assert not model.pose_only_drag
     assert not model.pose_only_release_pending
     assert "motion=pose-only" not in model.status()
+
+    model.set_angle(90.0)
+    assert model.angle_override == 30.0
+    model.set_angle(-90.0)
+    assert model.angle_override == -30.0
 
 
 def test_pose_only_drag_clears_after_sustained_slow_motion(

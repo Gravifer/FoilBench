@@ -30,7 +30,7 @@ Python; it does not import Python code or host Python solvers.
 
 ## Automated evidence
 
-The native Julia suite passes 454 checks covering shared RNG and geometry
+The native Julia suite passes 460 checks covering shared RNG and geometry
 fixtures, scenarios and canonical states, malformed input, all solver
 contracts, runtime Reynolds changes, thin-3D rejection, all six swaps at low
 and high attack angles, graceful recovery, and headless viewer behavior.
