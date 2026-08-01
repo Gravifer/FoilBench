@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "dimension": 2,
+  "bounds": [
+    [
+      -1.0,
+      1.0
+    ],
+    [
+      -0.75,
+      0.75
+    ]
+  ],
+  "resolution": [
+    4,
+    3
+  ],
+  "periodic_axes": [
+    "x"
+  ],
+  "time": 1.25,
+  "precision": "float32",
+  "angle_degrees": 17.5,
+  "angular_velocity_degrees": -2.25,
+  "source_language": "conformance",
+  "source_solver": "golden",
+  "velocity": {
+    "file": "velocity.npy",
+    "axes": [
+      "z",
+      "y",
+      "x",
+      "component"
+    ],
+    "order": "C"
+  },
+  "density": {
+    "file": "density.npy",
+    "axes": [
+      "z",
+      "y",
+      "x"
+    ],
+    "order": "C"
+  }
+}
