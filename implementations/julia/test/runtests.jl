@@ -676,3 +676,59 @@ end
         @test all(isfinite, updated.velocity)
     end
 end
+
+@testset "Julia benchmark contracts" begin
+    matrix = load_benchmark_matrix(joinpath(REPOSITORY_ROOT, "benchmark-matrices", "test.json"))
+    @test matrix.id == "test"
+    @test matrix.solvers == collect(solver_ids())
+    @test matrix.resolutions == [(32, 16)]
+    selected_root = replace(normpath(find_repository_root(matrix.scenario_path)), r"[\\/]+$" => "")
+    expected_root = replace(normpath(REPOSITORY_ROOT), r"[\\/]+$" => "")
+    @test selected_root == expected_root
+    description = describe_implementation()
+    @test description["implementation"] == "julia"
+    @test length(description["solvers"]) == 3
+    for solver_id in solver_ids()
+        @test solver_info(create_solver(solver_id, Float64)).id == solver_id
+    end
+
+    result = Dict{String,Any}(
+        "schema_version" => 1,
+        "scenario_id" => "test",
+        "language" => "julia",
+        "solver" => "stable-fluids",
+        "git_commit" => "test",
+        "machine" => Dict{String,Any}(),
+        "precision" => "float64",
+        "resolution" => [16, 8],
+        "seed" => 0,
+        "initialization_seconds" => 0.1,
+        "cold_step_seconds" => 0.2,
+        "step_seconds" => [0.01, 0.02],
+        "median_step_seconds" => 0.015,
+        "p95_step_seconds" => 0.02,
+        "simulated_seconds_per_wall_second" => 1.0,
+        "cell_updates_per_second" => 10.0,
+        "particle_updates_per_second" => 0.0,
+        "peak_rss_bytes" => 1,
+        "substeps" => 2,
+        "diagnostics" => Dict{String,Float64}(),
+        "success" => true,
+        "warnings" => String[],
+    )
+    schema_path = joinpath(REPOSITORY_ROOT, "spec", "result.schema.json")
+    @test isnothing(validate_benchmark_result(result, schema_path))
+    invalid = copy(result)
+    invalid["unexpected"] = true
+    @test_throws ArgumentError validate_benchmark_result(invalid, schema_path)
+
+    mktempdir() do directory
+        open(joinpath(directory, "result.json"), "w") do io
+            JSON3.pretty(io, result)
+        end
+        @test length(collect_benchmark_results(directory)) == 1
+        comparison = format_benchmark_comparison(directory)
+        @test occursin("stable-fluids", comparison)
+        @test occursin("julia", comparison)
+    end
+end

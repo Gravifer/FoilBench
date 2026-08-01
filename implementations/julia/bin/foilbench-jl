@@ -1,17 +1,51 @@
 #!/usr/bin/env julia
 
 using FoilBenchJulia
+using JSON3
 
 function usage()
-    println("Usage: foilbench-jl view SCENARIO [--solver SOLVER_ID]")
+    println("Usage:")
+    println("  foilbench-jl view SCENARIO [--solver SOLVER_ID]")
+    println("  foilbench-jl bench MATRIX [--output DIRECTORY]")
+    println("  foilbench-jl compare RESULTS_DIRECTORY")
+    println("  foilbench-jl describe [--json]")
 end
 
 function main(arguments::Vector{String})
     isempty(arguments) && (usage(); return 2)
     first(arguments) in ("-h", "--help") && (usage(); return 0)
     command = first(arguments)
-    command == "view" || begin
-        println(stderr, "Only the early Phase 2A 'view' command is available currently.")
+    if command == "describe"
+        description = describe_implementation()
+        if length(arguments) == 2 && arguments[2] == "--json"
+            JSON3.pretty(stdout, description)
+            println()
+        elseif length(arguments) == 1
+            println("FoilBench Julia")
+            for entry in description["solvers"]
+                println("  ", rpad(entry["id"], 18), entry["display_name"], " [", entry["acceleration"], "]")
+            end
+            println("  thin periodic 3D: declared by schema, unsupported in Phase 2A")
+        else
+            println(stderr, "unexpected describe arguments")
+            return 2
+        end
+        return 0
+    elseif command == "compare"
+        length(arguments) == 2 || (println(stderr, "compare requires a results directory"); return 2)
+        println(format_benchmark_comparison(arguments[2]))
+        return 0
+    elseif command == "bench"
+        length(arguments) in (2, 4) || (println(stderr, "unexpected bench arguments"); return 2)
+        output = nothing
+        if length(arguments) == 4
+            arguments[3] == "--output" || (println(stderr, "expected --output"); return 2)
+            output = arguments[4]
+        end
+        println(run_benchmark_matrix(arguments[2], output))
+        return 0
+    elseif command != "view"
+        println(stderr, "unknown command: $command")
         usage()
         return 2
     end

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "f2b5523680edb09a2f51c5c04a00787f403cbe31"
+project_hash = "06130c693c2912dc55cbe0a48cf37172ab6a70aa"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -64,7 +64,7 @@ uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 version = "1.11.0"
 
 [[deps.FoilBenchJulia]]
-deps = ["BenchmarkTools", "JSON3", "LinearAlgebra", "NPZ", "StaticArrays"]
+deps = ["BenchmarkTools", "Dates", "JSON3", "LinearAlgebra", "NPZ", "StaticArrays"]
 path = "."
 uuid = "8809d7b8-a162-4693-b92f-fa1350ebf7ff"
 version = "0.1.0"

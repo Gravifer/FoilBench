@@ -4,6 +4,7 @@ using JSON3
 using LinearAlgebra
 using NPZ
 using StaticArrays
+using Dates
 
 include("rng.jl")
 include("geometry.jl")
@@ -21,6 +22,7 @@ include("pic_kernels.jl")
 include("stable_fluids.jl")
 include("lbm.jl")
 include("pic_flip.jl")
+include("benchmarking.jl")
 include("viewer/model.jl")
 include("viewer/worker.jl")
 
@@ -130,6 +132,17 @@ export TracerState
 export ViewerModel
 export ViewerSnapshot
 export ViewerWorker
+export BenchmarkMatrix
+export collect_benchmark_results
+export create_solver
+export describe_implementation
+export find_repository_root
+export format_benchmark_comparison
+export load_benchmark_matrix
+export run_benchmark_matrix
+export scenario_with_run
+export solver_ids
+export validate_benchmark_result
 export advance_tracers!
 export adjust_reynolds!
 export adjust_blend!
