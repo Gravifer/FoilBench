@@ -485,7 +485,12 @@ end
     @test toggle_vorticity!(model)
     @test toggle_pause!(model)
     @test update!(model).time == updated.time
-    @test !switch_solver!(model, "lbm-d2q9")
+    @test switch_solver!(model, "lbm-d2q9")
+    @test solver_info(model.solver).id == "lbm-d2q9"
+    @test diagnostics(model.solver).values["time"] ≈ updated.time
+    @test switch_solver!(model, "stable-fluids")
+    @test solver_info(model.solver).id == "stable-fluids"
+    @test !switch_solver!(model, "pic-flip")
     @test occursin("not available", model.status_message)
     @test !adjust_blend!(model, 0.05)
     reset_viewer!(model)

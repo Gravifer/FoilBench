@@ -165,16 +165,20 @@ mutable struct ViewerModel{T<:AbstractFloat}
     status_message::String
 end
 
+function _create_solver(::Type{T}, solver_id::AbstractString) where {T<:AbstractFloat}
+    solver_id == "stable-fluids" && return StableFluidsSolver(T)
+    solver_id == "lbm-d2q9" && return LBMSolver(T)
+    throw(ArgumentError("Julia solver $solver_id is not available yet"))
+end
+
 function ViewerModel(
     scenario::Scenario{2,T};
     solver_id::AbstractString = "stable-fluids",
     tracer_count::Union{Nothing,Int} = nothing,
     history_length::Int = 12,
 ) where {T}
-    solver_id == "stable-fluids" ||
-        throw(ArgumentError("Julia solver $solver_id is not available yet"))
     geometry = NacaFoil(scenario.foil)
-    solver = StableFluidsSolver(T)
+    solver = _create_solver(T, solver_id)
     initialize!(solver, scenario, geometry, scenario.seed)
     initial_control = control_at(scenario, zero(T))
     area = (scenario.domain.bounds[1][2] - scenario.domain.bounds[1][1]) *
@@ -227,8 +231,7 @@ end
 
 function snapshot(model::ViewerModel{T}) where {T}
     solver_diagnostics = diagnostics(model.solver)
-    solver = model.solver::StableFluidsSolver{T}
-    velocity = cell_velocity(solver)
+    velocity = cell_velocity(model.solver)
     angle = model.manual_angle === nothing ?
         control_at(model.scenario, T(solver_diagnostics.values["time"])).angle_degrees :
         something(model.manual_angle)
@@ -292,7 +295,7 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     tracer_count = size(model.tracers.positions, 2)
     history_length = size(model.tracers.history, 3)
     tracer_mode = model.tracers.mode
-    solver = StableFluidsSolver(T)
+    solver = _create_solver(T, solver_info(model.solver).id)
     initialize!(solver, model.scenario, model.geometry, model.scenario.seed)
     model.solver = solver
     model.tracers = TracerState(
@@ -312,13 +315,36 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     return nothing
 end
 
-function switch_solver!(model::ViewerModel, solver_id::AbstractString)
+function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where {T}
     if solver_id == solver_info(model.solver).id
         model.status_message = "solver already active"
         return true
     end
-    model.status_message = "solver $solver_id is not available yet"
-    return false
+    incoming = try
+        _create_solver(T, solver_id)
+    catch error
+        model.status_message = "solver $solver_id is not available yet"
+        return false
+    end
+    selected_reynolds = reynolds(model.solver)
+    state = export_state(model.solver)
+    control = ControlState(
+        T(state.time),
+        something(model.manual_angle, T(state.angle_degrees)),
+        model.angular_velocity,
+    )
+    try
+        initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
+        set_reynolds!(incoming, selected_reynolds)
+        report = import_state!(incoming, state, control)
+        model.solver = incoming
+        model.status_message = isempty(report.warnings) ? "switched from $(state.source_solver)" :
+            first(report.warnings)
+        return true
+    catch error
+        model.status_message = "switch failed: $(typeof(error))"
+        return false
+    end
 end
 
 function adjust_blend!(model::ViewerModel, amount::Real)
