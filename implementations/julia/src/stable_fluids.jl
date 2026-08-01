@@ -43,6 +43,19 @@ end
 solver_info(::StableFluidsSolver) = STABLE_FLUIDS_INFO
 reynolds(solver::StableFluidsSolver) = solver.reynolds_value
 
+function stable_transport_mode(solver::StableFluidsSolver)
+    solver.skew_rk2 && return "skew-rk2"
+    return solver.maccormack ? "maccormack" : "semi-lagrangian"
+end
+
+function set_stable_transport_mode!(solver::StableFluidsSolver, mode::AbstractString)
+    mode in ("maccormack", "semi-lagrangian", "skew-rk2") ||
+        throw(ArgumentError("unsupported Stable Fluids advection: $mode"))
+    solver.maccormack = mode == "maccormack"
+    solver.skew_rk2 = mode == "skew-rk2"
+    return stable_transport_mode(solver)
+end
+
 function set_reynolds!(solver::StableFluidsSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
@@ -102,8 +115,7 @@ function initialize!(
     advection = option(scenario, "stable_advection", "maccormack")
     advection in ("maccormack", "semi-lagrangian", "skew-rk2") ||
         throw(ArgumentError("unsupported Stable Fluids advection: $advection"))
-    solver.maccormack = advection == "maccormack"
-    solver.skew_rk2 = advection == "skew-rk2"
+    set_stable_transport_mode!(solver, advection)
     solver.face_advection = option(scenario, "stable_face_advection", false)
     solver.projection_iterations = 0
     solver.diffusion_iterations = 0

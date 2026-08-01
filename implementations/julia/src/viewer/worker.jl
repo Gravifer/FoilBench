@@ -17,7 +17,7 @@ end
 struct SwitchSolverCommand <: ViewerCommand
     solver_id::String
 end
-struct AdjustBlendCommand{T<:AbstractFloat} <: ViewerCommand
+struct AdjustTuningCommand{T<:AbstractFloat} <: ViewerCommand
     amount::T
 end
 
@@ -92,7 +92,7 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
         worker.recovery_pending = false
         _clear_failure_history!(worker)
     end
-    command isa AdjustBlendCommand && adjust_blend!(model, command.amount)
+    command isa AdjustTuningCommand && adjust_tuning!(model, command.amount)
     command isa StopViewerCommand && (worker.running[] = false)
     return nothing
 end

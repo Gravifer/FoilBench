@@ -15,6 +15,11 @@ from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from foilbench_py.solvers.lbm import LBMSolver
 from foilbench_py.solvers.pic_flip import PicFlipSolver
+from foilbench_py.solvers.stable_fluids import (
+    StableFluidsSolver,
+    StableTransportMode,
+    parse_stable_transport_mode,
+)
 from foilbench_py.types import ScalarField
 
 _POSE_ONLY_RELEASE_SPEED_RATIO = 0.5
@@ -68,6 +73,8 @@ class ViewerModel:
     pose_only_release_pending: bool = False
     pose_only_calm_steps: int = 0
     last_requested_angular_velocity_degrees: float = 0.0
+    stable_transport_mode: StableTransportMode = "maccormack"
+    tuning_notice: str | None = None
 
     @property
     def playback_rate(self) -> float:
@@ -89,12 +96,16 @@ class ViewerModel:
             seed=scenario.seed,
         )
         initial_angle = scenario.control_at(0.0).angle_degrees
+        stable_transport_mode = parse_stable_transport_mode(
+            scenario.solver_options.get("stable_advection", "maccormack")
+        )
         model = cls(
             scenario,
             geometry,
             manager,
             tracers,
             previous_angle=initial_angle,
+            stable_transport_mode=stable_transport_mode,
         )
         model._refresh_diagnostics()
         return model
@@ -213,7 +224,9 @@ class ViewerModel:
     def switch_solver(self, solver_id: str) -> None:
         control = self.control(self.scenario.output_dt)
         self.manager.switch(solver_id, control)
+        self._apply_stable_transport_mode()
         self.recovery_notice = None
+        self.tuning_notice = None
         self._disable_pose_only_drag()
         self._refresh_diagnostics()
 
@@ -225,6 +238,7 @@ class ViewerModel:
             self.reset_reynolds()
         recovery_control = ControlState(0.0, current_angle, 0.0)
         self.manager.restart_at(recovery_control)
+        self._apply_stable_transport_mode()
         self.time = 0.0
         self.angle_override = current_angle
         self.previous_angle = current_angle
@@ -268,11 +282,33 @@ class ViewerModel:
         self.drag_active = False
         self._disable_pose_only_drag()
         self.last_requested_angular_velocity_degrees = 0.0
+        self.stable_transport_mode = replacement.stable_transport_mode
+        self.tuning_notice = None
 
     def adjust_blend(self, delta: float) -> None:
         solver = self.manager.solver
         if isinstance(solver, PicFlipSolver):
             solver.blend = solver.blend + delta
+
+    def _apply_stable_transport_mode(self) -> None:
+        solver = self.manager.solver
+        if isinstance(solver, StableFluidsSolver):
+            solver.set_transport_mode(self.stable_transport_mode)
+
+    def adjust_solver_tuning(self, delta: float) -> bool:
+        """Adjust the active solver's pedagogically useful live parameter."""
+        solver = self.manager.solver
+        if isinstance(solver, StableFluidsSolver):
+            self.stable_transport_mode = "maccormack" if delta < 0.0 else "skew-rk2"
+            solver.set_transport_mode(self.stable_transport_mode)
+            self.tuning_notice = None
+            return True
+        if isinstance(solver, PicFlipSolver):
+            solver.blend = solver.blend + delta
+            self.tuning_notice = None
+            return True
+        self.tuning_notice = "no adjustable tuning"
+        return False
 
     def set_reynolds(self, reynolds: float) -> None:
         selected = float(np.clip(reynolds, 50.0, 100_000.0))
@@ -298,6 +334,11 @@ class ViewerModel:
         substeps = 0 if report is None else report.substeps
         speed = 0.0 if report is None else report.max_speed
         blend = f"  blend={solver.blend:.2f}" if isinstance(solver, PicFlipSolver) else ""
+        transport = (
+            f"  adv={solver.transport_mode}"
+            if isinstance(solver, StableFluidsSolver)
+            else ""
+        )
         effective_reynolds = (
             f"  Re_eff={diagnostics.values.get('effective_reynolds', 0.0):.0f}"
             if isinstance(solver, LBMSolver) and diagnostics is not None
@@ -321,7 +362,8 @@ class ViewerModel:
             f"sub={substeps}  max|u|={speed:4.2f}  "
             f"E={energy:.3f}  Ω={enstrophy:.3f}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"
-            f"{blend}{effective_reynolds}{motion_mode}{warning}"
+            f"{transport}{blend}{effective_reynolds}{motion_mode}{warning}"
+            f"{f'  tune={self.tuning_notice}' if self.tuning_notice is not None else ''}"
         )
 
     @property

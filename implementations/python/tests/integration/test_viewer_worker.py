@@ -30,6 +30,10 @@ def test_worker_publishes_detached_snapshots_and_processes_paused_commands(
         assert faster.simulation_time == paused_time
         assert "rate=" in faster.status
 
+        tuned = worker.wait_for_command(worker.adjust_tuning(0.05))
+        assert tuned.simulation_time == paused_time
+        assert "adv=skew-rk2" in tuned.status
+
         switched = worker.wait_for_command(worker.switch_solver("pic-flip"))
         assert switched.simulation_time == paused_time
         assert "PIC/FLIP" in switched.status

@@ -19,7 +19,8 @@ Python; it does not import Python code or host Python solvers.
   and live blend control.
 - A task-isolated GLMakie viewer with all three solvers, foil dragging,
   tracers and path histories, vorticity, cropping, performance overlays,
-  Reynolds control, and all six directed warm swaps.
+  Reynolds control, context-sensitive Stable/PIC tuning, and all six directed
+  warm swaps.
 - Fresh-state recovery at the visible foil pose, selective tracer
   replenishment, the Reynolds circuit breaker, and a self-releasing rapid-drag
   pose-only fallback.
@@ -29,7 +30,7 @@ Python; it does not import Python code or host Python solvers.
 
 ## Automated evidence
 
-The native Julia suite passes 418 checks covering shared RNG and geometry
+The native Julia suite passes 445 checks covering shared RNG and geometry
 fixtures, scenarios and canonical states, malformed input, all solver
 contracts, runtime Reynolds changes, thin-3D rejection, all six swaps at low
 and high attack angles, graceful recovery, and headless viewer behavior.

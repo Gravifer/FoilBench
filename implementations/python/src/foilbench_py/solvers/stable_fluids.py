@@ -1,5 +1,7 @@
 """Semi-Lagrangian Stable Fluids reference on a staggered MAC grid."""
 
+from typing import Literal
+
 import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
@@ -34,6 +36,17 @@ from foilbench_py.core.models import (
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, MaskField, PointCloud, VelocityField
 
 _MIN_PROJECTION_CFL_LIMIT = 1.0
+type StableTransportMode = Literal["maccormack", "semi-lagrangian", "skew-rk2"]
+
+
+def parse_stable_transport_mode(value: object) -> StableTransportMode:
+    if value == "maccormack":
+        return "maccormack"
+    if value == "semi-lagrangian":
+        return "semi-lagrangian"
+    if value == "skew-rk2":
+        return "skew-rk2"
+    raise ValueError(f"unsupported Stable Fluids advection: {value}")
 
 
 class StableFluidsSolver:
@@ -68,6 +81,16 @@ class StableFluidsSolver:
             raise ValueError("Reynolds number must be finite and positive")
         self._reynolds = float(reynolds)
 
+    @property
+    def transport_mode(self) -> StableTransportMode:
+        if self._skew_rk2:
+            return "skew-rk2"
+        return "maccormack" if self._maccormack else "semi-lagrangian"
+
+    def set_transport_mode(self, mode: StableTransportMode) -> None:
+        self._maccormack = mode == "maccormack"
+        self._skew_rk2 = mode == "skew-rk2"
+
     def initialize(self, scenario: Scenario, geometry: NacaFoil, seed: int) -> None:
         del seed
         if scenario.domain.dimension != 2:
@@ -92,9 +115,10 @@ class StableFluidsSolver:
             velocity[:, :, 1] = 0.0
         self._u, self._v = cell_to_faces(velocity)
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
-        advection = str(scenario.solver_options.get("stable_advection", "maccormack"))
-        self._maccormack = advection == "maccormack"
-        self._skew_rk2 = advection == "skew-rk2"
+        advection = parse_stable_transport_mode(
+            scenario.solver_options.get("stable_advection", "maccormack")
+        )
+        self.set_transport_mode(advection)
         self._face_advection = bool(scenario.solver_options.get("stable_face_advection", False))
         self._apply_projection(max(scenario.output_dt, 1.0e-4))
 

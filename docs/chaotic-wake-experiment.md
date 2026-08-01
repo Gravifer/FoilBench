@@ -33,6 +33,12 @@ uv run --project implementations/python foilbench-py view scenarios/airfoil/chao
 Enable the vorticity layer with `V`. The multiscale wake takes several
 simulated seconds to develop; the foil remains draggable.
 
+In either native frontend, `[` selects the robust MacCormack transport and
+`]` selects skew-RK2 while Stable Fluids is active. The overlay reports the
+active `adv=` mode. This live selection survives recovery and warm switching;
+`R` restores the scenario's configured mode. The same keys continue to adjust
+PIC/FLIP blending when that solver is active and have no effect on LBM.
+
 Use `-` and `+` to move Reynolds number down or up in quarter-decade steps,
 and `0` to return to `Re=10000`. A fresh 4-degree run becomes near-laminar by
 `Re=500–1000`; lowering angle alone at `Re=10000` remains visibly unsteady.

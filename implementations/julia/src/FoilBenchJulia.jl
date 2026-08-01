@@ -106,7 +106,9 @@ export scalar_type
 export save_canonical_state
 export set_reynolds!
 export set_pic_flip_blend!
+export set_stable_transport_mode!
 export solver_info
+export stable_transport_mode
 export signed_distance
 export solve_masked_poisson
 export solid_leakage
@@ -118,7 +120,7 @@ export vorticity
 export wake_width
 export wall_velocity_grid
 export AdjustReynoldsCommand
-export AdjustBlendCommand
+export AdjustTuningCommand
 export ReleaseAngleCommand
 export ResetReynoldsCommand
 export ResetViewerCommand
@@ -152,6 +154,7 @@ export temporal_spectral_statistics
 export advance_tracers!
 export adjust_reynolds!
 export adjust_blend!
+export adjust_tuning!
 export close!
 export enqueue!
 export foil_outline

@@ -108,7 +108,7 @@ function run_viewer(
     Label(
         figure[3, 1],
         "1/2/3 solver   left-drag foil   Space pause   R reset   -/+ Re   " *
-        "0 Re reset   [/] blend   V vorticity   T tracers   C crop";
+        "0 Re reset   [/] solver tuning   V vorticity   T tracers   C crop";
         color = RGBf(0.72, 0.78, 0.88),
         fontsize = 10,
         tellwidth = false,
@@ -149,9 +149,9 @@ function run_viewer(
         elseif character == '3'
             SwitchSolverCommand("pic-flip")
         elseif character == '['
-            AdjustBlendCommand(T(-0.05))
+            AdjustTuningCommand(T(-0.05))
         elseif character == ']'
-            AdjustBlendCommand(T(0.05))
+            AdjustTuningCommand(T(0.05))
         elseif character == '-'
             AdjustReynoldsCommand(T(-0.25))
         elseif character in ('+', '=')

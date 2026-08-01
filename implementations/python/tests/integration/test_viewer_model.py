@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.viewer.app import ViewerModel, viewer_bounds
 from tests.helpers import ScenarioFactory
 
@@ -60,6 +61,45 @@ def test_runtime_reynolds_mildly_scales_physical_playback(
     assert model.manager.reynolds == 10.0 * scenario.reynolds
     model.reset_reynolds()
     assert model.manager.reynolds == scenario.reynolds
+
+
+def test_solver_tuning_is_context_sensitive_and_stable_mode_persists(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    initial_velocity = model.manager.solver.export_state().velocity.copy()
+
+    assert "adv=maccormack" in model.status()
+    assert model.adjust_solver_tuning(0.05)
+    assert "adv=skew-rk2" in model.status()
+    np.testing.assert_array_equal(
+        model.manager.solver.export_state().velocity,
+        initial_velocity,
+    )
+
+    model.switch_solver("lbm-d2q9")
+    assert not model.adjust_solver_tuning(0.05)
+    assert "tune=no adjustable tuning" in model.status()
+    model.switch_solver("stable-fluids")
+    assert "adv=skew-rk2" in model.status()
+
+    model.recover_solver(FloatingPointError("injected failure"))
+    assert "adv=skew-rk2" in model.status()
+    assert model.adjust_solver_tuning(-0.05)
+    assert "adv=maccormack" in model.status()
+
+    model.switch_solver("pic-flip")
+    pic_solver = model.manager.solver
+    assert isinstance(pic_solver, PicFlipSolver)
+    before_blend = pic_solver.blend
+    assert model.adjust_solver_tuning(-0.05)
+    assert pic_solver.blend == pytest.approx(before_blend - 0.05)
+
+    model.switch_solver("stable-fluids")
+    assert model.adjust_solver_tuning(0.05)
+    model.reset()
+    assert "adv=maccormack" in model.status()
 
 
 def test_pose_only_drag_tracks_angle_and_clears_after_release(

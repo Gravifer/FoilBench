@@ -55,8 +55,8 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   changes, deterministic seeds, requested-time behavior, and explicit 2D
   capabilities.
 - Native GLMakie frontend with passive tracers, batched path history,
-  vorticity, diagnostic crop, all Python-equivalent controls, and simulation
-  work isolated from rendering.
+  vorticity, diagnostic crop, context-sensitive Stable/PIC tuning, all
+  Python-equivalent controls, and simulation work isolated from rendering.
 - All six directed warm swaps, conversion-transient reporting, fresh-state
   fallback, coverage-aware tracer replenishment, a Reynolds circuit breaker,
   and the self-releasing rapid-drag pose-only tier.
@@ -64,7 +64,7 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 418 passing checks. On the development
+The automated Julia suite contains 445 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads

@@ -85,7 +85,9 @@ uv run --project implementations/python foilbench-py view scenarios/airfoil/defa
 
 Confirm that the foil, density-scaled tracer points, batched path afterimages, and
 diagnostic overlay render. Drag the foil, pause and reset, select each solver
-with `1`/`2`/`3`, and adjust PIC/FLIP blending with `[`/`]`. Switching must
+with `1`/`2`/`3`, and adjust solver-specific tuning with `[`/`]`: MacCormack
+or skew-RK2 transport for Stable Fluids, and PIC/FLIP blending for PIC/FLIP.
+LBM reports that no live tuning is available. Switching must
 retain visible tracer paths and show the conversion transient without a
 crossfade.
 
@@ -96,7 +98,7 @@ julia --threads=auto --project=implementations/julia/viewer implementations/juli
 ```
 
 Confirm the same three solver selections and persistent tracer histories,
-then exercise Reynolds control, PIC/FLIP blending, vorticity, tracer mode, and
+then exercise Reynolds control, solver tuning, vorticity, tracer mode, and
 diagnostic cropping. Violent dragging followed by a warm swap must produce a
 bounded recovery or a deliberate pause rather than a frozen solver loop. The
 headless suite covers snapshot publication, controls, switching, and recovery;

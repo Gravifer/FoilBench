@@ -585,6 +585,14 @@ end
     @test occursin("max|u|=", updated.status)
     @test occursin("E=", updated.status)
     @test occursin("Ω=", updated.status)
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "maccormack"
+    stable_time = diagnostics(model.solver).values["time"]
+    stable_velocity = copy(export_state(model.solver).velocity)
+    @test adjust_tuning!(model, 0.05)
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
+    @test diagnostics(model.solver).values["time"] == stable_time
+    @test export_state(model.solver).velocity == stable_velocity
+    @test occursin("adv=skew-rk2", snapshot(model).status)
 
     set_angle!(model, 12.0, 0.1)
     @test model.manual_angle == 12.0
@@ -606,17 +614,21 @@ end
     @test switch_solver!(model, "lbm-d2q9")
     @test solver_info(model.solver).id == "lbm-d2q9"
     @test diagnostics(model.solver).values["time"] ≈ updated.time
+    @test !adjust_tuning!(model, 0.05)
+    @test occursin("no adjustable tuning", model.status_message)
     @test switch_solver!(model, "stable-fluids")
     @test solver_info(model.solver).id == "stable-fluids"
-    @test !adjust_blend!(model, 0.05)
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
     @test switch_solver!(model, "pic-flip")
     @test solver_info(model.solver).id == "pic-flip"
-    @test adjust_blend!(model, -0.05)
+    @test adjust_tuning!(model, -0.05)
     @test pic_flip_blend(model.solver) ≈ 0.9
     @test switch_solver!(model, "stable-fluids")
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
     reset_viewer!(model)
     @test diagnostics(model.solver).values["time"] == 0.0
     @test model.status_message == "reset"
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "maccormack"
 
     model.tracers.positions .= reshape(
         repeat([scenario.domain.bounds[1][1], scenario.domain.bounds[2][1]], 32),
@@ -635,12 +647,15 @@ end
     update!(model)
     recovery_time = model.simulation_time
     stable = model.solver::StableFluidsSolver{Float64}
+    set_stable_transport_mode!(stable, "skew-rk2")
+    model.stable_transport = "skew-rk2"
     stable.u[1, 1] = NaN
     recover_solver!(model, ArgumentError("injected finite-state failure"))
     @test model.recovery_count == 1
     @test model.simulation_time == recovery_time
     @test all(isfinite, export_state(model.solver).velocity)
     @test occursin("fresh restart", model.status_message)
+    @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
     set_angle!(model, 30.0, 0.001)
     @test rapid_drag_attempted(model)
@@ -660,6 +675,8 @@ end
     drag_command = SetAngleCommand(12.0f0, 0.1f0)
     @test enqueue!(float32_worker, drag_command) === drag_command
     @test float32_worker.latest_angle[] === drag_command
+    tuning_command = AdjustTuningCommand(0.05f0)
+    @test enqueue!(float32_worker, tuning_command) === tuning_command
 
     worker_model = ViewerModel(scenario; tracer_count = 16, history_length = 3)
     worker = ViewerWorker(worker_model)

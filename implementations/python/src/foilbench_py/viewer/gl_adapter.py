@@ -150,7 +150,7 @@ class FoilWindow(pyglet.window.Window):
         )
         self.help_label = pyglet.text.Label(
             "1/2/3 solver  drag foil  Space pause  R reset  -/+ Re  0 Re reset  "
-            "[/] blend  V vort  T tracers  C crop",
+            "[/] solver tuning  V vort  T tracers  C crop",
             x=12,
             y=self.height - 32,
             anchor_x="left",
@@ -237,9 +237,9 @@ class FoilWindow(pyglet.window.Window):
         elif symbol in (key._3, key.NUM_3):
             self.worker.switch_solver("pic-flip")
         elif symbol == key.BRACKETLEFT:
-            self.worker.adjust_blend(-0.05)
+            self.worker.adjust_tuning(-0.05)
         elif symbol == key.BRACKETRIGHT:
-            self.worker.adjust_blend(0.05)
+            self.worker.adjust_tuning(0.05)
         elif symbol in (key.MINUS, key.NUM_SUBTRACT):
             self.worker.adjust_reynolds(-0.25)
         elif symbol in (key.EQUAL, key.PLUS, key.NUM_ADD):

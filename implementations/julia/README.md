@@ -25,8 +25,10 @@ julia --threads=auto --project=implementations/julia/viewer implementations/juli
 ```
 
 Use the mouse to drag the foil. Controls include Space pause, `R` reset,
-`1`/`2`/`3` solver selection, `[`/`]` PIC/FLIP blending, `-`/`+`/`0`
-Reynolds control, `V` vorticity, `T` tracer mode, and `C` diagnostic cropping.
+`1`/`2`/`3` solver selection, `[`/`]` solver tuning, `-`/`+`/`0` Reynolds
+control, `V` vorticity, `T` tracer mode, and `C` diagnostic cropping. Tuning
+selects MacCormack/skew-RK2 transport for Stable Fluids and adjusts the
+PIC/FLIP blend; LBM has no corresponding live parameter.
 Run the viewer with at least two Julia threads so the GLMakie render loop
 remains independent from solver work. GLMakie has its own committed `viewer/`
 environment so solver-only tests and benchmarks do not pay its dependency or

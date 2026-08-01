@@ -236,6 +236,7 @@ mutable struct ViewerModel{T<:AbstractFloat}
     last_substeps::Int
     last_max_speed::T
     status_message::String
+    stable_transport::String
     drag_active::Bool
     pose_only_drag::Bool
     pose_only_release_pending::Bool
@@ -261,6 +262,9 @@ function ViewerModel(
     solver = _create_solver(T, solver_id)
     initialize!(solver, scenario, geometry, scenario.seed)
     initial_control = control_at(scenario, zero(T))
+    stable_transport = String(option(scenario, "stable_advection", "maccormack"))
+    stable_transport in ("maccormack", "semi-lagrangian", "skew-rk2") ||
+        throw(ArgumentError("unsupported Stable Fluids advection: $stable_transport"))
     area = (scenario.domain.bounds[1][2] - scenario.domain.bounds[1][1]) *
         (scenario.domain.bounds[2][2] - scenario.domain.bounds[2][1])
     selected_count = something(tracer_count, clamp(round(Int, T(256) * area), 2048, 8192))
@@ -288,6 +292,7 @@ function ViewerModel(
         0,
         zero(T),
         "ready",
+        stable_transport,
         false,
         false,
         false,
@@ -391,6 +396,8 @@ function snapshot(model::ViewerModel{T}) where {T}
     leakage = get(solver_diagnostics.values, "solid_leakage", 0.0)
     blend = model.solver isa PicFlipSolver ?
         "  blend=$(round(pic_flip_blend(model.solver); digits = 2))" : ""
+    transport = model.solver isa StableFluidsSolver ?
+        "  adv=$(stable_transport_mode(model.solver))" : ""
     effective_reynolds = haskey(solver_diagnostics.values, "effective_reynolds") ?
         string("  Re_eff=", round(Int, solver_diagnostics.values["effective_reynolds"])) : ""
     motion = model.pose_only_drag ? "  motion=pose-only" : ""
@@ -412,6 +419,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         "  tracers=", model.tracers.mode,
         "  vort=", model.vorticity_visible ? "on" : "off",
         "  view=", model.crop_enabled ? "cropped" : "full",
+        transport,
         blend,
         effective_reynolds,
         motion,
@@ -482,6 +490,9 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     tracer_mode = model.tracers.mode
     solver = _create_solver(T, solver_info(model.solver).id)
     initialize!(solver, model.scenario, model.geometry, model.scenario.seed)
+    model.stable_transport = String(option(model.scenario, "stable_advection", "maccormack"))
+    solver isa StableFluidsSolver &&
+        set_stable_transport_mode!(solver, model.stable_transport)
     model.solver = solver
     model.tracers = TracerState(
         model.scenario,
@@ -502,6 +513,12 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     _disable_pose_only_drag!(model)
     model.last_requested_angular_velocity = zero(T)
     model.recovery_count = 0
+    return nothing
+end
+
+function _apply_stable_transport!(model::ViewerModel, solver::AbstractFlowSolver)
+    solver isa StableFluidsSolver || return nothing
+    set_stable_transport_mode!(solver, model.stable_transport)
     return nothing
 end
 
@@ -529,6 +546,7 @@ function _fresh_solver_at_control(
 ) where {T}
     incoming = _create_solver(T, solver_id)
     initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
+    _apply_stable_transport!(model, incoming)
     set_reynolds!(incoming, selected_reynolds)
     fresh_state = _state_at_control(export_state(incoming), control)
     import_state!(incoming, fresh_state, control)
@@ -586,6 +604,7 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
     )
     try
         initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
+        _apply_stable_transport!(model, incoming)
         set_reynolds!(incoming, selected_reynolds)
         report = import_state!(incoming, state, control)
         model.solver = incoming
@@ -623,5 +642,17 @@ function adjust_blend!(model::ViewerModel, amount::Real)
         return true
     end
     model.status_message = "PIC/FLIP blend unavailable ($(amount >= 0 ? "+" : "-") requested)"
+    return false
+end
+
+function adjust_tuning!(model::ViewerModel, amount::Real)
+    if model.solver isa StableFluidsSolver
+        model.stable_transport = amount < 0 ? "maccormack" : "skew-rk2"
+        set_stable_transport_mode!(model.solver, model.stable_transport)
+        model.status_message = "Stable transport=$(model.stable_transport)"
+        return true
+    end
+    model.solver isa PicFlipSolver && return adjust_blend!(model, amount)
+    model.status_message = "no adjustable tuning for $(solver_info(model.solver).display_name)"
     return false
 end
