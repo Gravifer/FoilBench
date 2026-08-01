@@ -20,6 +20,7 @@ include("lbm_kernels.jl")
 include("pic_kernels.jl")
 include("stable_fluids.jl")
 include("lbm.jl")
+include("pic_flip.jl")
 include("viewer/model.jl")
 include("viewer/worker.jl")
 
@@ -42,6 +43,7 @@ export D2Q9_OPPOSITE
 export D2Q9_W
 export LBMScaling
 export LBMSolver
+export PicFlipSolver
 export advance!
 export advect_faces
 export advect_faces_skew_rk2
@@ -80,6 +82,7 @@ export quadratic_bspline_weight
 export load_canonical_state
 export load_scenario
 export momentum
+export pic_flip_blend
 export next_float32!
 export next_uint32!
 export normals
@@ -99,6 +102,7 @@ export sample_velocity_field
 export scalar_type
 export save_canonical_state
 export set_reynolds!
+export set_pic_flip_blend!
 export solver_info
 export signed_distance
 export solve_masked_poisson

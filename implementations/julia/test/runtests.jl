@@ -466,6 +466,64 @@ end
     @test all(isfinite, values(diagnostics(moving).values))
 end
 
+@testset "Blended PIC/FLIP solver contract" begin
+    uniform = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
+        (20, 10),
+    )
+    geometry = NacaFoil(uniform.foil)
+    first_solver = PicFlipSolver(Float64)
+    second_solver = PicFlipSolver(Float64)
+    initialize!(first_solver, uniform, geometry, 17)
+    initialize!(second_solver, uniform, geometry, 17)
+    @test solver_info(first_solver).id == "pic-flip"
+    @test first_solver.positions == second_solver.positions
+    @test first_solver.particle_velocity == second_solver.particle_velocity
+    @test size(first_solver.positions) == (2, 4 * 20 * 10)
+    @test pic_flip_blend(first_solver) ≈ 0.95
+    @test set_pic_flip_blend!(first_solver, 2.0) == 1.0
+    @test set_pic_flip_blend!(first_solver, 0.95) ≈ 0.95
+
+    initial = diagnostics(first_solver)
+    for step in 1:8
+        report = advance!(
+            first_solver,
+            control_at(uniform, step * uniform.output_dt),
+            uniform.output_dt,
+        )
+        @test report.advanced_dt == uniform.output_dt
+        @test report.substeps >= 1
+    end
+    final = diagnostics(first_solver)
+    @test final.values["time"] ≈ 8 * uniform.output_dt
+    @test final.values["particle_count"] == initial.values["particle_count"]
+    @test final.values["particles_inside_solid"] == 0
+    @test final.values["kinetic_energy"] ≈ initial.values["kinetic_energy"] atol = 1.0e-8
+    @test all(isfinite, values(final.values))
+
+    set_reynolds!(first_solver, 750.0)
+    @test reynolds(first_solver) == 750.0
+    state = export_state(first_solver)
+    imported = PicFlipSolver(Float64)
+    initialize!(imported, uniform, geometry, uniform.seed)
+    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    @test "solver particles" in import_report.discarded_state
+    @test imported.settling_steps == 1
+    @test cell_velocity(imported) ≈ cell_velocity(first_solver) atol = 1.0e-10
+
+    open_scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (32, 20),
+    )
+    moving = PicFlipSolver(Float32)
+    initialize!(moving, open_scenario, NacaFoil(open_scenario.foil), open_scenario.seed)
+    moving_control = ControlState(open_scenario.output_dt, 18.0f0, 180.0f0)
+    moving_report = advance!(moving, moving_control, open_scenario.output_dt)
+    @test moving_report.substeps >= 2
+    @test diagnostics(moving).values["particles_inside_solid"] == 0
+    @test all(isfinite, export_state(moving).velocity)
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
