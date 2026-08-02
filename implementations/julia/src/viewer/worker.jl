@@ -32,6 +32,7 @@ mutable struct ViewerWorker{T<:AbstractFloat}
     latest_angle::Base.RefValue{Union{Nothing,QueuedViewerCommand}}
     command_lock::ReentrantLock
     next_sequence::UInt64
+    accepting_commands::Bool
     task::Union{Nothing,Task}
     running::Base.RefValue{Bool}
     wake_signal::Channel{Nothing}
@@ -46,10 +47,11 @@ end
 function ViewerWorker(model::ViewerModel{T}) where {T}
     return ViewerWorker(
         model,
-        Channel{QueuedViewerCommand}(32),
+        Channel{QueuedViewerCommand}(256),
         Ref{Union{Nothing,QueuedViewerCommand}}(nothing),
         ReentrantLock(),
         UInt64(1),
+        true,
         nothing,
         Ref(false),
         Channel{Nothing}(1),
@@ -169,7 +171,10 @@ function _worker_loop(worker::ViewerWorker)
             _apply_command!(worker, selected.command)
             worker.applied_command = max(worker.applied_command, selected.sequence)
         end
-        worker.running[] || break
+        if !worker.running[]
+            _publish_latest!(worker, snapshot(worker.model))
+            break
+        end
         if worker.model.paused
             isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
             take!(worker.wake_signal)
@@ -237,32 +242,50 @@ end
 
 function start!(worker::ViewerWorker)
     worker.task === nothing || throw(ArgumentError("viewer worker is already started"))
+    worker.accepting_commands || throw(ArgumentError("viewer worker is closed"))
     worker.task = Threads.@spawn _worker_loop(worker)
     return worker
 end
 
-function _next_queued!(worker::ViewerWorker, command::ViewerCommand)
-    return lock(worker.command_lock) do
-        selected = QueuedViewerCommand(worker.next_sequence, command)
-        worker.next_sequence += 1
-        selected
-    end
-end
-
 function enqueue!(worker::ViewerWorker, command::SetAngleCommand)
-    selected = _next_queued!(worker, command)
-    lock(worker.command_lock) do
-        worker.latest_angle[] = selected
+    selected = lock(worker.command_lock) do
+        worker.accepting_commands || throw(ArgumentError("viewer worker is closed"))
+        queued = QueuedViewerCommand(worker.next_sequence, command)
+        worker.next_sequence += 1
+        worker.latest_angle[] = queued
+        queued
     end
     _signal!(worker)
     return selected.sequence
 end
 
 function enqueue!(worker::ViewerWorker, command::ViewerCommand)
-    selected = _next_queued!(worker, command)
-    put!(worker.commands, selected)
+    selected = lock(worker.command_lock) do
+        worker.accepting_commands || throw(ArgumentError("viewer worker is closed"))
+        pending_pose = worker.latest_angle[]
+        pending_pose === nothing || put!(worker.commands, pending_pose)
+        worker.latest_angle[] = nothing
+        queued = QueuedViewerCommand(worker.next_sequence, command)
+        worker.next_sequence += 1
+        put!(worker.commands, queued)
+        queued
+    end
     _signal!(worker)
     return selected.sequence
+end
+
+function _enqueue_stop!(worker::ViewerWorker)
+    return lock(worker.command_lock) do
+        worker.accepting_commands || return nothing
+        pending_pose = worker.latest_angle[]
+        pending_pose === nothing || put!(worker.commands, pending_pose)
+        worker.latest_angle[] = nothing
+        queued = QueuedViewerCommand(worker.next_sequence, StopViewerCommand())
+        worker.next_sequence += 1
+        put!(worker.commands, queued)
+        worker.accepting_commands = false
+        queued.sequence
+    end
 end
 
 function latest_snapshot(worker::ViewerWorker)
@@ -300,8 +323,15 @@ function wait_for_command(
 end
 
 function close!(worker::ViewerWorker)
-    worker.task === nothing && return nothing
-    enqueue!(worker, StopViewerCommand())
+    if worker.task === nothing
+        lock(worker.command_lock) do
+            worker.accepting_commands = false
+        end
+        return nothing
+    end
+    sequence = _enqueue_stop!(worker)
+    sequence === nothing || _signal!(worker)
+    sequence === nothing || wait_for_command(worker, sequence)
     wait(worker.task)
     worker.task = nothing
     return nothing

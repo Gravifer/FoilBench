@@ -191,6 +191,29 @@ def test_worker_resets_modified_reynolds_after_failures_in_window(
         worker.close()
 
 
+def test_worker_preserves_pose_barriers_and_acknowledges_shutdown(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    model.paused = True
+    worker = SimulationWorker(model)
+    worker.set_angle(10.0, 1.0)
+    worker.switch_solver("pic-flip")
+    final_pose = worker.set_angle(20.0, 2.0)
+    worker.start()
+    applied = worker.wait_for_command(final_pose)
+
+    assert applied.angle_degrees == 20.0
+    assert model.manager.solver.export_state().angle_degrees == 10.0
+
+    worker.close()
+    shutdown = worker.latest_snapshot()
+    assert shutdown.applied_command > final_pose
+    assert not worker.is_alive
+    with pytest.raises(RuntimeError, match="closed"):
+        worker.set_angle(0.0)
+
+
 def test_worker_pauses_after_intermittent_failures_at_scenario_reynolds(
     scenario_factory: ScenarioFactory,
     monkeypatch: pytest.MonkeyPatch,

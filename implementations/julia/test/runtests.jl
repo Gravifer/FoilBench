@@ -828,8 +828,16 @@ end
     pause_sequence = enqueue!(worker, TogglePauseCommand())
     paused_snapshot = wait_for_command(worker, pause_sequence)
     @test paused_snapshot.paused
+    enqueue!(worker, SetAngleCommand(10.0, 1.0))
+    enqueue!(worker, SwitchSolverCommand("pic-flip"))
+    final_pose_sequence = enqueue!(worker, SetAngleCommand(20.0, 2.0))
+    final_pose_snapshot = wait_for_command(worker, final_pose_sequence)
+    @test final_pose_snapshot.angle_degrees == 20.0
+    @test export_state(worker.model.solver).angle_degrees == 10.0
     close!(worker)
     @test worker.task === nothing
+    @test something(latest_snapshot(worker)).applied_command > final_pose_sequence
+    @test_throws ArgumentError enqueue!(worker, SetAngleCommand(0.0, 3.0))
 end
 
 @testset "All directed Julia warm swaps" begin

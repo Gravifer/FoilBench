@@ -23,6 +23,7 @@ type CommandKind = Literal[
     "toggle_vorticity",
     "toggle_tracer",
     "toggle_crop",
+    "shutdown",
 ]
 
 
@@ -68,6 +69,7 @@ class SimulationWorker:
         self._commands: deque[ViewerCommand] = deque()
         self._next_command = 1
         self._stop_requested = False
+        self._accepting_commands = True
         self._thread: Thread | None = None
         self._failure: str | None = None
         self._recovery_pending = False
@@ -91,6 +93,8 @@ class SimulationWorker:
         with self._condition:
             if self._thread is not None:
                 raise RuntimeError("simulation worker has already been started")
+            if not self._accepting_commands:
+                raise RuntimeError("simulation worker is closed")
             self._thread = Thread(
                 target=self._run,
                 name="foilbench-simulation",
@@ -100,9 +104,17 @@ class SimulationWorker:
 
     def close(self) -> None:
         with self._condition:
-            self._stop_requested = True
-            self._condition.notify_all()
             thread = self._thread
+            if thread is None:
+                self._accepting_commands = False
+                self._stop_requested = True
+                return
+            if not self._stop_requested:
+                self._accepting_commands = False
+                sequence = self._next_command
+                self._next_command += 1
+                self._commands.append(ViewerCommand(sequence, "shutdown"))
+                self._condition.notify_all()
         if thread is not None and thread is not current_thread():
             thread.join()
 
@@ -141,7 +153,7 @@ class SimulationWorker:
         value: float | str | TimestampedPose | None = None,
     ) -> int:
         with self._condition:
-            if self._stop_requested:
+            if not self._accepting_commands:
                 raise RuntimeError("simulation worker is closed")
             sequence = self._next_command
             self._next_command += 1
@@ -244,6 +256,8 @@ class SimulationWorker:
             self._model.toggle_tracer_mode()
         elif command.kind == "toggle_crop":
             self._model.toggle_crop()
+        elif command.kind == "shutdown":
+            self._stop_requested = True
 
     @staticmethod
     def _immutable_positions(array: TracerPositions) -> TracerPositions:
@@ -308,10 +322,6 @@ class SimulationWorker:
         applied_command = 0
         while True:
             commands = self._drain_commands()
-            with self._condition:
-                if self._stop_requested:
-                    self._condition.notify_all()
-                    return
 
             for command in commands:
                 try:
@@ -320,6 +330,10 @@ class SimulationWorker:
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                 applied_command = command.sequence
+
+            if self._stop_requested:
+                self._publish(applied_command)
+                return
 
             if self._model.paused:
                 if commands:
