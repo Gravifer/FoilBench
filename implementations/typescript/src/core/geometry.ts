@@ -48,4 +48,12 @@ export class NacaFoil {
     }
     return [dx / Math.max(length, epsilon), dy / Math.max(length, epsilon)];
   }
+
+  public outline(angleDegrees: number, samples = 192): Float32Array {
+    const half = Math.max(8, Math.floor(samples / 2)); const output = new Float32Array(4 * half); const angle = angleDegrees * Math.PI / 180;
+    const write = (index: number, localX: number, localY: number): void => { const shiftedX = localX - 0.25 * this.spec.chord; output[2 * index] = Math.cos(angle) * shiftedX - Math.sin(angle) * localY + this.pivotX; output[2 * index + 1] = Math.sin(angle) * shiftedX + Math.cos(angle) * localY + this.pivotY; };
+    for (let index = 0; index < half; index += 1) { const beta = Math.PI * index / (half - 1); const x = this.spec.chord * 0.5 * (1 - Math.cos(beta)); write(index, x, this.surfaces(x)[0]); }
+    for (let index = 0; index < half; index += 1) { const beta = Math.PI * (half - 1 - index) / (half - 1); const x = this.spec.chord * 0.5 * (1 - Math.cos(beta)); write(half + index, x, this.surfaces(x)[1]); }
+    return output;
+  }
 }
