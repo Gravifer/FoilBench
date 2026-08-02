@@ -121,7 +121,9 @@ function run_viewer(
         tracer_data[] = _points(selected.tracer_positions)
         path_data[] = _points(selected.path_segments)
         foil_data[] = _points(foil_outline(model.geometry, selected.angle_degrees))
-        vorticity_data[] = selected.vorticity
+        if selected.vorticity_visible && !isempty(selected.vorticity)
+            vorticity_data[] = selected.vorticity
+        end
         vorticity_visible[] = selected.vorticity_visible
         status_text[] = selected.status
         if selected.crop_enabled != last_crop[]

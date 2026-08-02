@@ -613,6 +613,7 @@ end
     hidden_vorticity = copy(hidden_model.presentation.vorticity)
     update!(hidden_model)
     @test hidden_model.presentation.vorticity == hidden_vorticity
+    @test isempty(snapshot(hidden_model).vorticity)
     @test toggle_vorticity!(hidden_model)
     @test hidden_model.presentation.diagnostic_elapsed == zero(diagnostic_type)
 

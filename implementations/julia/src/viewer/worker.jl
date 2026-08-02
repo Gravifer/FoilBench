@@ -162,6 +162,9 @@ end
 function _worker_loop(worker::ViewerWorker)
     worker.running[] = true
     _publish_latest!(worker, snapshot(worker.model))
+    active_wall_started = time_ns()
+    active_simulation_started = worker.model.simulation_time
+    interactive_throughput = nothing
     while worker.running[]
         while isready(worker.wake_signal)
             take!(worker.wake_signal)
@@ -171,6 +174,11 @@ function _worker_loop(worker::ViewerWorker)
             _apply_command!(worker, selected.command)
             worker.applied_command = max(worker.applied_command, selected.sequence)
         end
+        if !isempty(queued)
+            active_wall_started = time_ns()
+            active_simulation_started = worker.model.simulation_time
+            worker.model.metrics_warming && (interactive_throughput = nothing)
+        end
         if !worker.running[]
             _publish_latest!(worker, snapshot(worker.model))
             break
@@ -178,12 +186,26 @@ function _worker_loop(worker::ViewerWorker)
         if worker.model.paused
             isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
             take!(worker.wake_signal)
+            active_wall_started = time_ns()
+            active_simulation_started = worker.model.simulation_time
             continue
         end
         started = time_ns()
         try
             guarded_trial = worker.model.pose_only_guarded_trial
-            _publish_latest!(worker, update!(worker.model))
+            update!(worker.model)
+            completed = time_ns()
+            wall_delta = max((completed - active_wall_started) / 1.0e9, 1.0e-9)
+            simulation_delta = worker.model.simulation_time - active_simulation_started
+            instantaneous_throughput = simulation_delta / wall_delta
+            smoothing = 0.15
+            interactive_throughput = interactive_throughput === nothing ?
+                instantaneous_throughput :
+                (1 - smoothing) * interactive_throughput + smoothing * instantaneous_throughput
+            worker.model.simulated_seconds_per_wall_second = interactive_throughput
+            active_wall_started = completed
+            active_simulation_started = worker.model.simulation_time
+            _publish_latest!(worker, snapshot(worker.model))
             guarded_trial && (worker.model.pose_only_guarded_trial = false)
             worker.recovery_pending = false
         catch error

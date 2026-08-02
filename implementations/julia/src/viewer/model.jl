@@ -548,6 +548,8 @@ function snapshot(model::ViewerModel{T}) where {T}
         paused,
         "  ", model.status_message,
     )
+    published_vorticity = model.presentation.vorticity_visible ?
+        copy(model.presentation.vorticity) : similar(model.presentation.vorticity, 0, 0)
     return ViewerSnapshot(
         UInt64(0),
         UInt64(0),
@@ -557,7 +559,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         copy(model.tracers.positions),
         path_segments(model.tracers),
         copy(velocity),
-        copy(model.presentation.vorticity),
+        published_vorticity,
         copy(solver_diagnostics.values),
         status,
         model.paused,

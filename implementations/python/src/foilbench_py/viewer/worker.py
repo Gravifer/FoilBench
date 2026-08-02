@@ -320,6 +320,9 @@ class SimulationWorker:
 
     def _run(self) -> None:
         applied_command = 0
+        active_wall_started = perf_counter()
+        active_simulation_started = self._model.time
+        interactive_throughput: float | None = None
         while True:
             commands = self._drain_commands()
 
@@ -331,6 +334,12 @@ class SimulationWorker:
                     self._model.paused = True
                 applied_command = command.sequence
 
+            if commands:
+                active_wall_started = perf_counter()
+                active_simulation_started = self._model.time
+                if self._model.metrics_warming:
+                    interactive_throughput = None
+
             if self._stop_requested:
                 self._publish(applied_command)
                 return
@@ -341,12 +350,16 @@ class SimulationWorker:
                 with self._condition:
                     if not self._stop_requested and not self._commands:
                         self._condition.wait()
+                active_wall_started = perf_counter()
+                active_simulation_started = self._model.time
                 continue
 
             started = perf_counter()
+            step_completed = False
             try:
                 guarded_trial = self._model.pose_only_guarded_trial
                 self._model.update(self._model.scenario.output_dt)
+                step_completed = True
                 if guarded_trial:
                     self._model.pose_only_guarded_trial = False
                 self._recovery_pending = False
@@ -403,6 +416,21 @@ class SimulationWorker:
                         self._recovery_pending = True
                         if reset_reynolds or pose_only_recovery:
                             self._clear_failure_history()
+            if step_completed:
+                completed = perf_counter()
+                wall_delta = max(completed - active_wall_started, 1.0e-9)
+                simulation_delta = self._model.time - active_simulation_started
+                instantaneous_throughput = simulation_delta / wall_delta
+                smoothing = 0.15
+                if interactive_throughput is None:
+                    interactive_throughput = instantaneous_throughput
+                else:
+                    interactive_throughput = (
+                        1.0 - smoothing
+                    ) * interactive_throughput + smoothing * instantaneous_throughput
+                self._model.simulated_seconds_per_wall_second = interactive_throughput
+                active_wall_started = completed
+                active_simulation_started = self._model.time
             self._publish(applied_command)
             remaining = self._step_interval - (perf_counter() - started)
             if remaining > 0.0:
