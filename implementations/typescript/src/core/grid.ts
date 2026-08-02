@@ -1,0 +1,83 @@
+import type {DomainSpec, FloatArray, Precision} from "./contracts.js";
+
+export function allocate(precision: Precision, length: number): FloatArray {
+  return precision === "float32" ? new Float32Array(length) : new Float64Array(length);
+}
+
+export function dimensions(domain: DomainSpec): {nx: number; ny: number; dx: number; dy: number} {
+  const nx = domain.resolution[0]; const ny = domain.resolution[1];
+  const bx = domain.bounds[0]; const by = domain.bounds[1];
+  if (nx === undefined || ny === undefined || bx === undefined || by === undefined) throw new RangeError("2D domain is incomplete");
+  return {nx, ny, dx: (bx[1] - bx[0]) / nx, dy: (by[1] - by[0]) / ny};
+}
+
+export function bounds2d(domain: DomainSpec): {x: readonly [number, number]; y: readonly [number, number]} {
+  const x = domain.bounds[0]; const y = domain.bounds[1];
+  if (x === undefined || y === undefined) throw new RangeError("2D bounds are incomplete");
+  return {x, y};
+}
+
+export function cellVelocity(u: FloatArray, v: FloatArray, nx: number, ny: number, precision: Precision): FloatArray {
+  const output = allocate(precision, nx * ny * 2);
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+    const cell = y * nx + x;
+    output[2 * cell] = 0.5 * ((u[y * (nx + 1) + x] ?? 0) + (u[y * (nx + 1) + x + 1] ?? 0));
+    output[2 * cell + 1] = 0.5 * ((v[y * nx + x] ?? 0) + (v[(y + 1) * nx + x] ?? 0));
+  }
+  return output;
+}
+
+export function cellToFaces(velocity: FloatArray, nx: number, ny: number, precision: Precision): {u: FloatArray; v: FloatArray} {
+  const u = allocate(precision, ny * (nx + 1)); const v = allocate(precision, (ny + 1) * nx);
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x <= nx; x += 1) {
+    const left = Math.max(0, x - 1); const right = Math.min(nx - 1, x);
+    u[y * (nx + 1) + x] = 0.5 * ((velocity[2 * (y * nx + left)] ?? 0) + (velocity[2 * (y * nx + right)] ?? 0));
+  }
+  for (let y = 0; y <= ny; y += 1) for (let x = 0; x < nx; x += 1) {
+    const bottom = Math.max(0, y - 1); const top = Math.min(ny - 1, y);
+    v[y * nx + x] = 0.5 * ((velocity[2 * (bottom * nx + x) + 1] ?? 0) + (velocity[2 * (top * nx + x) + 1] ?? 0));
+  }
+  return {u, v};
+}
+
+export function sampleCell(velocity: FloatArray, domain: DomainSpec, x: number, y: number): readonly [number, number] {
+  const {nx, ny, dx, dy} = dimensions(domain); const {x: bx, y: by} = bounds2d(domain);
+  const gx = Math.max(0, Math.min(nx - 1, (x - bx[0]) / dx - 0.5));
+  const gy = Math.max(0, Math.min(ny - 1, (y - by[0]) / dy - 0.5));
+  const x0 = Math.floor(gx); const y0 = Math.floor(gy); const x1 = Math.min(nx - 1, x0 + 1); const y1 = Math.min(ny - 1, y0 + 1);
+  const tx = gx - x0; const ty = gy - y0;
+  const component = (c: number): number => {
+    const a = velocity[2 * (y0 * nx + x0) + c] ?? 0; const b = velocity[2 * (y0 * nx + x1) + c] ?? 0;
+    const d = velocity[2 * (y1 * nx + x0) + c] ?? 0; const e = velocity[2 * (y1 * nx + x1) + c] ?? 0;
+    return (1 - ty) * ((1 - tx) * a + tx * b) + ty * ((1 - tx) * d + tx * e);
+  };
+  return [component(0), component(1)];
+}
+
+export function divergence(u: FloatArray, v: FloatArray, nx: number, ny: number, dx: number, dy: number, precision: Precision): FloatArray {
+  const output = allocate(precision, nx * ny);
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) output[y * nx + x] = ((u[y * (nx + 1) + x + 1] ?? 0) - (u[y * (nx + 1) + x] ?? 0)) / dx + ((v[(y + 1) * nx + x] ?? 0) - (v[y * nx + x] ?? 0)) / dy;
+  return output;
+}
+
+export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: number, ny: number, dx: number, dy: number, precision: Precision, iterations: number, tolerance: number): void {
+  const rhs = divergence(u, v, nx, ny, dx, dy, precision); const pressure = allocate(precision, nx * ny); const next = allocate(precision, nx * ny);
+  const invDx2 = 1 / (dx * dx); const invDy2 = 1 / (dy * dy);
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    let maxChange = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+      const index = y * nx + x;
+      if (solid[index] !== 0) { next[index] = 0; continue; }
+      let sum = 0; let weight = 0;
+      if (x > 0 && solid[index - 1] === 0) { sum += (pressure[index - 1] ?? 0) * invDx2; weight += invDx2; }
+      if (x + 1 < nx && solid[index + 1] === 0) { sum += (pressure[index + 1] ?? 0) * invDx2; weight += invDx2; }
+      if (y > 0 && solid[index - nx] === 0) { sum += (pressure[index - nx] ?? 0) * invDy2; weight += invDy2; }
+      if (y + 1 < ny && solid[index + nx] === 0) { sum += (pressure[index + nx] ?? 0) * invDy2; weight += invDy2; }
+      const value = weight > 0 ? (sum - (rhs[index] ?? 0)) / weight : 0;
+      maxChange = Math.max(maxChange, Math.abs(value - (pressure[index] ?? 0))); next[index] = value;
+    }
+    pressure.set(next); if (maxChange < tolerance) break;
+  }
+  for (let y = 0; y < ny; y += 1) for (let x = 1; x < nx; x += 1) if (solid[y * nx + x - 1] === 0 && solid[y * nx + x] === 0) u[y * (nx + 1) + x] = (u[y * (nx + 1) + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[y * nx + x - 1] ?? 0)) / dx;
+  for (let y = 1; y < ny; y += 1) for (let x = 0; x < nx; x += 1) if (solid[(y - 1) * nx + x] === 0 && solid[y * nx + x] === 0) v[y * nx + x] = (v[y * nx + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[(y - 1) * nx + x] ?? 0)) / dy;
+}
