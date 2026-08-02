@@ -18,6 +18,7 @@ root to list the available shortcuts. Common commands are:
 just setup
 just py-view
 just jl-view
+just ts-describe
 just py-chaos
 just verify
 ```
@@ -56,6 +57,17 @@ julia --project=implementations/julia -e "using Pkg; Pkg.test()"
 julia --project=implementations/julia implementations/julia/bin/foilbench-jl describe
 julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view scenarios/airfoil/default.json
 julia --project=implementations/julia implementations/julia/bin/foilbench-jl bench benchmark-matrices/smoke.json
+```
+
+## TypeScript quick start
+
+Phase 2B is in progress. Its strict conformance foundation can be run with:
+
+```powershell
+npm --prefix implementations/typescript ci
+npm --prefix implementations/typescript run check
+npm --prefix implementations/typescript test
+npm --prefix implementations/typescript run describe
 ```
 
 Run every implemented language's native checks through the root convenience

@@ -30,6 +30,8 @@
       "maxItems": 3,
       "items": {
         "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
         "prefixItems": [{"type": "number"}, {"type": "number"}],
         "items": false
       }
@@ -108,19 +110,19 @@
       "if": {"properties": {"dimension": {"const": 2}}},
       "then": {
         "properties": {
-          "bounds": {"minItems": 2, "maxItems": 2},
-          "resolution": {"minItems": 2, "maxItems": 2},
-          "freestream": {"minItems": 2, "maxItems": 2},
-          "periodic_axes": {"items": {"enum": ["x", "y"]}},
-          "foil": {"properties": {"pivot": {"minItems": 2, "maxItems": 2}}}
+          "bounds": {"type": "array", "minItems": 2, "maxItems": 2},
+          "resolution": {"type": "array", "minItems": 2, "maxItems": 2},
+          "freestream": {"type": "array", "minItems": 2, "maxItems": 2},
+          "periodic_axes": {"type": "array", "items": {"enum": ["x", "y"]}},
+          "foil": {"type": "object", "properties": {"pivot": {"type": "array", "minItems": 2, "maxItems": 2}}}
         }
       },
       "else": {
         "properties": {
-          "bounds": {"minItems": 3, "maxItems": 3},
-          "resolution": {"minItems": 3, "maxItems": 3},
-          "freestream": {"minItems": 3, "maxItems": 3},
-          "foil": {"properties": {"pivot": {"minItems": 3, "maxItems": 3}}}
+          "bounds": {"type": "array", "minItems": 3, "maxItems": 3},
+          "resolution": {"type": "array", "minItems": 3, "maxItems": 3},
+          "freestream": {"type": "array", "minItems": 3, "maxItems": 3},
+          "foil": {"type": "object", "properties": {"pivot": {"type": "array", "minItems": 3, "maxItems": 3}}}
         }
       }
     }

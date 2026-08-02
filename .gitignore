@@ -11,6 +11,11 @@ pytest-cache-files-*/
 htmlcov/
 dist/
 build/
+node_modules/
+.vite/
+test-results/
+playwright-report/
 results/*
 !results/.gitkeep
 implementations/python/.venv/
+implementations/typescript/dist-viewer/

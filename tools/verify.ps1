@@ -1,15 +1,17 @@
 [CmdletBinding()]
 param(
     [switch]$Python,
-    [switch]$Julia
+    [switch]$Julia,
+    [switch]$TypeScript
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $Python -and -not $Julia) {
+if (-not $Python -and -not $Julia -and -not $TypeScript) {
     $Python = $true
     $Julia = $true
+    $TypeScript = $true
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -65,6 +67,19 @@ try {
             '--project=implementations/julia/viewer',
             '-e', 'using FoilBenchJulia, GLMakie, JSON3; include(joinpath(pwd(), "implementations", "julia", "src", "viewer", "glmakie_app.jl")); viewer_dispatch_visible() = applicable(FoilBenchGLMakie.run_viewer, "scenario.json"); @assert viewer_dispatch_visible(); figure = Figure(); axis = Axis(figure[1, 1]); FoilBenchGLMakie._reserve_left_drag!(axis); @assert !interactions(axis)[:rectanglezoom][1]; colormap = FoilBenchGLMakie._vorticity_colormap(); @assert colormap[129].alpha == 0; @assert first(colormap).alpha > 0.3; println("Julia viewer environment loaded")'
         )
+    }
+
+    if ($TypeScript) {
+        Write-Host '==> TypeScript: strict checks'
+        Push-Location 'implementations/typescript'
+        try {
+            Invoke-Checked npm @('run', 'check')
+            Write-Host '==> TypeScript: Vitest'
+            Invoke-Checked npm @('test')
+        }
+        finally {
+            Pop-Location
+        }
     }
 }
 finally {

@@ -1,0 +1,40 @@
+{
+  "name": "foilbench-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "foilbench-ts": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "check": "tsc --noEmit && eslint src tests vite.config.ts",
+    "test": "vitest run",
+    "view": "vite",
+    "describe": "tsx src/cli.ts describe",
+    "bench": "tsx src/cli.ts bench",
+    "compare": "tsx src/cli.ts compare"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@playwright/test": "^1.55.1",
+    "@types/node": "^24.5.2",
+    "@types/three": "^0.180.0",
+    "eslint": "^9.36.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.1",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}

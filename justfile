@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Install every currently implemented language environment.
-setup: py-setup jl-setup
+setup: py-setup jl-setup ts-setup
 
 # Install the Python reference and development dependencies.
 py-setup:
@@ -16,6 +16,10 @@ py-setup:
 jl-setup:
     julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate()'
     julia --project=implementations/julia/viewer -e 'using Pkg; Pkg.instantiate()'
+
+# Install the TypeScript implementation.
+ts-setup:
+    npm --prefix implementations/typescript ci
 
 # Run all Python and Julia checks.
 verify:
@@ -29,6 +33,10 @@ verify-python:
 verify-julia:
     pwsh -NoProfile -File tools/verify.ps1 -Julia
 
+# Run only the TypeScript checks.
+verify-typescript:
+    pwsh -NoProfile -File tools/verify.ps1 -TypeScript
+
 # Open the Python viewer.
 py-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
     uv run --project implementations/python foilbench-py view "{{ scenario }}" --solver "{{ solver }}"
@@ -37,6 +45,10 @@ py-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
 jl-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
     julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view "{{ scenario }}" --solver "{{ solver }}"
 
+# Open the TypeScript development viewer.
+ts-view:
+    npm --prefix implementations/typescript run view
+
 # Describe the Python implementation.
 py-describe:
     uv run --project implementations/python foilbench-py describe
@@ -44,6 +56,10 @@ py-describe:
 # Describe the Julia implementation.
 jl-describe:
     julia --project=implementations/julia implementations/julia/bin/foilbench-jl describe
+
+# Describe the TypeScript implementation.
+ts-describe:
+    npm --prefix implementations/typescript run describe
 
 # Run a Python benchmark matrix.
 py-bench matrix="benchmark-matrices/smoke.json":

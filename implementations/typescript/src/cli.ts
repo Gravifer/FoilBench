@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+import {readFile} from "node:fs/promises";
+import {resolve} from "node:path";
+import {parseScenario} from "./core/scenario.js";
+
+const solvers = [
+  {id: "stable-fluids", display_name: "Stable Fluids (MAC)", dimensions: [2]},
+  {id: "lbm-d2q9", display_name: "D2Q9 TRT LBM", dimensions: [2]},
+  {id: "pic-flip", display_name: "Blended PIC/FLIP", dimensions: [2]},
+] as const;
+
+async function main(args: readonly string[]): Promise<void> {
+  const command = args[0] ?? "describe";
+  if (command === "describe") {
+    console.log(JSON.stringify({implementation: "typescript", version: "0.1.0", canonical_reference: false, thin_3d: false, solvers}, null, 2));
+    return;
+  }
+  if (command === "scenario") {
+    const path = resolve(args[1] ?? "scenarios/airfoil/default.json");
+    const schemaPath = resolve("spec/scenario.schema.json");
+    const scenario = parseScenario(JSON.parse(await readFile(path, "utf8")) as unknown, JSON.parse(await readFile(schemaPath, "utf8")) as object);
+    console.log(JSON.stringify(scenario, null, 2));
+    return;
+  }
+  throw new Error(`command ${command} is not implemented yet`);
+}
+
+await main(process.argv.slice(2));
