@@ -13,7 +13,7 @@ from foilbench_py.core.grid import (
     project_faces,
     rk2_backtrace,
 )
-from foilbench_py.core.models import DomainSpec
+from foilbench_py.core.models import DomainSpec, NumericalFailure
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, ScalarField
 
 
@@ -58,8 +58,9 @@ def test_masked_projection_rejects_non_finite_rhs_before_cg() -> None:
     rhs[3, 4] = np.inf
     fluid = np.ones_like(rhs, dtype=np.bool_)
 
-    with pytest.raises(FloatingPointError, match="pressure RHS"):
+    with pytest.raises(NumericalFailure, match="pressure RHS") as captured:
         solve_masked_poisson(rhs, fluid, 0.125, 0.125)
+    assert captured.value.reason == "nonfinite_state"
 
 
 def test_rk2_backtrace_matches_midpoint_step_for_linear_rotation() -> None:

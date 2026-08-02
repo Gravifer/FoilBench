@@ -4,9 +4,11 @@ import numpy as np
 import pytest
 
 from foilbench_py.core.geometry import NacaFoil
-from foilbench_py.core.models import ControlState
+from foilbench_py.core.models import ControlState, NumericalFailure
 from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.solvers.factory import create_solver, solver_ids
+from foilbench_py.solvers.lbm import LBMSolver
+from foilbench_py.solvers.pic_flip import PicFlipSolver
 from tests.helpers import ScenarioFactory
 
 
@@ -199,3 +201,47 @@ def test_pic_flip_rejects_an_unsafe_configured_cfl(
 
     with pytest.raises(ValueError, match="pic_cfl"):
         solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+
+def test_lbm_rejects_nonfinite_post_step_state(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = scenario_factory(resolution=(24, 12))
+    solver = LBMSolver()
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+    original_step = solver._step
+
+    def nonfinite_step(dt: float, control: ControlState) -> None:
+        original_step(dt, control)
+        assert solver._f is not None
+        solver._f[0, 0, 0] = np.nan
+
+    monkeypatch.setattr(solver, "_step", nonfinite_step)
+    with pytest.raises(NumericalFailure, match="populations") as captured:
+        solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+
+    assert captured.value.reason == "nonfinite_state"
+    assert solver._time == 0.0
+
+
+def test_pic_flip_rejects_nonfinite_post_step_state(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = scenario_factory(resolution=(24, 12))
+    solver = PicFlipSolver()
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+    def nonfinite_projection(
+        velocity: np.ndarray, control: ControlState, dt: float
+    ) -> np.ndarray:
+        del control, dt
+        return np.full_like(velocity, np.nan)
+
+    monkeypatch.setattr(solver, "_project", nonfinite_projection)
+    with pytest.raises(NumericalFailure, match="non-finite state") as captured:
+        solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+
+    assert captured.value.reason == "nonfinite_state"
+    assert solver._time == 0.0

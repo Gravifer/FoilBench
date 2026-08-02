@@ -10,6 +10,8 @@ import numpy as np
 from scipy.fft import dstn, idstn
 from scipy.sparse.linalg import LinearOperator, cg
 
+from foilbench_py.core.models import NumericalFailure
+
 
 def solve_masked_poisson(
     rhs: np.ndarray,
@@ -109,27 +111,37 @@ def solve_masked_poisson(
         compatible_rhs[fluid] -= np.mean(compatible_rhs[fluid])
     compatible_rhs[~fluid] = 0.0
     if not np.isfinite(compatible_rhs).all():
-        raise FloatingPointError("pressure RHS contains non-finite values")
+        raise NumericalFailure("nonfinite_state", "pressure RHS contains non-finite values")
     safe_component = 0.25 * np.sqrt(np.finfo(rhs.dtype).max / max(size, 1))
     if float(np.max(np.abs(compatible_rhs))) > safe_component:
-        raise FloatingPointError("pressure RHS exceeds the safe CG dot-product range")
+        raise NumericalFailure(
+            "projection_failure",
+            "pressure RHS exceeds the safe CG dot-product range",
+        )
 
     def validate_iterate(iterate: np.ndarray) -> None:
         if not np.isfinite(iterate).all():
-            raise FloatingPointError("pressure CG produced a non-finite iterate")
+            raise NumericalFailure(
+                "nonfinite_state", "pressure CG produced a non-finite iterate"
+            )
 
-    with np.errstate(over="raise", invalid="raise", divide="raise"):
-        solution, info = cg(
-            operator,
-            compatible_rhs.ravel(),
-            M=preconditioner,
-            rtol=tolerance,
-            atol=0.0,
-            maxiter=max_iterations,
-            callback=validate_iterate,
-        )
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            solution, info = cg(
+                operator,
+                compatible_rhs.ravel(),
+                M=preconditioner,
+                rtol=tolerance,
+                atol=0.0,
+                maxiter=max_iterations,
+                callback=validate_iterate,
+            )
+    except FloatingPointError as error:
+        raise NumericalFailure("projection_failure", f"pressure CG failed: {error}") from error
     if not np.isfinite(solution).all():
-        raise FloatingPointError("pressure CG produced a non-finite solution")
+        raise NumericalFailure(
+            "nonfinite_state", "pressure CG produced a non-finite solution"
+        )
     pressure = solution.reshape(ny, nx)
     if np.any(fluid):
         pressure[fluid] -= np.mean(pressure[fluid])

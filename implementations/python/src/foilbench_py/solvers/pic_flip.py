@@ -418,6 +418,12 @@ class PicFlipSolver:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
         if target_dt <= 0.0:
             raise ValueError("target_dt must be positive")
+        if not (
+            np.isfinite(positions).all()
+            and np.isfinite(particle_velocity).all()
+            and np.isfinite(grid_velocity).all()
+        ):
+            raise NumericalFailure("nonfinite_state", "PIC/FLIP input state is non-finite")
         max_speed = max(
             float(np.max(np.linalg.norm(grid_velocity, axis=2))),
             abs(scenario.freestream[0]),
@@ -475,12 +481,26 @@ class PicFlipSolver:
         self._advance_count += 1
         if self._advance_count % self._population_interval == 0:
             self._maintain_particle_population(control)
+        final_grid = self._grid_velocity
+        if final_grid is None or not (
+            np.isfinite(final_grid).all()
+            and np.isfinite(positions).all()
+            and np.isfinite(particle_velocity).all()
+        ):
+            raise NumericalFailure("nonfinite_state", "PIC/FLIP produced non-finite state")
+        report_speed = max(
+            transport_speed,
+            float(np.max(np.linalg.norm(final_grid, axis=2))),
+            float(np.max(np.linalg.norm(particle_velocity, axis=1))),
+        )
+        if not np.isfinite(report_speed):
+            raise NumericalFailure("nonfinite_state", "PIC/FLIP produced a non-finite step report")
         self._time += target_dt
         self._control = ControlState(
             self._time, control.angle_degrees, control.angular_velocity_degrees
         )
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        return StepReport(target_dt, target_dt, substeps, transport_speed, warnings)
+        return StepReport(target_dt, target_dt, substeps, report_speed, warnings)
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _, grid_velocity, _ = self._require()

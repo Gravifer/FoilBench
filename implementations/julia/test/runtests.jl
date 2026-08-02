@@ -296,6 +296,39 @@ end
     @test diffusion_iterations > 0
     @test 0.0 < maximum(diffused) < 1.0
     @test sum(diffused) ≈ 1.0 atol = 1.0e-7
+
+    nonfinite_rhs = zeros(Float64, 4, 4)
+    nonfinite_rhs[2, 3] = Inf
+    nonfinite_failure = try
+        FoilBenchJulia._pcg(
+            (output, direction) -> (output .= direction),
+            nonfinite_rhs,
+            ones(Float64, 4, 4);
+            tolerance = 1.0e-6,
+            max_iterations = 4,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test nonfinite_failure isa NumericalFailure
+    @test (nonfinite_failure::NumericalFailure).reason == :nonfinite_state
+
+    negative_operator! = (output, direction) -> (output .= -direction)
+    projection_failure = try
+        FoilBenchJulia._pcg(
+            negative_operator!,
+            ones(Float64, 4, 4),
+            ones(Float64, 4, 4);
+            tolerance = 1.0e-6,
+            max_iterations = 4,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test projection_failure isa NumericalFailure
+    @test (projection_failure::NumericalFailure).reason == :projection_failure
 end
 
 @testset "Stable Fluids advection operators" begin

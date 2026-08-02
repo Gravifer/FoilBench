@@ -5,7 +5,8 @@ function _pcg(
     tolerance::T,
     max_iterations::Int,
 ) where {F,T<:AbstractFloat}
-    all(isfinite, right_hand_side) || throw(ArgumentError("linear solve RHS must be finite"))
+    all(isfinite, right_hand_side) ||
+        throw(NumericalFailure(:nonfinite_state, "linear solve RHS must be finite"))
     solution = zeros(T, size(right_hand_side))
     residual = copy(right_hand_side)
     preconditioned = residual .* inverse_diagonal
@@ -19,12 +20,18 @@ function _pcg(
         apply_operator!(operator_direction, direction)
         denominator = dot(direction, operator_direction)
         isfinite(denominator) && denominator > zero(T) ||
-            throw(ArgumentError("preconditioned CG encountered a non-positive operator"))
+            throw(NumericalFailure(
+                :projection_failure,
+                "preconditioned CG encountered a non-positive operator",
+            ))
         alpha = residual_dot / denominator
         @. solution += alpha * direction
         @. residual -= alpha * operator_direction
         all(isfinite, solution) && all(isfinite, residual) ||
-            throw(ArgumentError("preconditioned CG produced non-finite state"))
+            throw(NumericalFailure(
+                :nonfinite_state,
+                "preconditioned CG produced non-finite state",
+            ))
         sqrt(dot(residual, residual)) <= threshold && return solution, iteration, true
         @. preconditioned = residual * inverse_diagonal
         next_residual_dot = dot(residual, preconditioned)

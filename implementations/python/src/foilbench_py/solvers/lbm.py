@@ -459,9 +459,11 @@ class LBMSolver:
         self._control = control
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
-        self._require()
+        _, _, populations, _ = self._require()
         if target_dt <= 0.0:
             raise ValueError("target_dt must be positive")
+        if not np.isfinite(populations).all():
+            raise NumericalFailure("nonfinite_state", "LBM populations are non-finite")
         substeps = max(1, int(np.ceil(target_dt / self._lattice_dt - 1.0e-12)))
         dt = target_dt / substeps
         for substep in range(substeps):
@@ -474,11 +476,24 @@ class LBMSolver:
             )
             self._update_solid(sub_control)
             self._step(dt, sub_control)
+            updated_populations = self._f
+            if updated_populations is None or not np.isfinite(updated_populations).all():
+                raise NumericalFailure("nonfinite_state", "LBM produced non-finite populations")
+        updated_populations = self._f
+        if updated_populations is None:
+            raise NumericalFailure("nonfinite_state", "LBM lost its population state")
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            density, _ = self._macroscopic(updated_populations)
+            physical_velocity = self._physical_velocity()
+        if not np.isfinite(density).all() or not np.isfinite(physical_velocity).all():
+            raise NumericalFailure("nonfinite_state", "LBM produced non-finite macroscopic state")
+        max_speed = float(np.max(np.linalg.norm(physical_velocity, axis=2)))
+        if not np.isfinite(max_speed):
+            raise NumericalFailure("nonfinite_state", "LBM produced a non-finite step report")
         self._time += target_dt
         self._control = ControlState(
             self._time, control.angle_degrees, control.angular_velocity_degrees
         )
-        max_speed = float(np.max(np.linalg.norm(self._physical_velocity(), axis=2)))
         warnings = (
             (f"LBM relaxation clamp active: effective Re={self._effective_reynolds:.1f}",)
             if self._viscosity_clamped
