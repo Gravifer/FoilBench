@@ -422,13 +422,15 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
         abs(scenario.freestream[1]),
         T(1.0e-6),
     )
-    actual_angular_velocity = (T(control.angle_degrees) - solver.control.angle_degrees) / target
-    boundary_angular_velocity = abs(actual_angular_velocity) > T(1.0e-9) ?
-        actual_angular_velocity : T(control.angular_velocity_degrees)
+    boundary_angular_velocity = T(control.angular_velocity_degrees)
+    pose_sweep_angular_velocity =
+        (T(control.angle_degrees) - solver.control.angle_degrees) / target
     radius = hypot(T(0.75) * scenario.foil.chord,
         (maximum_camber(geometry) + T(0.51) * thickness(geometry)) * scenario.foil.chord)
-    wall_speed = radius * max(abs(T(deg2rad(control.angular_velocity_degrees))),
-        abs(T(deg2rad(actual_angular_velocity))))
+    wall_speed = radius * max(
+        abs(T(deg2rad(boundary_angular_velocity))),
+        abs(T(deg2rad(pose_sweep_angular_velocity))),
+    )
     transport_speed = max(maximum_speed, wall_speed)
     stable_dt = solver.cfl * min(dx(scenario.domain), dy(scenario.domain)) / max(transport_speed, T(1.0e-6))
     substeps = max(1, ceil(Int, target / stable_dt))

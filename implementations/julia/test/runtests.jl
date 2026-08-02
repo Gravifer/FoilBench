@@ -664,7 +664,9 @@ end
     @test occursin("adv=skew-rk2", snapshot(model).status)
 
     set_angle!(model, 12.0, 1.0)
-    @test model.manual_angle == 12.0
+    @test model.angular_velocity == 0.0
+    set_angle!(model, 13.0, 1.1)
+    @test model.manual_angle == 13.0
     @test 0 < requested_tip_speed_ratio(model) <= 8
     release_angle!(model)
     @test model.angular_velocity == 0.0
@@ -730,10 +732,21 @@ end
     @test occursin("recovery_epoch=1", snapshot(model).status)
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
-    set_angle!(model, 30.0, 2.0)
+    set_angle!(model, 0.0, 2.0)
+    @test !rapid_drag_attempted(model)
+    set_angle!(model, 30.0, 2.01)
     @test rapid_drag_attempted(model)
     enable_pose_only_drag!(model)
     @test model.pose_only_drag
+    @test accepted(switch_solver!(model, "pic-flip"))
+    @test model.pose_only_drag
+    pose_control = ControlState(
+        model.simulation_time + scenario.output_dt,
+        something(model.manual_angle),
+        0.0,
+    )
+    advance!(model.solver, pose_control, scenario.output_dt)
+    @test export_state(model.solver).angular_velocity_degrees == 0.0
     release_angle!(model)
     update!(model)
     @test !model.pose_only_drag

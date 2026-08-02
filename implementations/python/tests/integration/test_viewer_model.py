@@ -154,10 +154,12 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
     model = ViewerModel.create(scenario, "stable-fluids")
     model.set_angle(12.0, 1.0)
 
+    assert model.control(scenario.output_dt).angular_velocity_degrees == 0.0
+    model.set_angle(13.0, 1.1)
     assert model.control(scenario.output_dt).angular_velocity_degrees != 0.0
     model.enable_pose_only_drag()
     pose_control = model.control(scenario.output_dt)
-    assert pose_control.angle_degrees == 12.0
+    assert pose_control.angle_degrees == 13.0
     assert pose_control.angular_velocity_degrees == 0.0
     assert "motion=pose-only" in model.status()
 
@@ -183,16 +185,17 @@ def test_pose_only_drag_clears_after_sustained_slow_motion(
     scenario = scenario_factory(resolution=(32, 16))
     model = ViewerModel.create(scenario, "stable-fluids")
     model.set_angle(12.0, 1.0)
+    model.set_angle(20.0, 1.01)
     model.enable_pose_only_drag()
     model.update(scenario.output_dt)
     assert model.pose_only_drag
 
-    model.set_angle(12.1, 1.1)
+    model.set_angle(20.1, 1.1)
     model.update(scenario.output_dt)
     assert model.pose_only_drag
     assert model.pose_only_calm_steps == 1
 
-    model.set_angle(12.2, 1.2)
+    model.set_angle(20.2, 1.2)
     model.update(scenario.output_dt)
     assert model.drag_active
     assert not model.pose_only_drag
@@ -207,8 +210,28 @@ def test_drag_velocity_uses_timestamped_samples_and_a_generous_cap(
     model = ViewerModel.create(scenario, "stable-fluids")
     model.set_angle(-30.0, 1.0)
 
+    assert not model.rapid_drag_attempted
+    model.set_angle(30.0, 1.01)
     assert model.rapid_drag_attempted
     assert model.requested_tip_speed_ratio <= 8.0 + 1.0e-6
+
+
+def test_pose_only_survives_warm_switch_and_pic_uses_authoritative_wall_speed(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.set_angle(0.0, 1.0)
+    model.set_angle(30.0, 1.01)
+    model.enable_pose_only_drag()
+
+    assert model.switch_solver("pic-flip").accepted
+    assert model.pose_only_drag
+    control = model.control(scenario.output_dt)
+    assert control.angular_velocity_degrees == 0.0
+    model.manager.solver.advance(control, scenario.output_dt)
+
+    assert model.manager.solver.export_state().angular_velocity_degrees == 0.0
 
 
 def test_display_tracers_expire_without_leaving_empty_regions(

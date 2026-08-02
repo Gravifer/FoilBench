@@ -275,20 +275,15 @@ class ViewerModel:
         selected_time = perf_counter() if timestamp is None else timestamp
         if self.pose_samples and selected_time <= self.pose_samples[-1].timestamp:
             selected_time = self.pose_samples[-1].timestamp + 1.0e-6
-        if not self.pose_samples:
-            previous = (
-                self.scenario.control_at(self.time).angle_degrees
-                if self.angle_override is None
-                else self.angle_override
-            )
-            self.pose_samples.append(PoseSample(selected_time - 1.0 / 60.0, previous))
         self.pose_samples.append(PoseSample(selected_time, selected))
         cutoff = selected_time - _POSE_SAMPLE_WINDOW_SECONDS
         while len(self.pose_samples) > 2 and self.pose_samples[1].timestamp < cutoff:
             self.pose_samples.popleft()
-        first = self.pose_samples[0]
-        elapsed = max(selected_time - first.timestamp, 1.0e-6)
-        measured = (selected - first.angle_degrees) / elapsed
+        measured = 0.0
+        if len(self.pose_samples) >= 2:
+            first = self.pose_samples[0]
+            elapsed = selected_time - first.timestamp
+            measured = (selected - first.angle_degrees) / elapsed
         maximum = math.degrees(
             _MAX_RESOLVED_TIP_SPEED_RATIO
             * self.scenario.reference_speed
@@ -323,7 +318,6 @@ class ViewerModel:
         self._apply_stable_transport_mode()
         self.recovery_notice = None
         self.tuning_notice = None
-        self._disable_pose_only_drag()
         self._refresh_diagnostics()
         self.last_report = None
         self.metrics_warming = True

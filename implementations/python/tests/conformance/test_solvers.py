@@ -160,7 +160,7 @@ def test_pic_flip_periodic_translation_preserves_population(
     assert diagnostics["max_particles_per_fluid_cell"] == 4.0
 
 
-def test_pic_flip_large_angle_change_uses_wall_cfl_and_swept_collisions(
+def test_pic_flip_large_angle_change_resolves_pose_sweep_with_zero_wall_velocity(
     scenario_factory: ScenarioFactory,
 ) -> None:
     scenario = scenario_factory(resolution=(80, 40))
@@ -183,6 +183,7 @@ def test_pic_flip_large_angle_change_uses_wall_cfl_and_swept_collisions(
     assert report.substeps > 1
     assert diagnostics["swept_collisions_last_step"] > 0.0
     assert diagnostics["particles_inside_solid"] == 0.0
+    assert solver.export_state().angular_velocity_degrees == 0.0
     assert np.isfinite(solver.export_state().velocity).all()
 
 

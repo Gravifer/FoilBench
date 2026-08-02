@@ -422,17 +422,13 @@ class PicFlipSolver:
             abs(scenario.freestream[0]),
             1.0e-6,
         )
-        actual_angular_velocity = (
+        boundary_angular_velocity = control.angular_velocity_degrees
+        pose_sweep_angular_velocity = (
             control.angle_degrees - self._control.angle_degrees
         ) / target_dt
-        boundary_angular_velocity = (
-            actual_angular_velocity
-            if abs(actual_angular_velocity) > 1.0e-9
-            else control.angular_velocity_degrees
-        )
         wall_speed = geometry.maximum_radius * max(
-            abs(np.deg2rad(control.angular_velocity_degrees)),
-            abs(np.deg2rad(actual_angular_velocity)),
+            abs(np.deg2rad(boundary_angular_velocity)),
+            abs(np.deg2rad(pose_sweep_angular_velocity)),
         )
         transport_speed = max(max_speed, wall_speed)
         stable_dt = (

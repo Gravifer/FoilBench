@@ -579,21 +579,20 @@ function set_angle!(
     selected = clamp(T(angle_degrees), T(-30), T(30))
     current_time = model.simulation_time
     scripted_angle = control_at(model.scenario, current_time).angle_degrees
-    previous = something(model.manual_angle, scripted_angle)
     selected_time = Float64(timestamp)
     if !isempty(model.pose_samples) && selected_time <= last(model.pose_samples)[1]
         selected_time = last(model.pose_samples)[1] + 1.0e-6
     end
-    isempty(model.pose_samples) &&
-        push!(model.pose_samples, (selected_time - 1 / 60, previous))
     push!(model.pose_samples, (selected_time, selected))
     cutoff = selected_time - 0.08
     while length(model.pose_samples) > 2 && model.pose_samples[2][1] < cutoff
         popfirst!(model.pose_samples)
     end
-    first_time, first_angle = first(model.pose_samples)
-    elapsed = max(selected_time - first_time, 1.0e-6)
-    measured = (selected - first_angle) / T(elapsed)
+    measured = zero(T)
+    if length(model.pose_samples) >= 2
+        first_time, first_angle = first(model.pose_samples)
+        measured = (selected - first_angle) / T(selected_time - first_time)
+    end
     maximum = T(rad2deg(
         8 * reference_speed(model.scenario) / model.scenario.foil.chord,
     ))
