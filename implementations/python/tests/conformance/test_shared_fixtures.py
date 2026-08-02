@@ -91,4 +91,12 @@ def test_shared_canonical_state_loads_with_declared_layout() -> None:
     assert state.velocity.shape == (1, 3, 4, 2)
     assert state.velocity.dtype == np.float32
     assert state.density is not None
+
+
+def test_shared_fortran_canonical_state_loads_with_declared_layout() -> None:
+    state = load_canonical_state(_fixture("canonical-state-f32-fortran"))
+    assert state.velocity.flags.f_contiguous
+    assert state.density is not None
+    assert state.density.flags.f_contiguous
+    assert np.isclose(state.velocity[0, 2, 3, 1], np.float32(15.0 / 7.0))
     assert state.density.shape == (1, 3, 4)

@@ -117,6 +117,23 @@ def generate_canonical_state() -> None:
         density=density,
     )
     save_canonical_state(state, DESTINATION / "canonical-state-f32")
+    fortran_destination = DESTINATION / "canonical-state-f32-fortran"
+    save_canonical_state(state, fortran_destination)
+    np.save(
+        fortran_destination / "velocity.npy",
+        np.asfortranarray(velocity),
+        allow_pickle=False,
+    )
+    np.save(
+        fortran_destination / "density.npy",
+        np.asfortranarray(density),
+        allow_pickle=False,
+    )
+    manifest_path = fortran_destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["velocity"]["order"] = "F"
+    manifest["density"]["order"] = "F"
+    _write_json(manifest_path, manifest)
 
 
 def main() -> None:

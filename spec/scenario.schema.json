@@ -83,12 +83,46 @@
     "duration": {"type": "number", "exclusiveMinimum": 0},
     "output_dt": {"type": "number", "exclusiveMinimum": 0},
     "precision": {"enum": ["float32", "float64"]},
-    "seed": {"type": "integer", "minimum": 0},
+    "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
     "solver_options": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
+      "properties": {
+        "initial_condition": {"enum": ["freestream", "taylor-green", "poiseuille"]},
+        "stable_advection": {"enum": ["maccormack", "semi-lagrangian", "skew-rk2"]},
+        "stable_face_advection": {"type": "boolean", "default": false},
+        "stable_cfl": {"type": "number", "exclusiveMinimum": 0, "default": 0.7},
+        "pressure_tolerance": {"type": "number", "exclusiveMinimum": 0, "default": 0.00001},
+        "pressure_max_iterations": {"type": "integer", "minimum": 1, "default": 640},
+        "pic_flip_blend": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.95},
+        "pic_population_interval": {"type": "integer", "minimum": 1, "default": 8},
+        "pic_cfl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.75},
+        "viewer_crop_cells": {"type": "integer", "minimum": 0, "default": 0},
+        "viewer_crop_default": {"type": "boolean", "default": false}
+      },
       "default": {}
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"dimension": {"const": 2}}},
+      "then": {
+        "properties": {
+          "bounds": {"minItems": 2, "maxItems": 2},
+          "resolution": {"minItems": 2, "maxItems": 2},
+          "freestream": {"minItems": 2, "maxItems": 2},
+          "periodic_axes": {"items": {"enum": ["x", "y"]}},
+          "foil": {"properties": {"pivot": {"minItems": 2, "maxItems": 2}}}
+        }
+      },
+      "else": {
+        "properties": {
+          "bounds": {"minItems": 3, "maxItems": 3},
+          "resolution": {"minItems": 3, "maxItems": 3},
+          "freestream": {"minItems": 3, "maxItems": 3},
+          "foil": {"properties": {"pivot": {"minItems": 3, "maxItems": 3}}}
+        }
+      }
+    }
+  ]
 }
-

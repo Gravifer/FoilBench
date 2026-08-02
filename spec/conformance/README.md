@@ -8,6 +8,15 @@ implementation must reproduce before solver comparisons are meaningful.
   samples for a transformed NACA 2412 foil.
 - `canonical-state-f32/` is a complete little-endian canonical state with C
   semantic order `z y x component`.
+- `canonical-state-f32-fortran/` is the same nonsymmetric state encoded with
+  Fortran storage so readers cannot accidentally infer semantic axes from
+  memory order.
+
+PCG32 uses unsigned 64-bit state, multiplier `6364136223846793005`, and an
+odd increment `(stream << 1) | 1`. Initialization starts at state zero,
+advances once, adds the unsigned seed modulo `2^64`, and advances again.
+Every subsequent state transition wraps modulo `2^64`; output uses XSH-RR
+64/32. Scenario seeds are unsigned 32-bit integers.
 
 Python is the semantic reference used to generate the fixtures, but Python is
 not required to read them. Regenerate deliberately from the repository root:

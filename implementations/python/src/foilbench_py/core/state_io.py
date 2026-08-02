@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
+from jsonschema.exceptions import ValidationError
 
+from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.models import AxisName, CanonicalFlowState, Precision
+from foilbench_py.core.scenario import find_repo_root
 from foilbench_py.types import VelocityField
 
 
@@ -83,6 +86,16 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     """Load and validate the language-neutral canonical-state directory."""
     source = Path(directory)
     manifest = _json_object(source / "manifest.json")
+    root = find_repo_root(source)
+    try:
+        validate_json(
+            manifest,
+            _json_object(root / "spec" / "canonical-manifest.schema.json"),
+        )
+    except ValidationError as error:
+        raise ValueError(
+            f"invalid canonical manifest at {error.json_path}: {error.message}"
+        ) from error
     velocity_metadata = _array_metadata(
         manifest, "velocity", ["z", "y", "x", "component"]
     )

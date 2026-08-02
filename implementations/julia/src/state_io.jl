@@ -96,6 +96,10 @@ end
 
 function load_canonical_state(directory::AbstractString)
     manifest = JSON3.read(read(joinpath(directory, "manifest.json"), String), Dict{String,Any})
+    schema_path = normpath(
+        joinpath(@__DIR__, "..", "..", "..", "spec", "canonical-manifest.schema.json"),
+    )
+    validate_json_file(manifest, schema_path)
     dimension_value = Int(manifest["dimension"])
     dimension_value in (2, 3) || throw(ArgumentError("canonical dimension must be two or three"))
     return _load_canonical_state(manifest, directory, Val(dimension_value))

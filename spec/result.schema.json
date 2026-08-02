@@ -51,7 +51,27 @@
     "simulated_seconds_per_wall_second": {"type": "number", "minimum": 0},
     "cell_updates_per_second": {"type": "number", "minimum": 0},
     "particle_updates_per_second": {"type": "number", "minimum": 0},
-    "peak_rss_bytes": {"type": "integer", "minimum": 0},
+    "peak_rss_bytes": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "memory_measurement": {
+      "enum": ["rss", "browser-estimate", "unavailable"]
+    },
+    "runtime_startup_seconds": {
+      "anyOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "worker_startup_seconds": {
+      "anyOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
     "substeps": {"type": "integer", "minimum": 0},
     "diagnostics": {"type": "object"},
     "success": {"type": "boolean"},

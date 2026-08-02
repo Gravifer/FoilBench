@@ -45,6 +45,7 @@ def load_matrix(path: str | Path) -> BenchmarkMatrix:
     matrix_path = Path(path).resolve()
     raw = _json_object(matrix_path)
     root = find_repo_root(matrix_path)
+    validate_json(raw, _json_object(root / "spec" / "benchmark-matrix.schema.json"))
     scenario_path = root / str(raw["scenario"])
     raw_resolutions = cast(list[list[int]], raw["resolutions"])
     return BenchmarkMatrix(
@@ -54,7 +55,7 @@ def load_matrix(path: str | Path) -> BenchmarkMatrix:
         resolutions=tuple((int(item[0]), int(item[1])) for item in raw_resolutions),
         duration=float(cast(float, raw["duration"])),
         repetitions=int(cast(int, raw["repetitions"])),
-        save_snapshots=bool(raw["save_snapshots"]),
+        save_snapshots=cast(bool, raw["save_snapshots"]),
     )
 
 

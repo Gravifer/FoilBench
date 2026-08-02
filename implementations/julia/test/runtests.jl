@@ -131,6 +131,13 @@ end
     end
 end
 
+@testset "Canonical state shared Fortran artifact" begin
+    state = load_canonical_state(joinpath(FIXTURES, "canonical-state-f32-fortran"))
+    @test state.velocity[1, 3, 4, 2] ≈ Float32(15 / 7)
+    @test state.density !== nothing
+    @test state.density[1, 3, 4] ≈ 1.1f0
+end
+
 @testset "Shared scenario loading" begin
     scenario = load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"))
     @test scenario.id == "naca2412-dynamic"

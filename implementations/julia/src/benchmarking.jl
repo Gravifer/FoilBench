@@ -21,8 +21,8 @@ end
 
 function load_benchmark_matrix(path::AbstractString)
     document = JSON3.read(read(path, String), Dict{String,Any})
-    Int(document["schema_version"]) == 1 || throw(ArgumentError("unsupported matrix schema"))
     root = find_repository_root(path)
+    validate_json_file(document, joinpath(root, "spec", "benchmark-matrix.schema.json"))
     resolutions = NTuple{2,Int}[
         (Int(value[1]), Int(value[2])) for value in document["resolutions"]
     ]
