@@ -328,8 +328,11 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _stable_require(solver)
-    state.resolution == scenario.domain.resolution ||
-        throw(DimensionMismatch("warm import requires the same 2D resolution"))
+    state.resolution == scenario.domain.resolution || return ImportOutcome(
+        :rejected,
+        :incompatible_domain;
+        warnings = ["warm import requires the same 2D resolution"],
+    )
     imported = T.(canonical_to_cell(state))
     solver.u, solver.v = cell_to_faces(imported)
     solver.time = T(state.time)
@@ -339,13 +342,23 @@ function import_state!(
         T(control.angular_velocity_degrees),
     )
     solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
-    _project!(solver, max(scenario.output_dt, T(1.0e-4)))
-    return ImportReport(
+    try
+        _project!(solver, max(scenario.output_dt, T(1.0e-4)))
+    catch failure
+        failure isa NumericalFailure || rethrow()
+        return ImportOutcome(
+            :rejected,
+            failure.reason;
+            warnings = [sprint(showerror, failure)],
+        )
+    end
+    report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
         ["pressure", "face-centered projection history"],
         ["Stable Fluids rebuilt pressure and face-projection history."],
     )
+    return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
 end
 
 function diagnostics(solver::StableFluidsSolver)

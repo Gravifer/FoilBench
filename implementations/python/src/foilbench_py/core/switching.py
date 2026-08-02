@@ -110,18 +110,34 @@ class SolverManager:
             self._last_validation_report = None
             self._last_validation_elapsed = 0.0
             return ImportOutcome("accepted", "none", report)
+        state = self._solver.export_state()
         try:
-            state = self._solver.export_state()
             candidate = self._factory(destination)
-            candidate.initialize(self._scenario, self._geometry, self._scenario.seed)
-            candidate.set_reynolds(self._reynolds)
-            report = candidate.import_state(state, control)
+        except KeyError as error:
+            self._last_validation_report = None
+            self._last_validation_elapsed = 0.0
+            return ImportOutcome(
+                "rejected",
+                "unsupported_conversion",
+                warnings=(str(error),),
+            )
+        candidate.initialize(self._scenario, self._geometry, self._scenario.seed)
+        candidate.set_reynolds(self._reynolds)
+        outcome = candidate.import_state(state, control)
+        if not outcome.accepted:
+            self._last_validation_report = None
+            self._last_validation_elapsed = 0.0
+            return outcome
+        report = outcome.report
+        if report is None:
+            raise RuntimeError("accepted warm import did not provide an import report")
+        try:
             candidate.diagnostics()
             started = perf_counter()
             validation_report = candidate.advance(validation_control, validation_dt)
             validation_elapsed = max(perf_counter() - started, 1.0e-9)
             candidate.diagnostics()
-        except (ValueError, FloatingPointError, NumericalFailure) as error:
+        except NumericalFailure as error:
             self._last_validation_report = None
             self._last_validation_elapsed = 0.0
             return ImportOutcome(
@@ -154,7 +170,12 @@ class SolverManager:
             raise RuntimeError(
                 f"fresh {solver_id!r} solver exported state for {state.source_solver!r}"
             )
-        candidate.import_state(state, control)
+        outcome = candidate.import_state(state, control)
+        if not outcome.accepted:
+            raise RuntimeError(
+                f"fresh {solver_id!r} solver rejected its own canonical state: "
+                f"{outcome.reason}"
+            )
         candidate.diagnostics()
         self._solver = candidate
         self._last_import = None

@@ -7,7 +7,7 @@ from foilbench_py.core.models import (
     CanonicalFlowState,
     ControlState,
     Diagnostics,
-    ImportReport,
+    ImportOutcome,
     Scenario,
     SolverInfo,
     StepReport,
@@ -32,6 +32,6 @@ class FlowSolver(Protocol):
 
     def export_state(self) -> CanonicalFlowState: ...
 
-    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportReport: ...
+    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome: ...
 
     def diagnostics(self) -> Diagnostics: ...

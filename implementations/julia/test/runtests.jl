@@ -3,6 +3,15 @@ using FoilBenchJulia
 struct FailingViewerCommand <: FoilBenchJulia.ViewerCommand end
 FoilBenchJulia._apply_command!(::ViewerWorker, ::FailingViewerCommand) =
     throw(ArgumentError("injected command bug"))
+
+struct FailingStepSolver{T<:AbstractFloat} <: FoilBenchJulia.AbstractFlowSolver{2,T}
+    inner::FoilBenchJulia.AbstractFlowSolver{2,T}
+end
+
+FoilBenchJulia.solver_info(solver::FailingStepSolver) = solver_info(solver.inner)
+FoilBenchJulia.reynolds(solver::FailingStepSolver) = reynolds(solver.inner)
+FoilBenchJulia.advance!(::FailingStepSolver, ::ControlState, ::Real) =
+    throw(NumericalFailure(:excessive_velocity, "injected post-import failure"))
 using JSON3
 using StaticArrays
 using Test
@@ -396,7 +405,9 @@ end
 
     imported = StableFluidsSolver(Float64)
     initialize!(imported, uniform, geometry, uniform.seed)
-    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    import_outcome = import_state!(imported, state, control_at(uniform, state.time))
+    @test accepted(import_outcome)
+    import_report = something(import_outcome.report)
     @test import_report.source_solver == "stable-fluids"
     @test import_report.destination_solver == "stable-fluids"
     @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
@@ -523,7 +534,9 @@ end
 
     imported = LBMSolver(Float64)
     initialize!(imported, uniform, geometry, uniform.seed)
-    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    import_outcome = import_state!(imported, state, control_at(uniform, state.time))
+    @test accepted(import_outcome)
+    import_report = something(import_outcome.report)
     @test "non-equilibrium lattice populations" in import_report.discarded_state
     @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
 
@@ -586,7 +599,9 @@ end
     state = export_state(first_solver)
     imported = PicFlipSolver(Float64)
     initialize!(imported, uniform, geometry, uniform.seed)
-    import_report = import_state!(imported, state, control_at(uniform, state.time))
+    import_outcome = import_state!(imported, state, control_at(uniform, state.time))
+    @test accepted(import_outcome)
+    import_report = something(import_outcome.report)
     @test "solver particles" in import_report.discarded_state
     @test imported.settling_steps == 1
     @test cell_velocity(imported) ≈ cell_velocity(first_solver) atol = 1.0e-10
@@ -711,12 +726,38 @@ end
     @test schedule_model.manual_angle === nothing
 
     rejected_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
-    rejected_solver = rejected_model.solver::StableFluidsSolver{Float64}
-    rejected_solver.u[1, 1] = NaN
-    rejected = switch_solver!(rejected_model, "lbm-d2q9")
+    rejected = switch_solver!(rejected_model, "unavailable-solver")
     @test !accepted(rejected)
-    @test rejected.reason == :nonfinite_state
+    @test rejected.reason == :unsupported_conversion
     @test solver_info(rejected_model.solver).id == "stable-fluids"
+
+    post_import_model = ViewerModel(
+        scenario;
+        solver_id = "lbm-d2q9",
+        tracer_count = 8,
+        history_length = 3,
+    )
+    @test accepted(switch_solver!(post_import_model, "stable-fluids"))
+    @test post_import_model.warm_validation_pending
+    post_import_model.solver = FailingStepSolver(post_import_model.solver)
+    post_import_failure = try
+        update!(post_import_model)
+        nothing
+    catch error
+        error
+    end
+    @test post_import_failure isa NumericalFailure
+    @test post_import_model.warm_validation_pending
+    recover_solver!(
+        post_import_model,
+        post_import_failure;
+        post_import = post_import_model.warm_validation_pending,
+    )
+    @test occursin("stage=post-import", post_import_model.status_message)
+    @test accepted(switch_solver!(post_import_model, "pic-flip"))
+    @test post_import_model.warm_validation_pending
+    update!(post_import_model)
+    @test !post_import_model.warm_validation_pending
 
     tracer_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),

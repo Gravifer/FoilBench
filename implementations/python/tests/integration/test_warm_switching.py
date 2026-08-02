@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from foilbench_py.core.geometry import NacaFoil
-from foilbench_py.core.models import ControlState, NumericalFailure
+from foilbench_py.core.models import ControlState, ImportOutcome, NumericalFailure
 from foilbench_py.core.switching import SolverManager
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from foilbench_py.solvers.lbm import LBMSolver
@@ -78,8 +78,12 @@ def test_warm_import_rejection_is_structured_and_retains_source(
         _solver: LBMSolver,
         _state: object,
         _control: ControlState,
-    ) -> object:
-        raise ValueError("warm import requires the same 2D resolution")
+    ) -> ImportOutcome:
+        return ImportOutcome(
+            "rejected",
+            "incompatible_domain",
+            warnings=("warm import requires the same 2D resolution",),
+        )
 
     monkeypatch.setattr(LBMSolver, "import_state", reject_import)
     outcome = manager.switch(

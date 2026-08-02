@@ -726,7 +726,10 @@ function _fresh_solver_at_control(
     _apply_stable_transport!(model, incoming)
     set_reynolds!(incoming, selected_reynolds)
     fresh_state = _state_at_control(export_state(incoming), control)
-    import_state!(incoming, fresh_state, control)
+    outcome = import_state!(incoming, fresh_state, control)
+    accepted(outcome) || error(
+        "fresh $solver_id solver rejected its own canonical state: $(outcome.reason)",
+    )
     return incoming
 end
 
@@ -813,34 +816,29 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
         )
     end
     selected_reynolds = reynolds(model.solver)
-    state = try
-        export_state(model.solver)
-    catch error
-        (error isa ArgumentError || error isa DimensionMismatch) || rethrow()
-        reason = classify_viewer_failure(error)
-        detail = sprint(showerror, error)
-        model.status_message = "warm export rejected ($reason); source retained"
-        return ImportOutcome(:rejected, reason; warnings = [detail])
-    end
+    state = export_state(model.solver)
     import_control = ControlState(
         T(state.time),
         something(model.manual_angle, T(state.angle_degrees)),
         model.pose_only_drag ? zero(T) : model.angular_velocity,
     )
-    report = try
-        initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
-        _apply_stable_transport!(model, incoming)
-        set_reynolds!(incoming, selected_reynolds)
-        selected_report = import_state!(incoming, state, import_control)
+    initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
+    _apply_stable_transport!(model, incoming)
+    set_reynolds!(incoming, selected_reynolds)
+    outcome = import_state!(incoming, state, import_control)
+    if !accepted(outcome)
+        model.status_message =
+            "warm import rejected ($(outcome.reason)); source retained"
+        return outcome
+    end
+    report = something(outcome.report)
+    try
         diagnostics(incoming)
-        selected_report
     catch error
-        (error isa ArgumentError || error isa DimensionMismatch ||
-            error isa NumericalFailure) || rethrow()
-        reason = classify_viewer_failure(error)
+        error isa NumericalFailure || rethrow()
         detail = sprint(showerror, error)
-        model.status_message = "warm import rejected ($reason); source retained"
-        return ImportOutcome(:rejected, reason; warnings = [detail])
+        model.status_message = "warm import rejected ($(error.reason)); source retained"
+        return ImportOutcome(:rejected, error.reason; warnings = [detail])
     end
     target_dt = model.scenario.output_dt * model.playback_rate
     validation_time = model.simulation_time + target_dt
@@ -880,7 +878,7 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
     model.step_rate = inv(elapsed)
     model.simulated_seconds_per_wall_second = target_dt / elapsed
     model.metrics_warming = false
-    model.warm_validation_pending = false
+    model.warm_validation_pending = true
     model.presentation.diagnostics = candidate_diagnostics
     model.presentation.velocity = candidate_velocity
     model.presentation.vorticity = candidate_vorticity

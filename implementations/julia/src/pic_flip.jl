@@ -509,8 +509,11 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _pic_require(solver)
-    state.resolution == scenario.domain.resolution ||
-        throw(DimensionMismatch("warm import requires the same 2D resolution"))
+    state.resolution == scenario.domain.resolution || return ImportOutcome(
+        :rejected,
+        :incompatible_domain;
+        warnings = ["warm import requires the same 2D resolution"],
+    )
     solver.grid_velocity = T.(canonical_to_cell(state))
     solver.time = T(state.time)
     solver.control = ControlState(T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees))
@@ -518,12 +521,13 @@ function import_state!(
     solver.solid_angle = solver.control.angle_degrees
     _pic_seed_particles!(solver)
     solver.settling_steps = 1
-    return ImportReport(
+    report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
         ["solver particles", "FLIP velocity delta history"],
         ["The first imported step is PIC-dominant while FLIP history is rebuilt."],
     )
+    return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
 end
 
 function _pic_percentile(values::Vector{Int}, fraction::Float64)

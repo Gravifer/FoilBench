@@ -369,7 +369,7 @@ class ViewerModel:
         self.previous_angle = validation_control.angle_degrees
         self._refresh_diagnostics()
         self.metrics_warming = False
-        self.warm_validation_pending = False
+        self.warm_validation_pending = True
         return outcome
 
     def recover_solver(

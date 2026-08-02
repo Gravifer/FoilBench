@@ -3,7 +3,9 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from foilbench_py.core.models import ControlState, NumericalFailure, StepReport
 from foilbench_py.solvers.pic_flip import PicFlipSolver
+from foilbench_py.solvers.stable_fluids import StableFluidsSolver
 from foilbench_py.viewer.app import (
     ViewerModel,
     viewer_bounds,
@@ -403,6 +405,45 @@ def test_failed_solver_advance_does_not_commit_physical_time(
         model.update(model.scenario.output_dt)
 
     assert model.time == starting_time
+
+
+def test_first_ordinary_failure_after_switch_is_post_import(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "lbm-d2q9")
+
+    assert model.switch_solver("stable-fluids").accepted
+    assert model.warm_validation_pending
+    solver = model.manager.solver
+    assert isinstance(solver, StableFluidsSolver)
+
+    def fail_post_import_step(
+        _solver: StableFluidsSolver,
+        _control: ControlState,
+        _target_dt: float,
+    ) -> StepReport:
+        raise NumericalFailure("nonfinite_state", "injected post-import failure")
+
+    monkeypatch.setattr(StableFluidsSolver, "advance", fail_post_import_step)
+
+    with pytest.raises(NumericalFailure) as raised:
+        model.update(scenario.output_dt)
+
+    assert model.warm_validation_pending
+    model.recover_solver(
+        raised.value,
+        post_import=model.warm_validation_pending,
+    )
+    assert model.recovery_stage == "post-import"
+    assert "stage=post-import" in model.status()
+
+    monkeypatch.undo()
+    assert model.switch_solver("pic-flip").accepted
+    assert model.warm_validation_pending
+    model.update(scenario.output_dt)
+    assert not model.warm_validation_pending
 
 
 def test_scenario_reset_does_not_reuse_recovery_epoch(

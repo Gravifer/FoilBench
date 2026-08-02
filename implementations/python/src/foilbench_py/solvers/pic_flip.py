@@ -17,6 +17,7 @@ from foilbench_py.core.models import (
     CanonicalFlowState,
     ControlState,
     Diagnostics,
+    ImportOutcome,
     ImportReport,
     NumericalFailure,
     Scenario,
@@ -523,10 +524,14 @@ class PicFlipSolver:
             velocity=grid_velocity[None, ...],
         )
 
-    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportReport:
+    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, _, _, _, _ = self._require()
         if state.dimension != 2 or state.resolution != scenario.domain.resolution:
-            raise ValueError("warm import requires the same 2D resolution")
+            return ImportOutcome(
+                "rejected",
+                "incompatible_domain",
+                warnings=("warm import requires the same 2D resolution",),
+            )
         self._grid_velocity = np.asarray(state.velocity[0], dtype=scenario.dtype).copy()
         self._time = state.time
         self._control = control
@@ -534,12 +539,13 @@ class PicFlipSolver:
         self._solid_angle = control.angle_degrees
         self._seed_particles(self._grid_velocity)
         self._settling_steps = 1
-        return ImportReport(
+        report = ImportReport(
             state.source_solver,
             self.info.id,
             ("solver particles", "FLIP velocity delta history"),
             ("The first imported step is PIC-dominant while FLIP history is rebuilt.",),
         )
+        return ImportOutcome("accepted", "none", report, report.warnings)
 
     def diagnostics(self) -> Diagnostics:
         scenario, geometry, positions, _, grid_velocity, solid = self._require()

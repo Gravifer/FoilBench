@@ -28,6 +28,7 @@ from foilbench_py.core.models import (
     CanonicalFlowState,
     ControlState,
     Diagnostics,
+    ImportOutcome,
     ImportReport,
     NumericalFailure,
     Scenario,
@@ -295,17 +296,24 @@ class StableFluidsSolver:
             velocity=velocity,
         )
 
-    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportReport:
+    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, _, _, _ = self._require()
         if state.dimension != 2 or state.resolution != scenario.domain.resolution:
-            raise ValueError("warm import requires the same 2D resolution")
+            return ImportOutcome(
+                "rejected",
+                "incompatible_domain",
+                warnings=("warm import requires the same 2D resolution",),
+            )
         velocity = np.asarray(state.velocity[0], dtype=scenario.dtype)
         self._u, self._v = cell_to_faces(velocity)
         self._time = state.time
         self._control = control
         self._solid = geometry.mask(scenario.domain, control.angle_degrees)
-        self._apply_projection(max(scenario.output_dt, 1.0e-4))
-        return ImportReport(
+        try:
+            self._apply_projection(max(scenario.output_dt, 1.0e-4))
+        except NumericalFailure as failure:
+            return ImportOutcome("rejected", failure.reason, warnings=(str(failure),))
+        report = ImportReport(
             state.source_solver,
             self.info.id,
             ("pressure", "face-centered projection history"),
@@ -314,6 +322,7 @@ class StableFluidsSolver:
                 *((self._projection_warning,) if self._projection_warning else ()),
             ),
         )
+        return ImportOutcome("accepted", "none", report, report.warnings)
 
     def diagnostics(self) -> Diagnostics:
         scenario, _, _, _, solid = self._require()

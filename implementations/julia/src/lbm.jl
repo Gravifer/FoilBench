@@ -436,8 +436,11 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _lbm_require(solver)
-    state.resolution == scenario.domain.resolution ||
-        throw(DimensionMismatch("warm import requires the same 2D resolution"))
+    state.resolution == scenario.domain.resolution || return ImportOutcome(
+        :rejected,
+        :incompatible_domain;
+        warnings = ["warm import requires the same 2D resolution"],
+    )
     physical = T.(canonical_to_cell(state))
     lattice = physical .* (solver.scaling.lattice_speed / solver.reference_speed)
     density = ones(T, nx(scenario.domain), ny(scenario.domain))
@@ -446,6 +449,11 @@ function import_state!(
             density[i, j] = T(state.density[1, j, i])
         end
     end
+    all(>(zero(T)), density) || return ImportOutcome(
+        :rejected,
+        :invalid_density;
+        warnings = ["LBM warm import requires positive density"],
+    )
     solver.populations = lbm_equilibrium(density, lattice)
     solver.outlet = copy(view(solver.populations, :, nx(scenario.domain), :))
     solver.time = T(state.time)
@@ -453,12 +461,13 @@ function import_state!(
     solver.distance = _lbm_distance(geometry, solver.centers, solver.control.angle_degrees)
     solver.solid = solver.distance .<= zero(T)
     solver.solid_angle = solver.control.angle_degrees
-    return ImportReport(
+    report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
         ["non-equilibrium lattice populations", "TRT kinetic modes"],
         ["LBM resumes from local equilibrium; an initialization transient is expected."],
     )
+    return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
 end
 
 function diagnostics(solver::LBMSolver)

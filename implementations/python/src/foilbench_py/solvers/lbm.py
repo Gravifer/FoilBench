@@ -18,6 +18,7 @@ from foilbench_py.core.models import (
     CanonicalFlowState,
     ControlState,
     Diagnostics,
+    ImportOutcome,
     ImportReport,
     NumericalFailure,
     Scenario,
@@ -524,10 +525,14 @@ class LBMSolver:
             density=np.asarray(density, dtype=scenario.dtype)[None, ...],
         )
 
-    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportReport:
+    def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, _, _ = self._require()
         if state.dimension != 2 or state.resolution != scenario.domain.resolution:
-            raise ValueError("warm import requires the same 2D resolution")
+            return ImportOutcome(
+                "rejected",
+                "incompatible_domain",
+                warnings=("warm import requires the same 2D resolution",),
+            )
         physical = np.asarray(state.velocity[0], dtype=scenario.dtype)
         lattice = physical * (self._lattice_speed / self._reference_speed)
         density = (
@@ -535,6 +540,12 @@ class LBMSolver:
             if state.density is None
             else np.asarray(state.density[0], dtype=scenario.dtype)
         )
+        if np.any(density <= 0.0):
+            return ImportOutcome(
+                "rejected",
+                "invalid_density",
+                warnings=("LBM warm import requires positive density",),
+            )
         self._f = self._equilibrium(density, lattice)
         self._outlet = self._f[:, -1:, :].copy()
         self._time = state.time
@@ -547,12 +558,13 @@ class LBMSolver:
             control.angle_degrees,
         ).reshape(scenario.domain.ny, scenario.domain.nx)
         self._solid_angle = control.angle_degrees
-        return ImportReport(
+        report = ImportReport(
             state.source_solver,
             self.info.id,
             ("non-equilibrium lattice populations", "TRT kinetic modes"),
             ("LBM resumes from local equilibrium; an initialization transient is expected.",),
         )
+        return ImportOutcome("accepted", "none", report, report.warnings)
 
     def diagnostics(self) -> Diagnostics:
         scenario, _, populations, solid = self._require()
