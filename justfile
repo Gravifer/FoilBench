@@ -54,6 +54,10 @@ ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
 ts-bench matrix="benchmark-matrices/smoke.json":
     npm --prefix implementations/typescript run bench -- "{{ matrix }}"
 
+# Run the TypeScript 160x96 double-digit warmed-step acceptance gate.
+ts-preview-gate:
+    npm --prefix implementations/typescript run gate:preview
+
 # Compare TypeScript result artifacts.
 ts-compare results="results/typescript":
     npm --prefix implementations/typescript run compare -- "{{ results }}"

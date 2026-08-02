@@ -18,6 +18,7 @@
     "view": "tsx src/cli.ts view",
     "describe": "tsx src/cli.ts describe",
     "bench": "tsx src/cli.ts bench",
+    "gate:preview": "tsx src/benchmark/previewGate.ts",
     "compare": "tsx src/cli.ts compare"
   },
   "dependencies": {
