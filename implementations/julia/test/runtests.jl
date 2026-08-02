@@ -774,6 +774,13 @@ end
     @test occursin("recovery_epoch=1", snapshot(model).status)
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
+    reset_viewer!(model)
+    @test model.recovery_count == 1
+    @test occursin("E=—  Ω=—  div=—  leak=—", snapshot(model).status)
+    recover_solver!(model, ArgumentError("second injected finite-state failure"))
+    @test model.recovery_count == 2
+    @test occursin("recovery_epoch=2", snapshot(model).status)
+
     set_angle!(model, 0.0, 2.0)
     @test !rapid_drag_attempted(model)
     set_angle!(model, 30.0, 2.01)

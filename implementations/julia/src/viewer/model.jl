@@ -513,6 +513,14 @@ function snapshot(model::ViewerModel{T}) where {T}
             model.last_substeps,
             model.last_max_speed,
         )
+    diagnostic_measurements = model.metrics_warming ?
+        "\nE=—  Ω=—  div=—  leak=—" :
+        string(
+            "\nE=", round(energy; digits = 3),
+            "  Ω=", round(enstrophy_value; digits = 3),
+            "  div=", round(divergence; sigdigits = 3),
+            "  leak=", round(leakage; sigdigits = 3),
+        )
     status = string(
         solver_info(model.solver).display_name,
         @sprintf(
@@ -523,10 +531,7 @@ function snapshot(model::ViewerModel{T}) where {T}
             model.playback_rate,
         ),
         measurements,
-        "\nE=", round(energy; digits = 3),
-        "  Ω=", round(enstrophy_value; digits = 3),
-        "  div=", round(divergence; sigdigits = 3),
-        "  leak=", round(leakage; sigdigits = 3),
+        diagnostic_measurements,
         "  tracers=", model.tracers.mode,
         "  vort=", model.presentation.vorticity_visible ? "on" : "off",
         "  view=", model.presentation.crop_enabled ? "cropped" : "full",
@@ -666,7 +671,6 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     model.drag_active = false
     _disable_pose_only_drag!(model)
     model.last_requested_angular_velocity = zero(T)
-    model.recovery_count = 0
     empty!(model.pose_samples)
     model.metrics_warming = true
     model.warm_validation_pending = false

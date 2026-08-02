@@ -228,16 +228,24 @@ class ViewerModel:
             return
         del dt
         simulation_dt = self.scenario.output_dt * self.playback_rate
-        self.time += simulation_dt
-        scheduled = self.scenario.control_at(self.time)
+        next_time = self.time + simulation_dt
+        scheduled = self.scenario.control_at(next_time)
         self.last_requested_angular_velocity_degrees = (
             scheduled.angular_velocity_degrees
             if self.angle_override is None
             else self.manual_angular_velocity_degrees
         )
-        control = self.control(simulation_dt)
+        angular_velocity = self.last_requested_angular_velocity_degrees
+        if self.pose_only_drag:
+            angular_velocity = 0.0
+        control = ControlState(
+            next_time,
+            scheduled.angle_degrees if self.angle_override is None else self.angle_override,
+            angular_velocity,
+        )
         started = perf_counter()
         self.last_report = self.manager.solver.advance(control, simulation_dt)
+        self.time = next_time
         self.warm_validation_pending = False
         solver_elapsed = max(perf_counter() - started, 1.0e-9)
         instantaneous_rate = 1.0 / solver_elapsed
@@ -399,7 +407,6 @@ class ViewerModel:
         self.tuning_notice = None
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
-        self.recovery_count = 0
         self.recovery_reason = None
         self.recovery_stage = None
         self.metrics_warming = True

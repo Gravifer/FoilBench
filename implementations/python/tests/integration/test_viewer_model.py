@@ -355,3 +355,38 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     assert "recovered=fresh restart reason=nonfinite_state" in model.status()
     assert "recovery_epoch=1" in model.status()
     assert "step=   —/s" in model.status()
+
+
+def test_failed_solver_advance_does_not_commit_physical_time(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    solver = model.manager.solver
+    starting_time = model.time
+
+    def fail_advance(control: object, target_dt: float) -> None:
+        del control, target_dt
+        raise FloatingPointError("injected solver failure")
+
+    monkeypatch.setattr(solver, "advance", fail_advance)
+
+    with pytest.raises(FloatingPointError, match="injected solver failure"):
+        model.update(model.scenario.output_dt)
+
+    assert model.time == starting_time
+
+
+def test_scenario_reset_does_not_reuse_recovery_epoch(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    model.recover_solver(FloatingPointError("first injected failure"))
+    assert model.recovery_count == 1
+
+    model.reset()
+    assert model.recovery_count == 1
+    model.recover_solver(FloatingPointError("second injected failure"))
+
+    assert model.recovery_count == 2
+    assert "recovery_epoch=2" in model.status()
