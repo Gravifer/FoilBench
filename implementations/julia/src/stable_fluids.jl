@@ -144,7 +144,10 @@ end
 function _project!(solver::StableFluidsSolver{T}, timestep::T) where {T}
     scenario, geometry = _stable_require(solver)
     all(isfinite, solver.u) && all(isfinite, solver.v) ||
-        throw(ArgumentError("Stable Fluids projection received non-finite velocity"))
+        throw(NumericalFailure(
+            :nonfinite_state,
+            "Stable Fluids projection received non-finite velocity",
+        ))
     wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     face_speed = max(maximum(abs, solver.u), maximum(abs, solver.v))
     wall_speed = any(solver.solid) ? _maximum_speed(wall) : zero(T)
@@ -152,7 +155,8 @@ function _project!(solver::StableFluidsSolver{T}, timestep::T) where {T}
     solver.skew_rk2 && (configured_cfl = min(configured_cfl, T(0.4)))
     projection_limit = max(one(T), T(2) * configured_cfl)
     projection_cfl = max(face_speed, wall_speed) * timestep / min(dx(scenario.domain), dy(scenario.domain))
-    projection_cfl <= projection_limit || throw(ArgumentError(
+    projection_cfl <= projection_limit || throw(NumericalFailure(
+        :excessive_velocity,
         "Stable Fluids projection CFL $projection_cfl exceeds $projection_limit",
     ))
     channel_walls = option(scenario, "initial_condition", "") == "poiseuille"
@@ -171,9 +175,15 @@ function _project!(solver::StableFluidsSolver{T}, timestep::T) where {T}
         max_iterations,
     )
     solver.projection_iterations = iterations
-    converged || throw(ArgumentError("Stable Fluids pressure CG did not converge"))
+    converged || throw(NumericalFailure(
+        :projection_failure,
+        "Stable Fluids pressure CG did not converge",
+    ))
     all(isfinite, solver.u) && all(isfinite, solver.v) ||
-        throw(ArgumentError("Stable Fluids projection produced non-finite velocity"))
+        throw(NumericalFailure(
+            :nonfinite_state,
+            "Stable Fluids projection produced non-finite velocity",
+        ))
     return nothing
 end
 
@@ -202,7 +212,10 @@ function _diffuse_faces!(
     )
     solver.diffusion_iterations = max(u_iterations, v_iterations)
     u_converged && v_converged ||
-        throw(ArgumentError("Stable Fluids implicit viscosity did not converge"))
+        throw(NumericalFailure(
+            :projection_failure,
+            "Stable Fluids implicit viscosity did not converge",
+        ))
     return nothing
 end
 
@@ -265,7 +278,10 @@ function advance!(
                 tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
             )
             diffusion_converged ||
-                throw(ArgumentError("Stable Fluids implicit viscosity did not converge"))
+                throw(NumericalFailure(
+                    :projection_failure,
+                    "Stable Fluids implicit viscosity did not converge",
+                ))
             solver.diffusion_iterations = diffusion_iterations
             solver.u, solver.v = cell_to_faces(velocity)
         end
@@ -350,6 +366,9 @@ function diagnostics(solver::StableFluidsSolver)
         "diffusion_iterations" => Float64(solver.diffusion_iterations),
     )
     all(isfinite, values(diagnostic_values)) ||
-        throw(ArgumentError("Stable Fluids produced non-finite diagnostics"))
+        throw(NumericalFailure(
+            :nonfinite_state,
+            "Stable Fluids produced non-finite diagnostics",
+        ))
     return Diagnostics(diagnostic_values, String[])
 end

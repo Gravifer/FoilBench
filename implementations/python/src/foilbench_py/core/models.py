@@ -185,6 +185,16 @@ class ImportOutcome:
         return self.status == "accepted"
 
 
+class NumericalFailure(RuntimeError):
+    """Classified, anticipated numerical failure from solver-owned work."""
+
+    reason: ImportFailureReason
+
+    def __init__(self, reason: ImportFailureReason, detail: str) -> None:
+        super().__init__(detail)
+        self.reason = reason
+
+
 @dataclass(frozen=True, slots=True)
 class Diagnostics:
     values: dict[str, float]

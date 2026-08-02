@@ -18,6 +18,7 @@ from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
     ImportReport,
+    NumericalFailure,
     Scenario,
     SolverInfo,
     StepReport,
@@ -558,6 +559,9 @@ class PicFlipSolver:
             ),
         }
         if not all(np.isfinite(value) for value in values.values()):
-            raise FloatingPointError("PIC/FLIP produced non-finite diagnostics")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "PIC/FLIP produced non-finite diagnostics",
+            )
         warnings = () if not self._projection_warning else (self._projection_warning,)
         return Diagnostics(values, warnings)

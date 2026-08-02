@@ -362,7 +362,10 @@ function _lbm_step!(solver::LBMSolver{T}, control::ControlState) where {T}
     )
     streamed = _lbm_stream!(solver, post, density, control)
     _lbm_apply_boundaries!(solver, streamed)
-    all(isfinite, streamed) || throw(ArgumentError("D2Q9 LBM produced non-finite populations"))
+    all(isfinite, streamed) || throw(NumericalFailure(
+        :nonfinite_state,
+        "D2Q9 LBM produced non-finite populations",
+    ))
     solver.populations = streamed
     solver.control = ControlState(
         T(control.time),
@@ -475,7 +478,10 @@ function diagnostics(solver::LBMSolver)
         "wake_width" => Float64(wake_width(velocity, scenario.domain, scenario.foil.pivot[1])),
         "recirculation_area" => Float64(recirculation_area(velocity, scenario.domain, scenario.foil.pivot[1])),
     )
-    all(isfinite, Base.values(values)) || throw(ArgumentError("D2Q9 LBM produced non-finite diagnostics"))
+    all(isfinite, Base.values(values)) || throw(NumericalFailure(
+        :nonfinite_state,
+        "D2Q9 LBM produced non-finite diagnostics",
+    ))
     warnings = solver.scaling.clamped ?
         ["LBM relaxation clamp active: effective Re=$(round(solver.scaling.effective_reynolds; digits = 1))"] :
         String[]

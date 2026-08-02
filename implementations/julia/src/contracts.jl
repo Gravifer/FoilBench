@@ -60,6 +60,23 @@ struct ImportOutcome
     end
 end
 
+struct NumericalFailure <: Exception
+    reason::Symbol
+    detail::String
+
+    function NumericalFailure(reason::Symbol, detail::AbstractString)
+        reason in (
+            :excessive_velocity,
+            :nonfinite_state,
+            :projection_failure,
+            :invalid_density,
+        ) || throw(ArgumentError("invalid numerical failure reason"))
+        new(reason, String(detail))
+    end
+end
+
+Base.showerror(io::IO, failure::NumericalFailure) = print(io, failure.detail)
+
 accepted(outcome::ImportOutcome) = outcome.status == :accepted
 
 struct Diagnostics

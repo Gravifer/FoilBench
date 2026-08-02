@@ -182,7 +182,7 @@ function _worker_loop(worker::ViewerWorker)
             guarded_trial && (worker.model.pose_only_guarded_trial = false)
             worker.recovery_pending = false
         catch error
-            if !(error isa ArgumentError || error isa DimensionMismatch)
+            if !(error isa NumericalFailure)
                 worker.model.paused = true
                 worker.model.status_message =
                     "worker error $(typeof(error)): " * sprint(showerror, error)

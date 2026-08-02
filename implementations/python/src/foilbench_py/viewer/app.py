@@ -13,6 +13,7 @@ from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
     ImportOutcome,
+    NumericalFailure,
     Scenario,
     StepReport,
 )
@@ -337,7 +338,7 @@ class ViewerModel:
 
     def recover_solver(
         self,
-        failure: ValueError | FloatingPointError,
+        failure: ValueError | FloatingPointError | NumericalFailure,
         reset_reynolds: bool = False,
         post_import: bool = False,
     ) -> None:

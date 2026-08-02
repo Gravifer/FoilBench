@@ -291,7 +291,7 @@ function _pic_project!(
     )
     solver.projection_iterations = iterations
     solver.projection_warning = converged ? "" : "pressure CG did not converge"
-    converged || throw(ArgumentError(solver.projection_warning))
+    converged || throw(NumericalFailure(:projection_failure, solver.projection_warning))
     return faces_to_cell(u, v)
 end
 
@@ -460,7 +460,10 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             scenario.domain;
             tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
         )
-        converged || throw(ArgumentError("PIC/FLIP implicit viscosity did not converge"))
+        converged || throw(NumericalFailure(
+            :projection_failure,
+            "PIC/FLIP implicit viscosity did not converge",
+        ))
         solver.grid_velocity = _pic_project!(solver, diffused, sub_control, timestep)
         pic_velocity = grid_to_particle(solver.grid_velocity, solver.positions, scenario.domain)
         delta = grid_to_particle(solver.grid_velocity .- before_projection, solver.positions, scenario.domain)
@@ -558,7 +561,10 @@ function diagnostics(solver::PicFlipSolver)
         "recirculation_area" => Float64(recirculation_area(solver.grid_velocity, scenario.domain, scenario.foil.pivot[1])),
         "projection_iterations" => Float64(solver.projection_iterations),
     )
-    all(isfinite, Base.values(values)) || throw(ArgumentError("PIC/FLIP produced non-finite diagnostics"))
+    all(isfinite, Base.values(values)) || throw(NumericalFailure(
+        :nonfinite_state,
+        "PIC/FLIP produced non-finite diagnostics",
+    ))
     warnings = isempty(solver.projection_warning) ? String[] : [solver.projection_warning]
     return Diagnostics(values, warnings)
 end

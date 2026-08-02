@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from foilbench_py.core.models import NumericalFailure
+from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.viewer.app import ViewerModel
 from foilbench_py.viewer.worker import SimulationWorker
 from tests.helpers import ScenarioFactory
@@ -89,7 +91,7 @@ def test_worker_recovers_once_from_failed_advance(
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise FloatingPointError("warm state diverged")
+            raise NumericalFailure("nonfinite_state", "warm state diverged")
         original_update(viewer, dt)
 
     monkeypatch.setattr(ViewerModel, "update", fail_once)
@@ -125,7 +127,7 @@ def test_worker_resets_modified_reynolds_after_consecutive_failures(
         nonlocal calls
         calls += 1
         if calls <= 2:
-            raise FloatingPointError("runtime Reynolds diverged")
+            raise NumericalFailure("nonfinite_state", "runtime Reynolds diverged")
         original_update(viewer, dt)
 
     monkeypatch.setattr(ViewerModel, "update", fail_twice)
@@ -167,7 +169,7 @@ def test_worker_resets_modified_reynolds_after_failures_in_window(
         nonlocal calls
         calls += 1
         if calls in {1, 3, 5}:
-            raise FloatingPointError("intermittent Reynolds instability")
+            raise NumericalFailure("nonfinite_state", "intermittent Reynolds instability")
         original_update(viewer, dt)
 
     monkeypatch.setattr(ViewerModel, "update", fail_interleaved)
@@ -201,7 +203,7 @@ def test_worker_pauses_after_intermittent_failures_at_scenario_reynolds(
         nonlocal calls
         calls += 1
         if calls in {1, 3, 5}:
-            raise FloatingPointError("intermittent baseline instability")
+            raise NumericalFailure("nonfinite_state", "intermittent baseline instability")
         original_update(viewer, dt)
 
     monkeypatch.setattr(ViewerModel, "update", fail_interleaved)
@@ -213,6 +215,39 @@ def test_worker_pauses_after_intermittent_failures_at_scenario_reynolds(
         assert stopped.failure is not None
         paused_time = stopped.simulation_time
         assert worker.latest_snapshot().simulation_time == paused_time
+    finally:
+        worker.close()
+
+
+def test_tracer_programming_error_pauses_without_solver_recovery(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    solver = model.manager.solver
+
+    def fail_tracers(
+        tracers: TracerSystem,
+        solver: object,
+        control: object,
+        dt: float,
+    ) -> None:
+        del tracers, solver, control, dt
+        raise ValueError("injected tracer invariant failure")
+
+    monkeypatch.setattr(TracerSystem, "update", fail_tracers)
+    worker = SimulationWorker(model, maximum_steps_per_second=20.0)
+    worker.start()
+    try:
+        failed = worker.wait_for_revision(1)
+        assert model.paused
+        assert failed.failure is not None
+        assert "injected tracer invariant failure" in failed.failure
+        assert model.manager.solver is solver
+        assert model.recovery_count == 0
     finally:
         worker.close()
 
@@ -234,7 +269,7 @@ def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
         calls += 1
         viewer.last_requested_angular_velocity_degrees = 600.0
         if calls <= 2 or viewer.pose_only_guarded_trial:
-            raise FloatingPointError("moving wall diverged")
+            raise NumericalFailure("excessive_velocity", "moving wall diverged")
         original_update(viewer, dt)
 
     monkeypatch.setattr(ViewerModel, "update", fail_twice_during_rapid_drag)

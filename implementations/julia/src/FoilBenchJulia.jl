@@ -30,6 +30,7 @@ include("viewer/worker.jl")
 
 export AbstractFlowSolver
 export ImportOutcome
+export NumericalFailure
 export accepted
 export CanonicalFlowState
 export ControlKeyframe

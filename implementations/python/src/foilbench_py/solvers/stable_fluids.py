@@ -29,6 +29,7 @@ from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
     ImportReport,
+    NumericalFailure,
     Scenario,
     SolverInfo,
     StepReport,
@@ -157,7 +158,10 @@ class StableFluidsSolver:
         wall_velocity = self._wall_grid(self._control)
         arrays = (u, v, wall_velocity)
         if not all(np.isfinite(array).all() for array in arrays):
-            raise FloatingPointError("Stable Fluids projection received non-finite velocity")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "Stable Fluids projection received non-finite velocity",
+            )
         face_speed = max(float(np.max(np.abs(u))), float(np.max(np.abs(v))))
         wall_speed = (
             float(np.max(np.linalg.norm(wall_velocity[solid], axis=1)))
@@ -169,9 +173,10 @@ class StableFluidsSolver:
             scenario.domain.dy,
         )
         if projection_cfl > projection_cfl_limit:
-            raise FloatingPointError(
+            raise NumericalFailure(
+                "excessive_velocity",
                 f"Stable Fluids projection CFL {projection_cfl:.2f} exceeds "
-                f"{projection_cfl_limit:.2f}"
+                f"{projection_cfl_limit:.2f}",
             )
         self._u, self._v, info = project_faces(
             u,
@@ -185,9 +190,15 @@ class StableFluidsSolver:
             pressure_tolerance,
         )
         if info != 0:
-            raise FloatingPointError(f"Stable Fluids pressure CG did not converge: {info}")
+            raise NumericalFailure(
+                "projection_failure",
+                f"Stable Fluids pressure CG did not converge: {info}",
+            )
         if not np.isfinite(self._u).all() or not np.isfinite(self._v).all():
-            raise FloatingPointError("Stable Fluids projection produced non-finite velocity")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "Stable Fluids projection produced non-finite velocity",
+            )
         self._projection_warning = ""
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
@@ -318,5 +329,8 @@ class StableFluidsSolver:
         }
         warnings = () if not self._projection_warning else (self._projection_warning,)
         if not all(np.isfinite(value) for value in values.values()):
-            raise FloatingPointError("Stable Fluids produced non-finite diagnostics")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "Stable Fluids produced non-finite diagnostics",
+            )
         return Diagnostics(values, warnings)

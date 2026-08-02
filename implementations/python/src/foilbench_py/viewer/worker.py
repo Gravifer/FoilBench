@@ -7,7 +7,7 @@ from time import perf_counter
 from typing import Literal
 
 from foilbench_py.core.geometry import NacaFoil
-from foilbench_py.core.models import Scenario
+from foilbench_py.core.models import NumericalFailure, Scenario
 from foilbench_py.types import PathVertices, ScalarField, TracerPositions
 from foilbench_py.viewer.app import ViewerModel
 
@@ -337,7 +337,7 @@ class SimulationWorker:
                     self._model.pose_only_guarded_trial = False
                 self._recovery_pending = False
             except Exception as error:
-                if not isinstance(error, (ValueError, FloatingPointError)):
+                if not isinstance(error, NumericalFailure):
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                     self._publish(applied_command)

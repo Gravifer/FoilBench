@@ -19,6 +19,7 @@ from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
     ImportReport,
+    NumericalFailure,
     Scenario,
     SolverInfo,
     StepReport,
@@ -558,7 +559,10 @@ class LBMSolver:
             ),
         }
         if not all(np.isfinite(value) for value in values.values()):
-            raise FloatingPointError("LBM produced non-finite diagnostics")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "LBM produced non-finite diagnostics",
+            )
         warnings = (
             (f"LBM relaxation clamp active: effective Re={self._effective_reynolds:.1f}",)
             if self._viscosity_clamped

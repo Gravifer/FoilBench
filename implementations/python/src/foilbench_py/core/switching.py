@@ -11,6 +11,7 @@ from foilbench_py.core.models import (
     ImportFailureReason,
     ImportOutcome,
     ImportReport,
+    NumericalFailure,
     Scenario,
 )
 from foilbench_py.core.protocol import FlowSolver
@@ -18,7 +19,11 @@ from foilbench_py.core.protocol import FlowSolver
 SolverFactory = Callable[[str], FlowSolver]
 
 
-def classify_import_failure(error: ValueError | FloatingPointError) -> ImportFailureReason:
+def classify_import_failure(
+    error: ValueError | FloatingPointError | NumericalFailure,
+) -> ImportFailureReason:
+    if isinstance(error, NumericalFailure):
+        return error.reason
     message = str(error).lower().replace("-", "")
     if "nonfinite" in message or "must be finite" in message or "nan" in message:
         return "nonfinite_state"
@@ -92,7 +97,7 @@ class SolverManager:
             candidate.set_reynolds(self._reynolds)
             report = candidate.import_state(state, control)
             candidate.diagnostics()
-        except (ValueError, FloatingPointError) as error:
+        except (ValueError, FloatingPointError, NumericalFailure) as error:
             return ImportOutcome(
                 "rejected",
                 classify_import_failure(error),

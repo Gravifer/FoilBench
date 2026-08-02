@@ -739,6 +739,8 @@ function classify_viewer_failure(error)::Symbol
     return :unsupported_conversion
 end
 
+classify_viewer_failure(error::NumericalFailure)::Symbol = error.reason
+
 function recover_solver!(
     model::ViewerModel{T},
     failure;
