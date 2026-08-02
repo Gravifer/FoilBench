@@ -488,7 +488,11 @@ from repository history.
 The decisions below are intentionally deferred until the user can evaluate
 their pedagogical and interactive consequences. They are not authorization for
 an implementation to choose permanent policy silently. The current minimum
-requirements remain binding in the meantime.
+requirements remain binding in the meantime. The implementation defects found
+by the post-reconciliation QA pass are not open policy decisions; their
+agent-actionable queue and the additional deferred experiential work are
+recorded in the
+[implementation roadmap](../docs/implementation-roadmap.md#post-reconciliation-qa-queue).
 
 ### Fresh fallback after rejected warm import
 

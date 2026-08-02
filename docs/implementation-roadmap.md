@@ -77,16 +77,54 @@ and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads
 Python code or Python solvers.
 
-### Temporarily deferred viewer follow-ups
+### Post-reconciliation QA queue
 
-The following work requires user attention and is deliberately deferred. It
-does not reopen Phase 1 or Phase 2A acceptance:
+A parallel read-only QA pass on 2026-08-02 found no P0 defect. The following
+high-priority findings are implementation-correctness work with an already
+specified outcome. They are actionable without further user judgement:
 
+- make Julia canonical `.npy` storage order agree with its manifest and prove
+  it with a cross-language, nonsymmetric-array fixture;
+- validate Julia scenarios and benchmark results against the complete shared
+  schemas rather than partial hand-written checks;
+- translate anticipated Python and Julia pressure/projection breakdowns into
+  typed numerical failures, and reject non-finite Python LBM and PIC/FLIP steps
+  before they can return successful reports;
+- make command-path failures terminate safely, and publish every accepted warm
+  switch at its exact completed validation-step boundary before ordinary
+  evolution resumes;
+- preserve recent failure evidence across rejected and no-op solver switches;
+  and
+- keep interactive `sim/wall` accounting active through continuous dragging
+  and presentation commands so pacing, publication, tracer, and diagnostic
+  costs remain included.
+
+Medium-priority agent-actionable follow-up includes making post-import failure
+classification reachable, preventing stale diagnostics from leaving warming,
+replacing message-based import rejection with dedicated typed outcomes, and
+reproducing or ruling out bounded Julia command-channel deadlock under
+concurrent producer pressure.
+
+### User-attention items — temporarily deferred
+
+The following policy or experiential work is deliberately deferred until the
+user can participate. Agents must not silently settle these choices. They do
+not reopen Phase 1 or Phase 2A acceptance:
+
+- choose the fresh-fallback policy after rejected warm import, including
+  retry limits, disclosure, telemetry, and pair-specific disablement;
+- choose final drag-resolution constants: angular-velocity cap, smoothing
+  window, and pose-only hysteresis;
+- decide whether diagnostic cadence remains presentation-only or gains a
+  separately exposed every-step diagnostic mode;
 - design shared language-neutral command transcripts for viewer conformance;
-- settle the fresh-fallback policy after a rejected warm import; and
+  and
 - perform and record a manual cross-platform GPU interaction stress matrix.
 
-These items should be revisited before claiming full Phase 2B viewer parity.
+The normative minimums and detailed unanswered questions remain recorded in
+[the interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+These deferred items should be revisited before claiming full Phase 2B viewer
+parity.
 
 ## Phase 2B: TypeScript
 
