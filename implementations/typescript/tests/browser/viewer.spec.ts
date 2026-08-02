@@ -8,6 +8,11 @@ test("viewer renders and applies interactive controls", async ({page}) => {
   await expect(canvas).toBeVisible();
   await expect(overlay).toContainText("stable-fluids", {timeout: 20_000});
   await expect(overlay).toContainText("vort=on");
+  await expect(overlay).toContainText("adv=maccormack");
+  await page.keyboard.press("]");
+  await expect(overlay).toContainText("adv=skew-rk2");
+  await page.keyboard.press("[");
+  await expect(overlay).toContainText("adv=maccormack");
 
   await page.keyboard.press("v");
   await expect(overlay).toContainText("vort=off");

@@ -4,6 +4,8 @@ import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {createSolver} from "../solvers/factory.js";
+import {PicFlipSolver} from "../solvers/picFlip.js";
+import {StableFluidsSolver} from "../solvers/stableFluids.js";
 import type {ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
@@ -34,10 +36,15 @@ export class ViewerModel {
   private diagnosticsReady = false;
   private vorticityCache = new Float32Array();
   private nextVorticityTime = 0;
+  private stableTransport: "maccormack" | "semi-lagrangian" | "skew-rk2";
+  private picBlend: number;
 
   public constructor(public readonly scenario: Scenario, solverId: SolverId) {
     this.solver = createSolver(solverId);
     this.solver.initialize(scenario, scenario.seed);
+    this.stableTransport = scenario.solverOptions.stableAdvection ?? "maccormack";
+    this.picBlend = scenario.solverOptions.picFlipBlend ?? 0.95;
+    this.configureSolver(this.solver);
     this.tracers = new TracerSystem(scenario);
     this.presentation = {
       vorticityVisible: true,
@@ -91,11 +98,30 @@ export class ViewerModel {
 
   public toggleVorticity(): void { this.vorticityVisible = !this.vorticityVisible; }
   public toggleCrop(): void { if ((this.scenario.solverOptions.viewerCropCells ?? 0) > 0) this.cropEnabled = !this.cropEnabled; }
+  public adjustSolverTuning(amount: -1 | 1): void {
+    if (this.solver instanceof StableFluidsSolver) {
+      this.stableTransport = amount < 0 ? "maccormack" : "skew-rk2";
+      this.solver.setTransportMode(this.stableTransport);
+      this.status = `transport=${this.stableTransport}`;
+    } else if (this.solver instanceof PicFlipSolver) {
+      this.picBlend = Math.max(0, Math.min(1, this.picBlend + 0.05 * amount));
+      this.solver.setBlend(this.picBlend);
+      this.status = `FLIP=${this.picBlend.toFixed(2)}`;
+    } else this.status = "no live tuning for LBM";
+  }
+
+  private configureSolver(solver: FlowSolver): void {
+    if (solver instanceof StableFluidsSolver) solver.setTransportMode(this.stableTransport);
+    if (solver instanceof PicFlipSolver) solver.setBlend(this.picBlend);
+  }
 
   public reset(): void {
     const id = this.solver.info.id;
     this.solver = createSolver(id);
     this.solver.initialize(this.scenario, this.scenario.seed);
+    this.stableTransport = this.scenario.solverOptions.stableAdvection ?? "maccormack";
+    this.picBlend = this.scenario.solverOptions.picFlipBlend ?? 0.95;
+    this.configureSolver(this.solver);
     this.time = 0;
     this.manualAngle = null;
     this.angularVelocity = 0;
@@ -112,6 +138,7 @@ export class ViewerModel {
     if (id === this.solver.info.id) return true;
     const incoming = createSolver(id);
     incoming.initialize(this.scenario, this.scenario.seed);
+    this.configureSolver(incoming);
     incoming.setReynolds(this.solver.reynolds);
     const importedAt = this.control(this.time);
     const outcome = incoming.importState(this.solver.exportState(), importedAt);
@@ -193,6 +220,7 @@ export class ViewerModel {
     try {
       const freshScenario: Scenario = {...this.scenario, controls: [{time: 0, angleDegrees: angle}]};
       replacement.initialize(freshScenario, this.scenario.seed);
+      this.configureSolver(replacement);
       replacement.setReynolds(requestedReynolds);
       const fresh = replacement.exportState();
       const outcome = replacement.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0});
@@ -249,7 +277,7 @@ export class ViewerModel {
       paused: this.paused, vorticityVisible: this.vorticityVisible, cropEnabled: this.cropEnabled, tracerMode: this.tracers.mode,
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,
       maxSpeed: this.lastReport.maxSpeed, diagnostics, status: this.status,
-      recoveryEpoch: this.presentation.recoveryEpoch, poseOnly: this.presentation.poseOnly, scheduleActive: this.manualAngle === null,
+      recoveryEpoch: this.presentation.recoveryEpoch, poseOnly: this.presentation.poseOnly, scheduleActive: this.manualAngle === null, solverTuning: this.solver instanceof StableFluidsSolver ? `adv=${this.stableTransport}` : this.solver instanceof PicFlipSolver ? `FLIP=${this.picBlend.toFixed(2)}` : "TRT",
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions: this.tracers.positions.slice(),
       pathSegments: this.tracers.segments(), vorticity: this.vorticity(), foilOutline: new NacaFoil(this.scenario.foil).outline(angle),
     };
