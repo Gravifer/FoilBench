@@ -189,6 +189,9 @@ class FoilWindow(pyglet.window.Window):
 
     def _tick(self, dt: float) -> None:
         del dt
+        latest = self.worker.latest_snapshot()
+        if latest.revision != self.snapshot.revision:
+            self.snapshot = latest
         if self.snapshot.crop_enabled != self.crop_enabled:
             self.crop_enabled = self.snapshot.crop_enabled
             self.view_bounds = (
