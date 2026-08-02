@@ -142,9 +142,45 @@ parity.
 
 ## Phase 2B: TypeScript
 
-Add `implementations/typescript/` with typed-array solvers, a Web Worker, a
-Three.js viewer, and browser-native benchmarks. It remains independent of
-Python and Julia.
+**Status:** In progress on `codex/phase2b-typescript`.
+
+Phase 2B begins by formalizing the shared solver, scenario, benchmark-matrix,
+canonical-manifest, result, and PCG32 contracts. It then adds an independent
+strict TypeScript implementation with typed-array Stable Fluids, D2Q9 TRT
+LBM, and blended PIC/FLIP solvers; a Web Worker simulation owner; a Three.js
+viewer; and Chromium-native benchmarks. TypeScript shares artifacts and
+semantic fixtures with Python and Julia but never loads their code or solvers.
+
+Milestones are:
+
+1. shared contract hardening and TypeScript conformance foundations;
+2. Stable Fluids and the early worker/Three.js viewer;
+3. D2Q9 TRT LBM and blended PIC/FLIP;
+4. all directed warm swaps, graceful recovery, online Reynolds control,
+   tracer continuity, and presentation parity;
+5. Chromium benchmark artifacts and offline three-language comparison; and
+6. strict TypeScript, cross-language fidelity, browser interaction, and
+   `160 x 96` double-digit warmed-step acceptance.
+
+A coherent alternating vortex street remains sufficient wake behavior. The
+skew-RK2 chaotic-wake sweep and paired-trajectory experiment are optional
+post-acceptance enhancements.
+
+### Phase 2B user-policy gate
+
+Core work uses the current normative minimums in the interactive viewer
+contract. Before Phase 2B is marked complete, the user must evaluate and the
+three viewers must reconcile:
+
+- fresh fallback after rejected warm import, including eligible reasons,
+  retries, disclosure, telemetry, and pair disablement;
+- final drag cap, smoothing window, and pose-only hysteresis;
+- whether to expose an every-step diagnostic mode;
+- language-neutral viewer command transcripts; and
+- the manual cross-platform GPU interaction matrix.
+
+These remain decisions, not implementation latitude. Chromium is the required
+Phase 2B browser; Firefox and Safari are compatibility follow-ups.
 
 ## Phase 3: Rust and WASM
 
