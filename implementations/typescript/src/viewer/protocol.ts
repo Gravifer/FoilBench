@@ -16,6 +16,7 @@ export interface ViewerSnapshot {
   readonly paused: boolean; readonly vorticityVisible: boolean; readonly cropEnabled: boolean; readonly tracerMode: "display" | "flow";
   readonly stepRate: number | null; readonly simulatedPerWall: number | null; readonly substeps: number;
   readonly maxSpeed: number; readonly diagnostics: Readonly<Record<string, number>>; readonly status: string;
+  readonly recoveryEpoch: number; readonly poseOnly: boolean; readonly scheduleActive: boolean;
   readonly resolution: readonly [number, number]; readonly bounds: readonly [readonly [number, number], readonly [number, number]];
   readonly tracerPositions: Float32Array; readonly pathSegments: Float32Array; readonly vorticity: Float32Array; readonly foilOutline: Float32Array;
 }
