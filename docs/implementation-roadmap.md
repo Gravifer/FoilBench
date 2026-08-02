@@ -142,7 +142,8 @@ parity.
 
 ## Phase 2B: TypeScript
 
-**Status:** In progress on `codex/phase2b-typescript`.
+**Status:** Automated implementation and acceptance complete on
+`codex/phase2b-typescript`; final interactive-policy acceptance remains open.
 
 Phase 2B begins by formalizing the shared solver, scenario, benchmark-matrix,
 canonical-manifest, result, and PCG32 contracts. It then adds an independent
@@ -151,16 +152,31 @@ LBM, and blended PIC/FLIP solvers; a Web Worker simulation owner; a Three.js
 viewer; and Chromium-native benchmarks. TypeScript shares artifacts and
 semantic fixtures with Python and Julia but never loads their code or solvers.
 
-Milestones are:
+Completed implementation milestones are:
 
 1. shared contract hardening and TypeScript conformance foundations;
-2. Stable Fluids and the early worker/Three.js viewer;
+2. Stable Fluids and the worker/Three.js viewer;
 3. D2Q9 TRT LBM and blended PIC/FLIP;
-4. all directed warm swaps, graceful recovery, online Reynolds control,
+4. all directed warm swaps at low and high attack angles, graceful recovery, online Reynolds control,
    tracer continuity, and presentation parity;
 5. Chromium benchmark artifacts and offline three-language comparison; and
 6. strict TypeScript, cross-language fidelity, browser interaction, and
    `160 x 96` double-digit warmed-step acceptance.
+
+The implementation supplies all three independent typed-array solvers,
+MacCormack/semi-Lagrangian/skew-RK2 Stable Fluids transport, TRT LBM with
+moving-wall and open-domain treatment, four-particles-per-cell blended
+PIC/FLIP, a latest-only Web Worker owner, Three.js paths and vorticity,
+transactional switching, classified recovery, canonical snapshots, and a
+Chromium-native benchmark runner. The matched validation suite, production
+build, browser interaction smoke test, and snapshot interoperability checks
+pass. Python successfully loads the TypeScript C-order canonical artifacts.
+
+The reproducible `preview-gate.json` matrix passed three repetitions for every
+solver at `160 x 96`. Observed median step ranges on the development machine
+were `18.2–19.7 ms` for Stable Fluids, `58.7–71.8 ms` for LBM, and
+`60.4–78.3 ms` for PIC/FLIP. See
+[Phase 2B acceptance](phase2b-acceptance.md) for commands and evidence.
 
 A coherent alternating vortex street remains sufficient wake behavior. The
 skew-RK2 chaotic-wake sweep and paired-trajectory experiment are optional
@@ -181,6 +197,9 @@ three viewers must reconcile:
 
 These remain decisions, not implementation latitude. Chromium is the required
 Phase 2B browser; Firefox and Safari are compatibility follow-ups.
+
+Consequently, the engineering work is complete but Phase 2B must not be
+relabeled unconditionally **Completed** until the user evaluates this gate.
 
 ## Phase 3: Rust and WASM
 

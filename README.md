@@ -3,8 +3,10 @@
 FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
 is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
-2A is complete with an independent Julia implementation; TypeScript follows
-in Phase 2B, and Rust/WASM in Phase 3.
+2A is complete with an independent Julia implementation. The Phase 2B
+TypeScript implementation and automated acceptance are complete, with its
+documented interactive-policy gate still awaiting user evaluation. Rust/WASM
+follows in Phase 3.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -18,7 +20,8 @@ root to list the available shortcuts. Common commands are:
 just setup
 just py-view
 just jl-view
-just ts-describe
+just ts-view
+just ts-preview-gate
 just py-chaos
 just verify
 ```
@@ -61,17 +64,28 @@ julia --project=implementations/julia implementations/julia/bin/foilbench-jl ben
 
 ## TypeScript quick start
 
-Phase 2B is in progress. Its strict conformance foundation can be run with:
+Phase 2B independently implements all three solvers, a Web Worker/Three.js
+viewer, Chromium benchmarks, canonical snapshots, warm switching, and
+graceful recovery. From the repository root:
 
 ```powershell
 npm --prefix implementations/typescript ci
+npm --prefix implementations/typescript run setup:browser
 npm --prefix implementations/typescript run check
 npm --prefix implementations/typescript test
 npm --prefix implementations/typescript run describe
+npm --prefix implementations/typescript run view -- scenarios/airfoil/default.json --solver stable-fluids
+npm --prefix implementations/typescript run bench -- benchmark-matrices/smoke.json
+npm --prefix implementations/typescript run gate:preview
 ```
 
+The viewer prints its local URL; open it in Chromium. Controls are `1/2/3`
+for solvers, left-drag for foil pose, `Space` pause, `R` reset, `+/-/0`
+Reynolds control, `[/]` solver tuning, and `V/T/C` for vorticity, tracer mode,
+and diagnostic cropping.
+
 Run every implemented language's native checks through the root convenience
-entry point (or pass `-Python` / `-Julia` to select one):
+entry point (or pass `-Python`, `-Julia`, or `-TypeScript` to select one):
 
 ```powershell
 pwsh -NoProfile -File tools/verify.ps1
@@ -88,6 +102,7 @@ git show f71d1fb:particle_airfoil_stall.py
 
 See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-acceptance.md),
 [Phase 2A acceptance](docs/phase2a-acceptance.md),
+[Phase 2B acceptance](docs/phase2b-acceptance.md),
 [benchmark methodology](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
