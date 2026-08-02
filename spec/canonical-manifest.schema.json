@@ -46,7 +46,7 @@
     "velocity": {
       "allOf": [
         {"$ref": "#/$defs/arrayMetadata"},
-        {"properties": {
+        {"type": "object", "properties": {
           "file": {"const": "velocity.npy"},
           "axes": {"const": ["z", "y", "x", "component"]}
         }}
@@ -57,7 +57,7 @@
         {"type": "null"},
         {"allOf": [
           {"$ref": "#/$defs/arrayMetadata"},
-          {"properties": {
+          {"type": "object", "properties": {
             "file": {"const": "density.npy"},
             "axes": {"const": ["z", "y", "x"]}
           }}
