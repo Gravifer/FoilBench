@@ -229,6 +229,7 @@ class ViewerModel:
     def update(self, dt: float) -> None:
         if self.paused:
             return
+        was_warming = self.metrics_warming
         del dt
         simulation_dt = self.scenario.output_dt * self.playback_rate
         next_time = self.time + simulation_dt
@@ -266,11 +267,13 @@ class ViewerModel:
             ) * self.simulated_seconds_per_wall_second + smoothing * instantaneous_throughput
         self.tracers.update(self.manager.solver, control, simulation_dt)
         self.previous_angle = control.angle_degrees
-        self.metrics_warming = False
         self.presentation.diagnostic_elapsed += simulation_dt
-        if self.presentation.diagnostic_elapsed >= self.presentation.diagnostic_interval:
+        if was_warming or (
+            self.presentation.diagnostic_elapsed >= self.presentation.diagnostic_interval
+        ):
             self._refresh_diagnostics()
             self.presentation.diagnostic_elapsed = 0.0
+        self.metrics_warming = False
         if self.pose_only_drag:
             if self.pose_only_release_pending and not self.drag_active:
                 self._disable_pose_only_drag(guard_next_failure=True)

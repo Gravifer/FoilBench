@@ -65,6 +65,26 @@ def test_headless_viewer_update_and_switch(
     assert "warm-import transient" in model.status()
 
 
+def test_first_step_after_reset_refreshes_warming_diagnostics(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    model.presentation.diagnostic_interval = 10.0
+    model.update(scenario.output_dt)
+    model.reset()
+
+    assert model.metrics_warming
+    assert model.last_diagnostics is not None
+    assert model.last_diagnostics.values["time"] == 0.0
+
+    model.update(scenario.output_dt)
+
+    assert not model.metrics_warming
+    assert model.last_diagnostics is not None
+    assert model.last_diagnostics.values["time"] == pytest.approx(model.time)
+
+
 def test_runtime_reynolds_mildly_scales_physical_playback(
     scenario_factory: ScenarioFactory,
 ) -> None:

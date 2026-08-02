@@ -401,6 +401,7 @@ end
 
 function update!(model::ViewerModel{T}) where {T}
     model.paused && return snapshot(model)
+    was_warming = model.metrics_warming
     target_dt = model.scenario.output_dt * model.playback_rate
     current_time = model.simulation_time
     next_time = current_time + target_dt
@@ -418,7 +419,6 @@ function update!(model::ViewerModel{T}) where {T}
     model.simulated_seconds_per_wall_second = elapsed > 0 ? target_dt / elapsed : Inf
     model.last_substeps = report.substeps
     model.last_max_speed = report.max_speed
-    model.metrics_warming = false
     advance_tracers!(
         model.tracers,
         model.solver,
@@ -428,9 +428,11 @@ function update!(model::ViewerModel{T}) where {T}
         target_dt,
     )
     model.presentation.diagnostic_elapsed += target_dt
-    if model.presentation.diagnostic_elapsed >= model.presentation.diagnostic_interval
+    if was_warming ||
+            model.presentation.diagnostic_elapsed >= model.presentation.diagnostic_interval
         _refresh_presentation!(model)
     end
+    model.metrics_warming = false
     if model.pose_only_drag
         if model.pose_only_release_pending && !model.drag_active
             _disable_pose_only_drag!(model; guard_next_failure = true)

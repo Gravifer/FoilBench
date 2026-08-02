@@ -828,6 +828,12 @@ end
     @test diagnostics(model.solver).values["time"] == 0.0
     @test model.status_message == "reset"
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "maccormack"
+    model.presentation.diagnostic_interval = 10.0
+    @test model.metrics_warming
+    @test model.presentation.diagnostics.values["time"] == 0.0
+    update!(model)
+    @test !model.metrics_warming
+    @test model.presentation.diagnostics.values["time"] == model.simulation_time
 
     model.tracers.positions .= reshape(
         repeat([scenario.domain.bounds[1][1], scenario.domain.bounds[2][1]], 32),
