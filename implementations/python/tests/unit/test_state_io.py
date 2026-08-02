@@ -89,6 +89,48 @@ def test_canonical_state_reader_rejects_semantically_swapped_axes() -> None:
         load_canonical_state(directory)
 
 
+def test_canonical_state_reader_honors_fortran_storage_metadata() -> None:
+    velocity = np.arange(1 * 3 * 5 * 2, dtype=np.float32).reshape(1, 3, 5, 2)
+    density = np.arange(1 * 3 * 5, dtype=np.float32).reshape(1, 3, 5)
+    state = CanonicalFlowState(
+        1,
+        2,
+        ((0.0, 1.0), (-0.5, 0.5)),
+        (5, 3),
+        (),
+        0.0,
+        "float32",
+        0.0,
+        0.0,
+        "julia",
+        "layout-test",
+        velocity,
+        density,
+    )
+    root = find_repo_root(Path(__file__))
+    directory = save_canonical_state(state, root / "results" / "test-state-io-fortran")
+    np.save(directory / "velocity.npy", np.asfortranarray(velocity), allow_pickle=False)
+    np.save(directory / "density.npy", np.asfortranarray(density), allow_pickle=False)
+    manifest_path = directory / "manifest.json"
+    manifest = cast(
+        dict[str, object], json.loads(manifest_path.read_text(encoding="utf-8"))
+    )
+    cast(dict[str, object], manifest["velocity"])["order"] = "F"
+    cast(dict[str, object], manifest["density"])["order"] = "F"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = load_canonical_state(directory)
+
+    np.testing.assert_array_equal(loaded.velocity, velocity)
+    assert loaded.density is not None
+    np.testing.assert_array_equal(loaded.density, density)
+
+    cast(dict[str, object], manifest["velocity"])["order"] = "C"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="dtype/order"):
+        load_canonical_state(directory)
+
+
 def test_midspan_extraction_handles_2d_and_shallow_3d_states() -> None:
     velocity_2d = np.arange(1 * 4 * 8 * 2, dtype=np.float32).reshape(1, 4, 8, 2)
     state_2d = CanonicalFlowState(

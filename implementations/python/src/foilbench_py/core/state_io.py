@@ -32,9 +32,14 @@ def _array_metadata(
         raise ValueError(f"canonical {name} must use {name}.npy")
     if metadata.get("axes") != expected_axes:
         raise ValueError(f"canonical {name} axes must be {expected_axes}")
-    if metadata.get("order") != "C":
-        raise ValueError(f"canonical {name} must declare C order")
+    if metadata.get("order") not in ("C", "F"):
+        raise ValueError(f"canonical {name} must declare C or Fortran order")
     return metadata
+
+
+def _matches_declared_order(array: np.ndarray, metadata: dict[str, object]) -> bool:
+    order = metadata["order"]
+    return bool(array.flags.c_contiguous if order == "C" else array.flags.f_contiguous)
 
 
 def save_canonical_state(state: CanonicalFlowState, directory: str | Path) -> Path:
@@ -78,7 +83,11 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     """Load and validate the language-neutral canonical-state directory."""
     source = Path(directory)
     manifest = _json_object(source / "manifest.json")
-    _array_metadata(manifest, "velocity", ["z", "y", "x", "component"])
+    velocity_metadata = _array_metadata(
+        manifest, "velocity", ["z", "y", "x", "component"]
+    )
+    if velocity_metadata is None:
+        raise ValueError("canonical velocity metadata is required")
     density_metadata = _array_metadata(manifest, "density", ["z", "y", "x"])
 
     precision_value = str(manifest["precision"])
@@ -87,14 +96,18 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     precision: Precision = precision_value
     selected_dtype = np.dtype(precision)
     velocity_file = np.load(source / "velocity.npy", allow_pickle=False)
-    if velocity_file.dtype != selected_dtype or not velocity_file.flags.c_contiguous:
+    if velocity_file.dtype != selected_dtype or not _matches_declared_order(
+        velocity_file, velocity_metadata
+    ):
         raise ValueError("canonical velocity dtype/order does not match its manifest")
     velocity = np.asarray(velocity_file, dtype=selected_dtype)
 
     density = None
     if density_metadata is not None:
         density_file = np.load(source / "density.npy", allow_pickle=False)
-        if density_file.dtype != selected_dtype or not density_file.flags.c_contiguous:
+        if density_file.dtype != selected_dtype or not _matches_declared_order(
+            density_file, density_metadata
+        ):
             raise ValueError("canonical density dtype/order does not match its manifest")
         density = np.asarray(density_file, dtype=selected_dtype)
 

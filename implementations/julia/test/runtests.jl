@@ -94,6 +94,23 @@ end
 
     mktempdir() do directory
         save_canonical_state(state, directory)
+        written_manifest = JSON3.read(
+            read(joinpath(directory, "manifest.json"), String),
+            Dict{String,Any},
+        )
+        @test written_manifest["velocity"]["order"] == "F"
+        @test written_manifest["density"]["order"] == "F"
+        open(joinpath(directory, "velocity.npy"), "r") do io
+            @test read(io, 6) == UInt8[0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59]
+            version = Tuple(read(io, 2))
+            header_length_bytes = read(io, version[1] == 1 ? 2 : 4)
+            header_length = sum(
+                Int(byte) << (8 * (index - 1)) for
+                (index, byte) in enumerate(header_length_bytes)
+            )
+            header = String(read(io, header_length))
+            @test occursin("'fortran_order': True", header)
+        end
         roundtrip = load_canonical_state(directory)
         @test roundtrip.velocity == state.velocity
         @test roundtrip.density == state.density

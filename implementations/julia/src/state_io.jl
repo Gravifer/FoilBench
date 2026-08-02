@@ -62,7 +62,8 @@ function _validate_array_metadata(
     metadata === nothing && return nothing
     metadata["file"] == "$name.npy" || throw(ArgumentError("invalid canonical $name file"))
     String.(metadata["axes"]) == expected_axes || throw(ArgumentError("invalid canonical $name axes"))
-    metadata["order"] == "C" || throw(ArgumentError("canonical arrays must declare C order"))
+    metadata["order"] in ("C", "F") ||
+        throw(ArgumentError("canonical arrays must declare C or Fortran order"))
     return metadata
 end
 
@@ -119,12 +120,12 @@ function save_canonical_state(state::CanonicalFlowState{D,T}, directory::Abstrac
         "velocity" => Dict(
             "file" => "velocity.npy",
             "axes" => ["z", "y", "x", "component"],
-            "order" => "C",
+            "order" => "F",
         ),
         "density" => state.density === nothing ? nothing : Dict(
             "file" => "density.npy",
             "axes" => ["z", "y", "x"],
-            "order" => "C",
+            "order" => "F",
         ),
     )
     open(joinpath(directory, "manifest.json"), "w") do io
