@@ -957,6 +957,20 @@ end
         @test evidence_worker.recent_failures == [1.0, 2.0]
         @test solver_info(evidence_worker.model.solver).id == "stable-fluids"
     end
+
+    paced_worker = ViewerWorker(
+        ViewerModel(scenario; tracer_count = 8, history_length = 3),
+    )
+    pacing_started = time()
+    start!(paced_worker)
+    for revision in 2:7
+        enqueue!(paced_worker, SetAngleCommand(Float64(revision), Float64(revision)))
+        wait_for_revision(paced_worker, revision)
+    end
+    pacing_elapsed = time() - pacing_started
+    @test pacing_elapsed >= 0.07
+    @test paced_worker.model.simulated_seconds_per_wall_second <= 2.0
+    close!(paced_worker)
 end
 
 @testset "All directed Julia warm swaps" begin

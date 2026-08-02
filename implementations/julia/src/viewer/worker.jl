@@ -169,9 +169,11 @@ end
 function _worker_loop(worker::ViewerWorker)
     worker.running[] = true
     _publish_latest!(worker, snapshot(worker.model))
-    active_wall_started = time_ns()
+    active_wall_started = Int(time_ns())
     active_simulation_started = worker.model.simulation_time
     interactive_throughput = nothing
+    step_interval_ns = round(Int, 1.0e9 / 60)
+    next_step_deadline = active_wall_started + step_interval_ns
     while worker.running[]
         while isready(worker.wake_signal)
             take!(worker.wake_signal)
@@ -189,11 +191,6 @@ function _worker_loop(worker::ViewerWorker)
             end
             worker.applied_command = max(worker.applied_command, selected.sequence)
         end
-        if !isempty(queued)
-            active_wall_started = time_ns()
-            active_simulation_started = worker.model.simulation_time
-            worker.model.metrics_warming && (interactive_throughput = nothing)
-        end
         if !worker.running[]
             _publish_latest!(worker, snapshot(worker.model))
             break
@@ -201,26 +198,34 @@ function _worker_loop(worker::ViewerWorker)
         if worker.model.paused
             isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
             take!(worker.wake_signal)
-            active_wall_started = time_ns()
+            active_wall_started = Int(time_ns())
             active_simulation_started = worker.model.simulation_time
+            next_step_deadline = active_wall_started
             continue
         end
         if publish_boundary
             _publish_latest!(worker, snapshot(worker.model))
-            timedwait(
-                () -> isready(worker.wake_signal),
-                1 / 60;
-                pollint = 0.001,
-            )
-            active_wall_started = time_ns()
+            active_wall_started = Int(time_ns())
             active_simulation_started = worker.model.simulation_time
+            interactive_throughput = nothing
+            next_step_deadline = active_wall_started + step_interval_ns
             continue
         end
-        started = time_ns()
+        remaining_before_step = (next_step_deadline - Int(time_ns())) / 1.0e9
+        if remaining_before_step > 0
+            timedwait(
+                () -> isready(worker.wake_signal),
+                remaining_before_step;
+                pollint = min(0.001, remaining_before_step),
+            )
+            continue
+        end
+        started = Int(time_ns())
+        next_step_deadline = started + step_interval_ns
         try
             guarded_trial = worker.model.pose_only_guarded_trial
             update!(worker.model)
-            completed = time_ns()
+            completed = Int(time_ns())
             wall_delta = max((completed - active_wall_started) / 1.0e9, 1.0e-9)
             simulation_delta = worker.model.simulation_time - active_simulation_started
             instantaneous_throughput = simulation_delta / wall_delta
@@ -242,7 +247,7 @@ function _worker_loop(worker::ViewerWorker)
                 _publish_latest!(worker, snapshot(worker.model))
                 continue
             end
-            failure_count = _record_failure!(worker, time_ns() / 1.0e9)
+            failure_count = _record_failure!(worker, Int(time_ns()) / 1.0e9)
             reynolds_modified = reynolds(worker.model.solver) != worker.model.scenario.reynolds
             pose_only_recovery = worker.recovery_pending &&
                 rapid_drag_attempted(worker.model) && !worker.model.pose_only_drag
@@ -278,7 +283,7 @@ function _worker_loop(worker::ViewerWorker)
             end
             _publish_latest!(worker, snapshot(worker.model))
         end
-        remaining = 1 / 60 - (time_ns() - started) / 1.0e9
+        remaining = 1 / 60 - (Int(time_ns()) - started) / 1.0e9
         remaining > 0 && timedwait(
             () -> isready(worker.wake_signal),
             remaining;

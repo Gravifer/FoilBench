@@ -333,6 +333,7 @@ class SimulationWorker:
         active_wall_started = perf_counter()
         active_simulation_started = self._model.time
         interactive_throughput: float | None = None
+        next_step_deadline = active_wall_started + self._step_interval
         while True:
             commands = self._drain_commands()
             publish_boundary = False
@@ -344,12 +345,6 @@ class SimulationWorker:
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                 applied_command = command.sequence
-
-            if commands:
-                active_wall_started = perf_counter()
-                active_simulation_started = self._model.time
-                if self._model.metrics_warming:
-                    interactive_throughput = None
 
             if self._stop_requested:
                 self._publish(applied_command)
@@ -363,18 +358,26 @@ class SimulationWorker:
                         self._condition.wait()
                 active_wall_started = perf_counter()
                 active_simulation_started = self._model.time
+                next_step_deadline = active_wall_started
                 continue
 
             if publish_boundary:
                 self._publish(applied_command)
-                with self._condition:
-                    if not self._stop_requested and not self._commands:
-                        self._condition.wait(timeout=self._step_interval)
                 active_wall_started = perf_counter()
                 active_simulation_started = self._model.time
+                interactive_throughput = None
+                next_step_deadline = active_wall_started + self._step_interval
+                continue
+
+            remaining_before_step = next_step_deadline - perf_counter()
+            if remaining_before_step > 0.0:
+                with self._condition:
+                    if not self._stop_requested and not self._commands:
+                        self._condition.wait(timeout=remaining_before_step)
                 continue
 
             started = perf_counter()
+            next_step_deadline = started + self._step_interval
             step_completed = False
             try:
                 guarded_trial = self._model.pose_only_guarded_trial

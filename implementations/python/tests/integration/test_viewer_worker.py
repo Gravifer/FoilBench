@@ -1,3 +1,5 @@
+from time import perf_counter
+
 import numpy as np
 import pytest
 
@@ -381,3 +383,21 @@ def test_noop_or_rejected_switch_preserves_failure_evidence(
     assert worker._recovery_pending
     assert tuple(worker._recent_failures) == (1.0, 2.0)
     assert model.manager.solver.info.id == "stable-fluids"
+
+
+def test_continuous_drag_preserves_pacing_and_interactive_throughput(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(24, 12)))
+    worker = SimulationWorker(model, maximum_steps_per_second=10.0)
+    started = perf_counter()
+    worker.start()
+    try:
+        for revision in range(1, 7):
+            worker.set_angle(float(revision), timestamp=float(revision))
+            worker.wait_for_revision(revision)
+        elapsed = perf_counter() - started
+        assert elapsed >= 0.5
+        assert model.simulated_seconds_per_wall_second <= 0.2
+    finally:
+        worker.close()
