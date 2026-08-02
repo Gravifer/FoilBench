@@ -76,6 +76,10 @@ try {
             Invoke-Checked npm @('run', 'check')
             Write-Host '==> TypeScript: Vitest'
             Invoke-Checked npm @('test')
+            Write-Host '==> TypeScript: production build'
+            Invoke-Checked npm @('run', 'build')
+            Write-Host '==> TypeScript: Chromium viewer smoke test'
+            Invoke-Checked npm @('run', 'test:browser')
         }
         finally {
             Pop-Location

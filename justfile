@@ -20,6 +20,7 @@ jl-setup:
 # Install the TypeScript implementation.
 ts-setup:
     npm --prefix implementations/typescript ci
+    npm --prefix implementations/typescript run setup:browser
 
 # Run all Python and Julia checks.
 verify:
