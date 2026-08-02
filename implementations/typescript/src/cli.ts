@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
+import {createServer} from "vite";
+import {compareResults, runBrowserMatrix} from "./benchmark/runner.js";
 import {parseScenario} from "./core/scenario.js";
 
 const solvers = [
@@ -20,6 +22,20 @@ async function main(args: readonly string[]): Promise<void> {
     const schemaPath = resolve("spec/scenario.schema.json");
     const scenario = parseScenario(JSON.parse(await readFile(path, "utf8")) as unknown, JSON.parse(await readFile(schemaPath, "utf8")) as object);
     console.log(JSON.stringify(scenario, null, 2));
+    return;
+  }
+  if (command === "view") {
+    const server = await createServer({root: resolve("implementations/typescript"), server: {port: 4173}});
+    await server.listen();
+    server.printUrls();
+    return;
+  }
+  if (command === "bench") {
+    console.log(await runBrowserMatrix(args[1] ?? "benchmark-matrices/smoke.json", args[2]));
+    return;
+  }
+  if (command === "compare") {
+    console.log(await compareResults(args[1] ?? "results/typescript"));
     return;
   }
   throw new Error(`command ${command} is not implemented yet`);

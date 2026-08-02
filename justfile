@@ -49,6 +49,14 @@ jl-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
 ts-view:
     npm --prefix implementations/typescript run view
 
+# Run a TypeScript Chromium benchmark matrix.
+ts-bench matrix="benchmark-matrices/smoke.json":
+    npm --prefix implementations/typescript run bench -- "{{ matrix }}"
+
+# Compare TypeScript result artifacts.
+ts-compare results="results/typescript":
+    npm --prefix implementations/typescript run compare -- "{{ results }}"
+
 # Describe the Python implementation.
 py-describe:
     uv run --project implementations/python foilbench-py describe

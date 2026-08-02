@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.build.json && vite build",
     "check": "tsc --noEmit && eslint src tests vite.config.ts",
     "test": "vitest run",
-    "view": "vite",
+    "view": "tsx src/cli.ts view",
     "describe": "tsx src/cli.ts describe",
     "bench": "tsx src/cli.ts bench",
     "compare": "tsx src/cli.ts compare"

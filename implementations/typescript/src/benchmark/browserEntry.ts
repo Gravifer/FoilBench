@@ -1,0 +1,4 @@
+import type {BrowserRunRequest, BrowserRunResult} from "./types.js";
+
+declare global {interface Window {runFoilBench(request: BrowserRunRequest): Promise<{workerStartupSeconds: number; result: BrowserRunResult}>}}
+window.runFoilBench = async (request) => new Promise((resolve, reject) => { const started = performance.now(); const worker = new Worker(new URL("./benchmarkWorker.ts", import.meta.url), {type: "module"}); let workerStartupSeconds = 0; worker.onerror = (event) => reject(new Error(event.message)); worker.onmessage = (event: MessageEvent<{kind: "ready"} | {kind: "result"; result: BrowserRunResult}>) => { if (event.data.kind === "ready") { workerStartupSeconds = (performance.now() - started) / 1000; worker.postMessage(request); } else { worker.terminate(); resolve({workerStartupSeconds, result: event.data.result}); } }; });
