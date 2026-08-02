@@ -228,10 +228,16 @@ class SimulationWorker:
         elif command.kind == "switch_solver":
             if not isinstance(command.value, str):
                 raise TypeError("switch_solver requires a solver id")
-            self._model.switch_solver(command.value)
-            self._failure = None
-            self._recovery_pending = False
-            self._clear_failure_history()
+            source_solver_id = self._model.manager.solver.info.id
+            outcome = self._model.switch_solver(command.value)
+            destination_changed = (
+                outcome.accepted
+                and self._model.manager.solver.info.id != source_solver_id
+            )
+            if destination_changed:
+                self._failure = None
+                self._recovery_pending = False
+                self._clear_failure_history()
             publish_boundary = True
         elif command.kind == "set_angle":
             if not isinstance(command.value, TimestampedPose):

@@ -942,6 +942,21 @@ end
     @test occursin("worker command error", failed_command.status)
     close!(failing_worker)
     @test failing_worker.task === nothing
+
+    for solver_id in ("stable-fluids", "unavailable-solver")
+        evidence_worker = ViewerWorker(
+            ViewerModel(scenario; tracer_count = 8, history_length = 3),
+        )
+        evidence_worker.recovery_pending = true
+        append!(evidence_worker.recent_failures, (1.0, 2.0))
+        @test FoilBenchJulia._apply_command!(
+            evidence_worker,
+            SwitchSolverCommand(solver_id),
+        )
+        @test evidence_worker.recovery_pending
+        @test evidence_worker.recent_failures == [1.0, 2.0]
+        @test solver_info(evidence_worker.model.solver).id == "stable-fluids"
+    end
 end
 
 @testset "All directed Julia warm swaps" begin

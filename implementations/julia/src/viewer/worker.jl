@@ -138,9 +138,13 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
         _clear_failure_history!(worker)
     end
     if command isa SwitchSolverCommand
-        switch_solver!(model, command.solver_id)
-        worker.recovery_pending = false
-        _clear_failure_history!(worker)
+        source_solver_id = solver_info(model.solver).id
+        outcome = switch_solver!(model, command.solver_id)
+        destination_changed = accepted(outcome) && solver_info(model.solver).id != source_solver_id
+        if destination_changed
+            worker.recovery_pending = false
+            _clear_failure_history!(worker)
+        end
         publish_boundary = true
     end
     command isa AdjustTuningCommand && adjust_tuning!(model, command.amount)

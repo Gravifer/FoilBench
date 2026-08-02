@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from foilbench_py.core.models import NumericalFailure
+from foilbench_py.core.models import ImportOutcome, NumericalFailure
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.viewer.app import ViewerModel
-from foilbench_py.viewer.worker import SimulationWorker
+from foilbench_py.viewer.worker import SimulationWorker, ViewerCommand
 from tests.helpers import ScenarioFactory
 
 
@@ -356,3 +356,28 @@ def test_unpaused_switch_publishes_the_validation_boundary(
         assert "PIC/FLIP" in switched.status
     finally:
         worker.close()
+
+
+@pytest.mark.parametrize("switch_case", ["noop", "rejected"])
+def test_noop_or_rejected_switch_preserves_failure_evidence(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    switch_case: str,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(24, 12)))
+    worker = SimulationWorker(model)
+    worker._recovery_pending = True
+    worker._recent_failures.extend((1.0, 2.0))
+
+    if switch_case == "rejected":
+
+        def reject_switch(_model: ViewerModel, _solver_id: str) -> ImportOutcome:
+            return ImportOutcome("rejected", "unsupported_conversion")
+
+        monkeypatch.setattr(ViewerModel, "switch_solver", reject_switch)
+
+    assert worker._apply_command(ViewerCommand(1, "switch_solver", "stable-fluids"))
+
+    assert worker._recovery_pending
+    assert tuple(worker._recent_failures) == (1.0, 2.0)
+    assert model.manager.solver.info.id == "stable-fluids"
