@@ -578,6 +578,32 @@ end
     @test occursin("tracers=display", initial.status)
     @test initial.vorticity_visible
 
+    periodic_tracer = 1
+    x0, x1 = scenario.domain.bounds[1]
+    y0, y1 = scenario.domain.bounds[2]
+    model.tracers.positions[:, periodic_tracer] .=
+        (x1 - 0.25 * scenario.output_dt, (y0 + y1) / 2)
+    for history_index in axes(model.tracers.history, 3)
+        model.tracers.history[:, periodic_tracer, history_index] =
+            model.tracers.positions[:, periodic_tracer]
+    end
+    periodic_age = model.tracers.ages[periodic_tracer]
+    periodic_lifetime = model.tracers.lifetimes[periodic_tracer]
+    periodic_generation = model.tracers.generations[periodic_tracer]
+    advance_tracers!(
+        model.tracers,
+        model.solver,
+        scenario,
+        model.geometry,
+        control_at(scenario, scenario.output_dt),
+        scenario.output_dt,
+    )
+    @test x0 <= model.tracers.positions[1, periodic_tracer] < x0 + scenario.output_dt
+    @test model.tracers.ages[periodic_tracer] ≈ periodic_age + scenario.output_dt
+    @test model.tracers.lifetimes[periodic_tracer] == periodic_lifetime
+    @test model.tracers.generations[periodic_tracer] == periodic_generation + 1
+    @test size(path_segments(model.tracers), 2) == 2 * 32 * 4 - 2
+
     hidden_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
     diagnostic_type = scalar_type(scenario)
     hidden_model.presentation.diagnostic_interval = diagnostic_type(0.001)
@@ -620,6 +646,22 @@ end
     @test toggle_crop!(tracer_model)
     @test set_angle!(tracer_model, 90, 1.0) == 30
     @test set_angle!(tracer_model, -90, 2.0) == -30
+    tracer_model.tracers.positions[:, 1] .= (0, 0)
+    shallow_generation = tracer_model.tracers.generations[1]
+    advance_tracers!(
+        tracer_model.tracers,
+        tracer_model.solver,
+        tracer_scenario,
+        tracer_geometry,
+        control_at(tracer_scenario, 0),
+        zero(scalar_type(tracer_scenario)),
+    )
+    @test signed_distance(
+        tracer_geometry,
+        SVector{2,scalar_type(tracer_scenario)}(tracer_model.tracers.positions[:, 1]),
+        control_at(tracer_scenario, 0).angle_degrees,
+    ) > 0
+    @test tracer_model.tracers.generations[1] == shallow_generation
     x0, x1 = tracer_scenario.domain.bounds[1]
     y0, y1 = tracer_scenario.domain.bounds[2]
     inlet_tracers.positions[:, 1] .=

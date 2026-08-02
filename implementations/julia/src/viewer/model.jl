@@ -152,10 +152,20 @@ function advance_tracers!(
     y0, y1 = scenario.domain.bounds[2]
     tracers.history_cursor = mod1(tracers.history_cursor + 1, size(tracers.history, 3))
     for index in axes(tracers.positions, 2)
-        :x in scenario.domain.periodic_axes &&
-            (tracers.positions[1, index] = x0 + mod(tracers.positions[1, index] - x0, x1 - x0))
-        :y in scenario.domain.periodic_axes &&
-            (tracers.positions[2, index] = y0 + mod(tracers.positions[2, index] - y0, y1 - y0))
+        wrapped = false
+        if :x in scenario.domain.periodic_axes &&
+                !(x0 <= tracers.positions[1, index] <= x1)
+            tracers.positions[1, index] =
+                x0 + mod(tracers.positions[1, index] - x0, x1 - x0)
+            wrapped = true
+        end
+        if :y in scenario.domain.periodic_axes &&
+                !(y0 <= tracers.positions[2, index] <= y1)
+            tracers.positions[2, index] =
+                y0 + mod(tracers.positions[2, index] - y0, y1 - y0)
+            wrapped = true
+        end
+        wrapped && (tracers.generations[index] += 1)
         tracers.ages[index] += timestep
         point = SVector{2,T}(tracers.positions[:, index])
         expired = tracers.mode == :display && tracers.ages[index] >= tracers.lifetimes[index]
@@ -173,7 +183,7 @@ function advance_tracers!(
                 placement,
             )
         elseif inside_solid
-            point_matrix = reshape(collect(point), 2, 1)
+            point_matrix = reshape(collect(point), 1, 2)
             normal = vec(normals(geometry, point_matrix, control.angle_degrees))
             normal_norm = sqrt(sum(abs2, normal))
             shallow_limit = T(0.5) * min(dx(scenario.domain), dy(scenario.domain))

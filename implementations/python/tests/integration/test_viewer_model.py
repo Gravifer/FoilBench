@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -274,6 +276,39 @@ def test_tracer_paths_use_explicit_continuity_generations(
         axis=0,
     )
 
+    assert tracers.path_segments().shape == (full_vertex_count - 2, 2)
+
+
+def test_periodic_tracer_wrap_preserves_lifetime_and_cuts_path(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    scenario = replace(
+        scenario,
+        domain=replace(scenario.domain, periodic_axes=("x", "y")),
+    )
+    model = ViewerModel.create(scenario, "stable-fluids")
+    tracers = model.tracers
+    tracer = 0
+    x0, x1 = scenario.domain.bounds[0]
+    y0, y1 = scenario.domain.bounds[1]
+    timestep = scenario.output_dt
+    tracers.positions[:] = (x0 + 0.5, y1 - scenario.domain.dy)
+    tracers.positions[tracer] = (x1 - 0.25 * timestep, 0.5 * (y0 + y1))
+    tracers.history[:] = tracers.positions[None, :, :]
+    tracers.ages[:] = 0.0
+    tracers.lifetimes[:] = 100.0
+    age = float(tracers.ages[tracer])
+    lifetime = float(tracers.lifetimes[tracer])
+    generation = int(tracers.generations[tracer])
+    full_vertex_count = (tracers.history.shape[0] - 1) * tracers.positions.shape[0] * 2
+
+    tracers.update(model.manager.solver, scenario.control_at(timestep), timestep)
+
+    assert x0 <= tracers.positions[tracer, 0] < x0 + timestep
+    assert tracers.ages[tracer] == pytest.approx(age + timestep)
+    assert tracers.lifetimes[tracer] == lifetime
+    assert tracers.generations[tracer] == generation + 1
     assert tracers.path_segments().shape == (full_vertex_count - 2, 2)
 
 

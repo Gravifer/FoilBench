@@ -127,12 +127,25 @@ class TracerSystem:
 
         x0, x1 = self.domain.bounds[0]
         y0, y1 = self.domain.bounds[1]
-        escaped = (
-            (self.positions[:, 0] < x0)
-            | (self.positions[:, 0] > x1)
-            | (self.positions[:, 1] < y0)
-            | (self.positions[:, 1] > y1)
-        )
+        outside_x = (self.positions[:, 0] < x0) | (self.positions[:, 0] > x1)
+        outside_y = (self.positions[:, 1] < y0) | (self.positions[:, 1] > y1)
+        wrapped = np.zeros(self.positions.shape[0], dtype=np.bool_)
+        if "x" in self.domain.periodic_axes:
+            self.positions[outside_x, 0] = x0 + np.mod(
+                self.positions[outside_x, 0] - x0,
+                x1 - x0,
+            )
+            wrapped |= outside_x
+            outside_x = np.zeros_like(outside_x)
+        if "y" in self.domain.periodic_axes:
+            self.positions[outside_y, 1] = y0 + np.mod(
+                self.positions[outside_y, 1] - y0,
+                y1 - y0,
+            )
+            wrapped |= outside_y
+            outside_y = np.zeros_like(outside_y)
+        self.generations[wrapped] += 1
+        escaped = outside_x | outside_y
         self._respawn(escaped, throughout_domain=False, angle_degrees=control.angle_degrees)
         if self.mode == "display":
             expired = self.ages >= self.lifetimes
