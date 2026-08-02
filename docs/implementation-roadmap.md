@@ -20,10 +20,11 @@ fixed stall. The accepted extension raises the automated suite to 105 tests
 and adds online Reynolds control, diagnostic cropping, rapid-motion recovery,
 and fail-fast pressure-solver safety.
 
-The 2026-08-02 shared viewer-contract reconciliation raises the Python suite
-to 113 tests and aligns timestamped drag controls, structured switching,
-time-preserving recovery, tracer continuity, presentation state, and snapshot
-semantics with Julia.
+The completed 2026-08-02 shared viewer-contract reconciliation raises the
+Python suite to 123 tests and aligns timestamped drag controls, transactional
+switching, typed and bounded recovery, tracer continuity, presentation state,
+ordered commands, snapshot semantics, and interactive performance accounting
+with Julia.
 
 ### Accepted wake behavior
 
@@ -70,11 +71,22 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 476 passing checks. On the development
+The automated Julia suite contains 514 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads
 Python code or Python solvers.
+
+### Temporarily deferred viewer follow-ups
+
+The following work requires user attention and is deliberately deferred. It
+does not reopen Phase 1 or Phase 2A acceptance:
+
+- design shared language-neutral command transcripts for viewer conformance;
+- settle the fresh-fallback policy after a rejected warm import; and
+- perform and record a manual cross-platform GPU interaction stress matrix.
+
+These items should be revisited before claiming full Phase 2B viewer parity.
 
 ## Phase 2B: TypeScript
 

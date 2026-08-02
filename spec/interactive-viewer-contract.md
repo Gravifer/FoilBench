@@ -1,6 +1,7 @@
 # Interactive viewer contract
 
-Status: draft for Phase 2A reconciliation and later-language implementations.
+Status: adopted baseline after Phase 2A reconciliation. The explicitly named
+open decisions remain deferred pending user evaluation.
 
 This document defines the observable semantics shared by FoilBench interactive
 viewers. It intentionally does not require Python's worker design, Julia's
@@ -450,14 +451,15 @@ Headless viewer tests should cover:
 Timing-sensitive tests should use injected clocks or deterministic event
 timestamps rather than depending on render-frame timing.
 
-## Existing implementation intent and known gaps
+## Phase 2A reconciliation record
 
-Commits `95a6387` and `778654c` introduced the following shared design intent.
-This table records provenance; it is not a conformance claim. A later blind
-review found remaining violations in both implementations, so acceptance must
-come from the tests above rather than from the existence of these commits.
+Commits `95a6387` and `778654c` introduced the initial shared design intent. A
+two-round blind review then identified violations in both implementations. The
+reconciliation sequence through `6383e40` addressed those findings in focused
+changes. This table records the resulting baseline; conformance still comes
+from observable tests rather than from the existence of particular commits.
 
-| Area | Shared design intent |
+| Area | Reconciled shared baseline |
 | --- | --- |
 | Drag velocity | Timestamped samples, a short smoothing window, a generous nondimensional solver-facing cap, and an unrestricted clamped visible pose. |
 | Schedules | Manual drag and forced recovery cancel future angle events; solver and Reynolds changes preserve them; reset restores them. |
@@ -470,18 +472,23 @@ come from the tests above rather than from the existence of these commits.
 | Simulation owner | Both block while paused and wake for commands or shutdown. |
 | Snapshots | Both publish detached, persistent, non-consuming latest snapshots; Julia now adds revisions and command acknowledgements. |
 
-Known reconciliation work includes snapshot consumption by the Python native
-frontend; transactional first-step validation; failed-step time atomicity;
-narrow numerical-failure classification; bounded baseline-Re recovery;
-authoritative pose-only angular velocity; Julia tracer collision shape
-handling; periodic tracer continuity; warming overlays; and hidden-vorticity
-copy/upload suppression.
+The completed reconciliation covers Python snapshot consumption,
+transactional first-step validation, failed-step time atomicity, narrow
+numerical-failure classification, bounded baseline-Re recovery, authoritative
+pose-only angular velocity, Julia tracer collision shape handling, periodic
+tracer continuity, warming overlays, ordered command barriers and shutdown,
+honest interactive throughput, and hidden-vorticity copy/upload suppression.
 
 Later implementations should follow the normative semantics and conformance
-tests in this document rather than reconstructing either the superseded
-discrepancies or the remaining defects from repository history.
+tests in this document rather than reconstructing the superseded discrepancies
+from repository history.
 
 ## Open decisions
+
+The decisions below are intentionally deferred until the user can evaluate
+their pedagogical and interactive consequences. They are not authorization for
+an implementation to choose permanent policy silently. The current minimum
+requirements remain binding in the meantime.
 
 ### Fresh fallback after rejected warm import
 

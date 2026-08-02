@@ -96,8 +96,10 @@ Fluids recovery. The original full benchmark matrix was not rerun; the
 extension's separate timing, refinement, spectrum, and paired-trajectory
 evidence is recorded in `chaotic-wake-experiment.md`.
 
-On 2026-08-02, cross-language viewer-contract reconciliation raised the Python
-suite to 113 passing tests. Timestamped drag control, structured warm-import
-rejection, time-preserving recovery epochs, explicit tracer generations,
-typed presentation state, hidden-vorticity throttling, schedule semantics,
-and warming overlays are covered by strict Pyright, Ruff, and pytest.
+On 2026-08-02, the completed cross-language viewer-contract reconciliation
+raised the Python suite to 123 passing tests. Timestamped drag control,
+transactional warm-import validation, time-preserving recovery epochs,
+explicit tracer generations, typed presentation state, command barriers,
+bounded typed failure recovery, hidden-vorticity throttling, honest interactive
+throughput, schedule semantics, and warming overlays are covered by strict
+Pyright, Ruff, and pytest.
