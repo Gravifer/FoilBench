@@ -949,6 +949,30 @@ end
     close!(failing_worker)
     @test failing_worker.task === nothing
 
+    concurrent_worker = ViewerWorker(
+        ViewerModel(scenario; tracer_count = 8, history_length = 3),
+    )
+    producers = [
+        Threads.@spawn begin
+            last_sequence = UInt64(0)
+            for _ in 1:100
+                last_sequence = enqueue!(concurrent_worker, ToggleCropCommand())
+            end
+            last_sequence
+        end for _ in 1:4
+    ]
+    @test timedwait(() -> all(istaskdone, producers), 5.0) == :ok
+    final_concurrent_sequence = maximum(fetch.(producers))
+    start!(concurrent_worker)
+    concurrent_snapshot = wait_for_command(
+        concurrent_worker,
+        final_concurrent_sequence;
+        timeout = 20.0,
+    )
+    @test concurrent_snapshot.applied_command == final_concurrent_sequence
+    close!(concurrent_worker)
+    @test concurrent_worker.task === nothing
+
     for solver_id in ("stable-fluids", "unavailable-solver")
         evidence_worker = ViewerWorker(
             ViewerModel(scenario; tracer_count = 8, history_length = 3),

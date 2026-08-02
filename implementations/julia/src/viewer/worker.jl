@@ -47,14 +47,14 @@ end
 function ViewerWorker(model::ViewerModel{T}) where {T}
     return ViewerWorker(
         model,
-        Channel{QueuedViewerCommand}(256),
+        Channel{QueuedViewerCommand}(Inf),
         Ref{Union{Nothing,QueuedViewerCommand}}(nothing),
         ReentrantLock(),
         UInt64(1),
         true,
         nothing,
         Ref(false),
-        Channel{Nothing}(1),
+        Channel{Nothing}(Inf),
         ReentrantLock(),
         Ref{Union{Nothing,ViewerSnapshot{T}}}(nothing),
         UInt64(0),
