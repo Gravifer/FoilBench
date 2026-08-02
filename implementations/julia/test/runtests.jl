@@ -1034,9 +1034,15 @@ end
     )
     pacing_started = time()
     start!(paced_worker)
-    for revision in 2:7
-        enqueue!(paced_worker, SetAngleCommand(Float64(revision), Float64(revision)))
-        wait_for_revision(paced_worker, revision)
+    previous_paced_time = 0.0
+    for sample in 2:7
+        sequence = enqueue!(
+            paced_worker,
+            SetAngleCommand(Float64(sample), Float64(sample)),
+        )
+        paced_snapshot = wait_for_command(paced_worker, sequence)
+        @test paced_snapshot.time > previous_paced_time
+        previous_paced_time = paced_snapshot.time
     end
     pacing_elapsed = time() - pacing_started
     @test pacing_elapsed >= 0.07
