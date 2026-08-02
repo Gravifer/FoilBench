@@ -77,6 +77,8 @@ Every fresh recovery must increment a monotonically increasing recovery epoch
 or counter. A recovery record must state that solver-private history was
 discarded and identify why. Consumers must not infer uninterrupted physical
 continuity merely because the displayed time was preserved.
+Scenario reset does not reset or reuse the recovery epoch; it is a lifetime
+counter for the viewer session even though physical time returns to zero.
 
 ## Commands, schedules, and ownership
 
@@ -87,8 +89,18 @@ boundaries.
 
 Commands must have a stable ordering. High-frequency pointer poses should be
 coalesced to the newest unconsumed pose so an old drag backlog cannot outlive
-the gesture. Discrete commands such as reset, pause, solver selection, and
-shutdown must not be silently dropped.
+the gesture. Coalescing must preserve sequence barriers: a pose must not move
+from before a release, reset, pause, solver selection, Reynolds command, or
+shutdown to after that command. Implementations may coalesce adjacent pose
+samples within one such interval, but must retain the newest pose that precedes
+each discrete barrier when that pose affects the barrier's meaning. Allocating
+a command sequence and making that command visible to the simulation owner
+must be one ordered operation even when more than one producer exists.
+
+Discrete commands must not be silently dropped. Shutdown must wake a paused
+owner, preserve the ordering of commands accepted before it, and publish or
+otherwise expose a final acknowledgement. Commands submitted after shutdown
+begins must be rejected explicitly.
 
 While paused, the simulation owner should block until a command, resume, or
 shutdown wakes it. It must not poll and republish unchanged state at a fixed
@@ -123,6 +135,10 @@ smoothing window. It must not divide a large pose jump by an arbitrary render
 interval, the solver output interval, or a tiny hard-coded minimum event
 interval.
 
+The first pose sample in a gesture establishes pose and time but does not by
+itself establish angular velocity. At least two real timestamped samples are
+required before a nonzero measured angular velocity may be inferred.
+
 The visible pose should follow the user's clamped pointer pose without
 solver-specific damping. The solver-facing angular velocity should have a
 documented, generous resolution cap. This cap is a numerical resolution
@@ -135,6 +151,13 @@ Graceful recovery remains necessary: the angular-velocity cap is not expected
 to prevent every numerical failure. Similar motions should enter the same
 recovery tier across languages, within the tolerances of their event timing
 and solvers.
+
+The solver-facing angular velocity in `ControlState` is authoritative. A
+solver may use the visible-angle change to update geometry, but must not
+reconstruct a different wall angular velocity from angle delta divided by its
+output interval or internal substep. In pose-only mode, every moving-wall and
+particle-collision calculation must observe zero angular velocity even while
+the visible angle continues changing.
 
 ### Pose-only recovery tier
 
@@ -160,8 +183,16 @@ Warm switching is a transaction performed at a completed step boundary:
 2. Construct and initialize the destination solver without replacing the
    active solver.
 3. Import the canonical state and current control into the destination.
-4. Validate the reconstructed state and its first usable step.
+4. Tentatively execute and validate the destination's first usable step.
 5. Atomically publish the destination, or report a rejected conversion.
+
+The validation step is part of the transaction, not a later recovery window.
+Until it succeeds, the source solver and its last published snapshot remain
+active and the destination must not be observable as selected. On success,
+the destination is published at the physical time completed by that step. On
+rejection, the source remains at its previous completed physical time. A
+viewer may subsequently apply its separately specified fresh-fallback policy,
+but that fallback is not an accepted warm import.
 
 The transaction preserves physical time, visible foil pose, requested
 Reynolds number, presentation state, visible tracers, and valid path history.
@@ -210,11 +241,18 @@ Implementations must distinguish:
 
 Post-import numerical instability should likewise become a structured failed
 step or typed recovery signal when it is an anticipated numerical condition.
+Here, post-import means instability after the transactional validation step
+has succeeded and the destination has been published; failure of that
+validation step is a rejected warm-import transaction.
 
 Plausible rejection cases include non-finite source fields, mismatched domain
 metadata, invalid density after LBM reconstruction, excessive wall speed,
 failure of the destination projection, or an unsupported dimensional
 conversion.
+
+All canonical arrays present in an import, including optional density, must be
+finite before reconstruction begins. A destination that requires stronger
+density bounds may additionally reject them as `invalid_density`.
 
 ## Numerical failure and fresh recovery
 
@@ -222,6 +260,18 @@ Interactive solver advances must either complete with a finite report or
 produce a classified failure promptly. Iterative methods must have finite
 input checks and bounded iteration; a frontend must not appear frozen for
 tens of seconds before an overflow finally surfaces.
+
+Physical time and scheduled pose are committed only after a solver advance
+completes successfully. A failed or rejected tentative step must leave them at
+the last completed value. Recovery may preserve that value but must not claim
+simulated progress for work that failed.
+
+Anticipated numerical failures must use typed results or narrowly scoped
+solver exceptions. Broad language exceptions such as `ValueError`,
+`ArgumentError`, or `DimensionMismatch` are not numerical classifications by
+themselves. Errors in tracers, diagnostics, rendering, command handling, or
+other presentation code must not discard a valid solver state or increment a
+Reynolds failure counter.
 
 A permitted fresh recovery has these baseline semantics:
 
@@ -250,6 +300,11 @@ than enter an endless restart loop.
 Implementations should classify failures and use comparable wall-time windows
 and consecutive-failure rules. They must not count an unrelated programming
 error as evidence that the selected Reynolds number is unstable.
+Failure evidence inside the configured window must not be erased merely by
+one successful step. A sufficiently long stable interval may allow it to
+expire. Likewise, releasing pose-only mode establishes a guarded trial: a
+failure on the next gentle or stationary state pauses instead of beginning a
+new recovery cycle.
 
 ## Visible tracers and path history
 
@@ -275,6 +330,11 @@ rendered only when both endpoints belong to the same generation. Distance-only
 heuristics are insufficient because a physically fast segment and a teleport
 can have overlapping lengths.
 
+On a periodic axis, a tracer wraps rather than receiving inlet semantics or a
+new material lifetime. Because its displayed coordinate teleports across the
+viewport seam, the wrap still increments its continuity generation and no
+domain-spanning segment is rendered.
+
 For foil collision, shallow penetration should project the tracer to the
 surface along a valid SDF normal. Respawn only when penetration exceeds a
 cell-scaled threshold, the normal is non-finite or degenerate, or projection
@@ -299,15 +359,18 @@ Vorticity, cropping, tracers, and overlays are presentation features. They
 must not alter solver state or benchmark results.
 
 When vorticity is hidden, ordinary evolution should not compute or upload a
-new vorticity field. Toggling it on, resetting, switching, or recovering
-should request an immediate diagnostic refresh. Ordinary presentation should
-use a configurable cadence with a target no slower than approximately 0.1
-simulated seconds. A future diagnostic mode may request every-step updates.
+new vorticity field. It should also avoid repeatedly copying an unchanged full
+field into snapshots or renderer observables. Toggling it on, resetting,
+switching, or recovering should request an immediate diagnostic refresh.
+Ordinary presentation should use a configurable cadence with a target no
+slower than approximately 0.1 simulated seconds. A future diagnostic mode may
+request every-step updates.
 
 Cropping is presentation-only. It changes the visible bounds but not the
 solver domain, boundaries, tracer evolution, diagnostics, or canonical state.
 Scenarios may separately specify that cropping is available and whether it is
-enabled initially.
+enabled initially. When no crop is configured, a crop command is a no-op and
+the overlay must continue to report the full view.
 
 ### Overlay semantics
 
@@ -329,8 +392,17 @@ volatile numeric fields such as `t`, `step`, `sim/wall`, and `max|u|` to fixed
 widths so the overlay does not visibly jitter. Benchmark artifacts remain the
 authority for formal median and p95 performance measurements.
 
+`solver steps/s` may describe solver-only computation if labeled and measured
+consistently. Interactive `sim/wall` means completed simulated time divided by
+elapsed monotonic wall time while playback is active; it includes the
+simulation owner's tracer, diagnostic, publication, and pacing costs. Paused
+time is excluded. A solver-only throughput ratio must use a different label.
+
 After reset, switch, or recovery, old measurements must not be labeled as
-current. Show `warming` or `—` until each measurement has been recomputed.
+current. Show `warming` or `—` for rates and every solver-derived diagnostic
+until each measurement has been recomputed by a successful published step.
+Import warnings remain visible at least through the first rendered destination
+revision and may then be archived in interactive telemetry or history.
 
 ## Snapshot contract
 
@@ -358,7 +430,9 @@ Headless viewer tests should cover:
 - monotonically increasing revisions and command acknowledgements;
 - event-driven pause, resume, reset, and shutdown;
 - coalescing of rapid pose samples without dropping discrete commands;
+- ordering barriers around pose, release, reset, pause, switch, and shutdown;
 - the -30 to +30 degree interactive pose limit;
+- first-sample drag behavior and authoritative solver-facing angular velocity;
 - manual-drag and forced-recovery schedule cancellation;
 - schedule preservation across solver and Reynolds changes;
 - all directed warm switches, including warnings and classified rejections;
@@ -367,6 +441,8 @@ Headless viewer tests should cover:
 - pose-only entry and release;
 - full tracer reseeding, generation discontinuities, and shallow collision
   projection;
+- periodic wrapping without inlet respawn or seam-crossing path segments;
+- isolation of tracer and diagnostic failures from solver recovery;
 - hidden-vorticity work suppression and immediate invalidation events;
 - cleared metrics and warming state after reset, switch, and recovery;
 - unsupported thin-3D capability rejection.
@@ -374,12 +450,14 @@ Headless viewer tests should cover:
 Timing-sensitive tests should use injected clocks or deterministic event
 timestamps rather than depending on render-frame timing.
 
-## Existing implementation status
+## Existing implementation intent and known gaps
 
-Commits `95a6387` and `778654c` reconcile the Python and Julia viewers with
-the normative portions of this draft:
+Commits `95a6387` and `778654c` introduced the following shared design intent.
+This table records provenance; it is not a conformance claim. A later blind
+review found remaining violations in both implementations, so acceptance must
+come from the tests above rather than from the existence of these commits.
 
-| Area | Implemented shared behavior |
+| Area | Shared design intent |
 | --- | --- |
 | Drag velocity | Timestamped samples, a short smoothing window, a generous nondimensional solver-facing cap, and an unrestricted clamped visible pose. |
 | Schedules | Manual drag and forced recovery cancel future angle events; solver and Reynolds changes preserve them; reset restores them. |
@@ -392,8 +470,16 @@ the normative portions of this draft:
 | Simulation owner | Both block while paused and wake for commands or shutdown. |
 | Snapshots | Both publish detached, persistent, non-consuming latest snapshots; Julia now adds revisions and command acknowledgements. |
 
-Later implementations should follow these semantics rather than reconstructing
-the superseded discrepancies from repository history.
+Known reconciliation work includes snapshot consumption by the Python native
+frontend; transactional first-step validation; failed-step time atomicity;
+narrow numerical-failure classification; bounded baseline-Re recovery;
+authoritative pose-only angular velocity; Julia tracer collision shape
+handling; periodic tracer continuity; warming overlays; and hidden-vorticity
+copy/upload suppression.
+
+Later implementations should follow the normative semantics and conformance
+tests in this document rather than reconstructing either the superseded
+discrepancies or the remaining defects from repository history.
 
 ## Open decisions
 
@@ -404,14 +490,12 @@ section becomes normative, decide:
 
 1. Which rejection reasons permit an automatic fresh destination solver and
    which must leave the source active or pause?
-2. Does a post-import first-step failure count as the same transaction, and
-   how long is its validation window?
-3. How many fresh attempts are allowed before pausing?
-4. How prominently must the viewer disclose that the requested switch
+2. How many fresh attempts are allowed before pausing?
+3. How prominently must the viewer disclose that the requested switch
    discarded the imported flow state?
-5. How are rejected imports and fallback attempts recorded in interactive
+4. How are rejected imports and fallback attempts recorded in interactive
    telemetry, benchmark artifacts, and conformance tests?
-6. Should repeated successful-looking fallbacks that mask an incompatible
+5. Should repeated successful-looking fallbacks that mask an incompatible
    conversion eventually disable warm import for that solver pair?
 
 Until these questions are settled, implementations must at minimum expose the
