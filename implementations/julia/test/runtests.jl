@@ -131,6 +131,34 @@ end
     @test midpoint.time == 3.0f0
     @test isfinite(midpoint.angle_degrees)
     @test isfinite(midpoint.angular_velocity_degrees)
+
+    source_document = JSON3.read(
+        read(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"), String),
+        Dict{String,Any},
+    )
+    invalid_scenarios = Dict{String,Any}[]
+    for mutation in (
+        document -> (document["schema_version"] = 2),
+        document -> (document["unexpected"] = true),
+        document -> (document["precision"] = "float16"),
+        document -> (document["periodic_axes"] = ["q"]),
+        document -> (document["resolution"] = [3, 8]),
+        document -> (document["resolution"] = [16.5, 8]),
+        document -> (document["foil"]["unexpected"] = true),
+    )
+        selected = deepcopy(source_document)
+        mutation(selected)
+        push!(invalid_scenarios, selected)
+    end
+    for (index, invalid) in enumerate(invalid_scenarios)
+        mktempdir() do directory
+            path = joinpath(directory, "invalid-$index.json")
+            open(path, "w") do io
+                JSON3.pretty(io, invalid)
+            end
+            @test_throws ArgumentError load_scenario(path)
+        end
+    end
 end
 
 @testset "Solver capabilities" begin
@@ -929,6 +957,18 @@ end
     invalid = copy(result)
     invalid["unexpected"] = true
     @test_throws ArgumentError validate_benchmark_result(invalid, schema_path)
+    for (field, value) in (
+        ("scenario_id", 7),
+        ("resolution", [16.5, 8]),
+        ("resolution", [3, 8]),
+        ("peak_rss_bytes", 1.5),
+        ("diagnostics", Any[]),
+        ("warnings", Any[7]),
+    )
+        malformed = copy(result)
+        malformed[field] = value
+        @test_throws ArgumentError validate_benchmark_result(malformed, schema_path)
+    end
 
     mktempdir() do directory
         open(joinpath(directory, "result.json"), "w") do io

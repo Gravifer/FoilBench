@@ -10,6 +10,7 @@ using Dates
 include("rng.jl")
 include("geometry.jl")
 include("contracts.jl")
+include("schema_validation.jl")
 include("scenario.jl")
 include("state_io.jl")
 include("geometry_grid.jl")

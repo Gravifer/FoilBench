@@ -96,32 +96,7 @@ function describe_implementation()
 end
 
 function validate_benchmark_result(result::Dict{String,Any}, schema_path::AbstractString)
-    schema = JSON3.read(read(schema_path, String), Dict{String,Any})
-    required = Set(String.(schema["required"]))
-    keys_present = Set(keys(result))
-    missing = setdiff(required, keys_present)
-    isempty(missing) || throw(ArgumentError("benchmark result is missing: $(join(sort!(collect(missing)), ", "))"))
-    allowed = Set(String.(keys(schema["properties"])))
-    extra = setdiff(keys_present, allowed)
-    isempty(extra) || throw(ArgumentError("benchmark result has unexpected keys: $(join(sort!(collect(extra)), ", "))"))
-    result["schema_version"] == 1 || throw(ArgumentError("benchmark schema_version must be one"))
-    result["precision"] in ("float32", "float64") || throw(ArgumentError("invalid benchmark precision"))
-    result["success"] isa Bool || throw(ArgumentError("benchmark success must be boolean"))
-    result["resolution"] isa AbstractVector || throw(ArgumentError("benchmark resolution must be an array"))
-    length(result["resolution"]) in (2, 3) || throw(ArgumentError("invalid benchmark resolution rank"))
-    for name in ("initialization_seconds", "cold_step_seconds", "median_step_seconds",
-        "p95_step_seconds", "simulated_seconds_per_wall_second", "cell_updates_per_second",
-        "particle_updates_per_second")
-        value = result[name]
-        value isa Real && isfinite(value) && value >= 0 ||
-            throw(ArgumentError("benchmark $name must be finite and non-negative"))
-    end
-    all(value -> value isa Real && isfinite(value) && value >= 0, result["step_seconds"]) ||
-        throw(ArgumentError("benchmark step_seconds must be finite and non-negative"))
-    result["substeps"] isa Integer && result["substeps"] >= 0 ||
-        throw(ArgumentError("benchmark substeps must be non-negative"))
-    result["warnings"] isa AbstractVector || throw(ArgumentError("benchmark warnings must be an array"))
-    return nothing
+    return validate_json_file(result, schema_path)
 end
 
 function _percentile(values::Vector{Float64}, fraction::Float64)
