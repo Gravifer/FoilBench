@@ -20,11 +20,11 @@ fixed stall. The accepted extension raises the automated suite to 105 tests
 and adds online Reynolds control, diagnostic cropping, rapid-motion recovery,
 and fail-fast pressure-solver safety.
 
-The completed 2026-08-02 shared viewer-contract reconciliation raises the
-Python suite to 123 tests and aligns timestamped drag controls, transactional
-switching, typed and bounded recovery, tracer continuity, presentation state,
-ordered commands, snapshot semantics, and interactive performance accounting
-with Julia.
+The completed 2026-08-02 shared viewer-contract reconciliation and
+high-priority QA pass raise the Python suite to 130 tests and align timestamped
+drag controls, transactional switching, typed and bounded recovery, tracer
+continuity, presentation state, ordered commands, snapshot semantics, and
+interactive performance accounting with Julia.
 
 ### Accepted wake behavior
 
@@ -71,7 +71,7 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 514 passing checks. On the development
+The automated Julia suite contains 550 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads
@@ -79,25 +79,28 @@ Python code or Python solvers.
 
 ### Post-reconciliation QA queue
 
-A parallel read-only QA pass on 2026-08-02 found no P0 defect. The following
-high-priority findings are implementation-correctness work with an already
-specified outcome. They are actionable without further user judgement:
+A parallel read-only QA pass on 2026-08-02 found no P0 defect. Its following
+high-priority implementation-correctness findings were completed without
+requiring additional policy decisions:
 
-- make Julia canonical `.npy` storage order agree with its manifest and prove
-  it with a cross-language, nonsymmetric-array fixture;
-- validate Julia scenarios and benchmark results against the complete shared
+- Julia canonical `.npy` storage now agrees with its manifest and is verified
+  with a cross-language, nonsymmetric-array fixture;
+- Julia scenarios and benchmark results now use the complete shared
   schemas rather than partial hand-written checks;
-- translate anticipated Python and Julia pressure/projection breakdowns into
-  typed numerical failures, and reject non-finite Python LBM and PIC/FLIP steps
-  before they can return successful reports;
-- make command-path failures terminate safely, and publish every accepted warm
-  switch at its exact completed validation-step boundary before ordinary
+- Python and Julia pressure/projection breakdowns now become typed numerical
+  failures, while Python LBM and PIC/FLIP reject non-finite steps before they
+  can return successful reports;
+- command-path failures terminate safely, and every accepted warm switch is
+  published at its exact completed validation-step boundary before ordinary
   evolution resumes;
-- preserve recent failure evidence across rejected and no-op solver switches;
+- recent failure evidence survives rejected and no-op solver switches;
   and
-- keep interactive `sim/wall` accounting active through continuous dragging
+- interactive `sim/wall` accounting remains active through continuous dragging
   and presentation commands so pacing, publication, tracer, and diagnostic
   costs remain included.
+
+The focused implementation commits are `2b550b4`, `9fda478`, `ffc3bb6`,
+`c918572`, `70ffc35`, and `3df6e11`.
 
 Medium-priority agent-actionable follow-up includes making post-import failure
 classification reachable, preventing stale diagnostics from leaving warming,
