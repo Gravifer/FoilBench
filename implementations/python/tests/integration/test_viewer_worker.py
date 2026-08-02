@@ -186,6 +186,37 @@ def test_worker_resets_modified_reynolds_after_failures_in_window(
         worker.close()
 
 
+def test_worker_pauses_after_intermittent_failures_at_scenario_reynolds(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    original_update = ViewerModel.update
+    calls = 0
+
+    def fail_interleaved(viewer: ViewerModel, dt: float) -> None:
+        nonlocal calls
+        calls += 1
+        if calls in {1, 3, 5}:
+            raise FloatingPointError("intermittent baseline instability")
+        original_update(viewer, dt)
+
+    monkeypatch.setattr(ViewerModel, "update", fail_interleaved)
+    worker = SimulationWorker(model, maximum_steps_per_second=20.0)
+    worker.start()
+    try:
+        stopped = worker.wait_for_revision(5)
+        assert model.paused
+        assert stopped.failure is not None
+        paused_time = stopped.simulation_time
+        assert worker.latest_snapshot().simulation_time == paused_time
+    finally:
+        worker.close()
+
+
 def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
     scenario_factory: ScenarioFactory,
     monkeypatch: pytest.MonkeyPatch,
@@ -202,7 +233,7 @@ def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
         nonlocal calls
         calls += 1
         viewer.last_requested_angular_velocity_degrees = 600.0
-        if calls <= 2:
+        if calls <= 2 or viewer.pose_only_guarded_trial:
             raise FloatingPointError("moving wall diverged")
         original_update(viewer, dt)
 
@@ -224,6 +255,10 @@ def test_worker_uses_pose_only_mode_after_consecutive_rapid_drag_failures(
         assert released.failure is None
         assert "motion=pose-only" not in released.status
         assert not model.pose_only_drag
+
+        guarded_failure = worker.wait_for_revision(released.revision + 1)
+        assert guarded_failure.failure is not None
+        assert model.paused
     finally:
         worker.close()
 

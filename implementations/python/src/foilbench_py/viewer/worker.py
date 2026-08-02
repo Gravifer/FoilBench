@@ -331,7 +331,10 @@ class SimulationWorker:
 
             started = perf_counter()
             try:
+                guarded_trial = self._model.pose_only_guarded_trial
                 self._model.update(self._model.scenario.output_dt)
+                if guarded_trial:
+                    self._model.pose_only_guarded_trial = False
                 self._recovery_pending = False
             except Exception as error:
                 if not isinstance(error, (ValueError, FloatingPointError)):
@@ -351,7 +354,19 @@ class SimulationWorker:
                 reset_reynolds = not pose_only_recovery and reynolds_is_modified and (
                     self._recovery_pending or failure_count >= self._FAILURE_LIMIT
                 )
-                if self._recovery_pending and not reset_reynolds and not pose_only_recovery:
+                baseline_circuit_break = (
+                    not reynolds_is_modified and failure_count >= self._FAILURE_LIMIT
+                )
+                guarded_trial_failed = self._model.pose_only_guarded_trial
+                if (
+                    guarded_trial_failed
+                    or baseline_circuit_break
+                    or (
+                        self._recovery_pending
+                        and not reset_reynolds
+                        and not pose_only_recovery
+                    )
+                ):
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
                 else:

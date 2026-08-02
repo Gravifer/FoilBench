@@ -177,7 +177,9 @@ function _worker_loop(worker::ViewerWorker)
         end
         started = time_ns()
         try
+            guarded_trial = worker.model.pose_only_guarded_trial
             _publish_latest!(worker, update!(worker.model))
+            guarded_trial && (worker.model.pose_only_guarded_trial = false)
             worker.recovery_pending = false
         catch error
             if !(error isa ArgumentError || error isa DimensionMismatch)
@@ -187,13 +189,19 @@ function _worker_loop(worker::ViewerWorker)
                 _publish_latest!(worker, snapshot(worker.model))
                 continue
             end
-            failure_count = _record_failure!(worker, time())
+            failure_count = _record_failure!(worker, time_ns() / 1.0e9)
             reynolds_modified = reynolds(worker.model.solver) != worker.model.scenario.reynolds
             pose_only_recovery = worker.recovery_pending &&
                 rapid_drag_attempted(worker.model) && !worker.model.pose_only_drag
             reset_reynolds = !pose_only_recovery && reynolds_modified &&
                 (worker.recovery_pending || failure_count >= 3)
-            if worker.recovery_pending && !reset_reynolds && !pose_only_recovery
+            baseline_circuit_break = !reynolds_modified && failure_count >= 3
+            guarded_trial_failed = worker.model.pose_only_guarded_trial
+            if guarded_trial_failed || baseline_circuit_break
+                worker.model.paused = true
+                worker.model.status_message =
+                    "paused after repeated $(classify_viewer_failure(error))"
+            elseif worker.recovery_pending && !reset_reynolds && !pose_only_recovery
                 worker.model.paused = true
                 worker.model.status_message =
                     "paused after repeated $(classify_viewer_failure(error))"

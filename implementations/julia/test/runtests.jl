@@ -799,6 +799,7 @@ end
     release_angle!(model)
     update!(model)
     @test !model.pose_only_drag
+    @test model.pose_only_guarded_trial
 
     float32_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),

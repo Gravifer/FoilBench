@@ -292,6 +292,7 @@ mutable struct ViewerModel{T<:AbstractFloat}
     pose_only_drag::Bool
     pose_only_release_pending::Bool
     pose_only_calm_steps::Int
+    pose_only_guarded_trial::Bool
     last_requested_angular_velocity::T
     recovery_count::Int
     pose_samples::Vector{Tuple{Float64,T}}
@@ -364,6 +365,7 @@ function ViewerModel(
         false,
         false,
         0,
+        false,
         zero(T),
         0,
         Tuple{Float64,T}[],
@@ -385,13 +387,15 @@ function enable_pose_only_drag!(model::ViewerModel)
     model.pose_only_drag = true
     model.pose_only_release_pending = false
     model.pose_only_calm_steps = 0
+    model.pose_only_guarded_trial = false
     return nothing
 end
 
-function _disable_pose_only_drag!(model::ViewerModel)
+function _disable_pose_only_drag!(model::ViewerModel; guard_next_failure::Bool = false)
     model.pose_only_drag = false
     model.pose_only_release_pending = false
     model.pose_only_calm_steps = 0
+    model.pose_only_guarded_trial = guard_next_failure
     return nothing
 end
 
@@ -429,10 +433,11 @@ function update!(model::ViewerModel{T}) where {T}
     end
     if model.pose_only_drag
         if model.pose_only_release_pending && !model.drag_active
-            _disable_pose_only_drag!(model)
+            _disable_pose_only_drag!(model; guard_next_failure = true)
         elseif requested_tip_speed_ratio(model) <= T(0.5)
             model.pose_only_calm_steps += 1
-            model.pose_only_calm_steps >= 2 && _disable_pose_only_drag!(model)
+            model.pose_only_calm_steps >= 2 &&
+                _disable_pose_only_drag!(model; guard_next_failure = true)
         else
             model.pose_only_calm_steps = 0
         end

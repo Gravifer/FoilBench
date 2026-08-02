@@ -105,6 +105,7 @@ class ViewerModel:
     pose_only_drag: bool = False
     pose_only_release_pending: bool = False
     pose_only_calm_steps: int = 0
+    pose_only_guarded_trial: bool = False
     last_requested_angular_velocity_degrees: float = 0.0
     stable_transport_mode: StableTransportMode = "maccormack"
     tuning_notice: str | None = None
@@ -218,10 +219,11 @@ class ViewerModel:
         """Whether the last requested drag moved a foil tip faster than freestream."""
         return self.drag_active and self.requested_tip_speed_ratio > 1.0
 
-    def _disable_pose_only_drag(self) -> None:
+    def _disable_pose_only_drag(self, *, guard_next_failure: bool = False) -> None:
         self.pose_only_drag = False
         self.pose_only_release_pending = False
         self.pose_only_calm_steps = 0
+        self.pose_only_guarded_trial = guard_next_failure
 
     def update(self, dt: float) -> None:
         if self.paused:
@@ -270,11 +272,11 @@ class ViewerModel:
             self.presentation.diagnostic_elapsed = 0.0
         if self.pose_only_drag:
             if self.pose_only_release_pending and not self.drag_active:
-                self._disable_pose_only_drag()
+                self._disable_pose_only_drag(guard_next_failure=True)
             elif self.requested_tip_speed_ratio <= _POSE_ONLY_RELEASE_SPEED_RATIO:
                 self.pose_only_calm_steps += 1
                 if self.pose_only_calm_steps >= _POSE_ONLY_RELEASE_STEPS:
-                    self._disable_pose_only_drag()
+                    self._disable_pose_only_drag(guard_next_failure=True)
             else:
                 self.pose_only_calm_steps = 0
 
@@ -315,6 +317,7 @@ class ViewerModel:
         self.pose_only_drag = True
         self.pose_only_release_pending = False
         self.pose_only_calm_steps = 0
+        self.pose_only_guarded_trial = False
 
     def switch_solver(self, solver_id: str) -> ImportOutcome:
         control = self.control(self.scenario.output_dt)
