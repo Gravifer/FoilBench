@@ -215,7 +215,8 @@ class SimulationWorker:
     def _clear_failure_history(self) -> None:
         self._recent_failures.clear()
 
-    def _apply_command(self, command: ViewerCommand) -> None:
+    def _apply_command(self, command: ViewerCommand) -> bool:
+        publish_boundary = False
         if command.kind == "toggle_pause":
             self._model.paused = not self._model.paused
         elif command.kind == "reset":
@@ -223,6 +224,7 @@ class SimulationWorker:
             self._failure = None
             self._recovery_pending = False
             self._clear_failure_history()
+            publish_boundary = True
         elif command.kind == "switch_solver":
             if not isinstance(command.value, str):
                 raise TypeError("switch_solver requires a solver id")
@@ -230,6 +232,7 @@ class SimulationWorker:
             self._failure = None
             self._recovery_pending = False
             self._clear_failure_history()
+            publish_boundary = True
         elif command.kind == "set_angle":
             if not isinstance(command.value, TimestampedPose):
                 raise TypeError("set_angle requires a timestamped pose")
@@ -258,6 +261,7 @@ class SimulationWorker:
             self._model.toggle_crop()
         elif command.kind == "shutdown":
             self._stop_requested = True
+        return publish_boundary
 
     @staticmethod
     def _immutable_positions(array: TracerPositions) -> TracerPositions:
@@ -325,10 +329,11 @@ class SimulationWorker:
         interactive_throughput: float | None = None
         while True:
             commands = self._drain_commands()
+            publish_boundary = False
 
             for command in commands:
                 try:
-                    self._apply_command(command)
+                    publish_boundary = self._apply_command(command) or publish_boundary
                 except Exception as error:
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
@@ -350,6 +355,15 @@ class SimulationWorker:
                 with self._condition:
                     if not self._stop_requested and not self._commands:
                         self._condition.wait()
+                active_wall_started = perf_counter()
+                active_simulation_started = self._model.time
+                continue
+
+            if publish_boundary:
+                self._publish(applied_command)
+                with self._condition:
+                    if not self._stop_requested and not self._commands:
+                        self._condition.wait(timeout=self._step_interval)
                 active_wall_started = perf_counter()
                 active_simulation_started = self._model.time
                 continue

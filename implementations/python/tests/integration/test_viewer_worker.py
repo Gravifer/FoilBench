@@ -341,3 +341,18 @@ def test_worker_advances_stable_fluids_with_capped_rapid_drag(
         assert advanced.simulation_time > 0.0
     finally:
         worker.close()
+
+
+def test_unpaused_switch_publishes_the_validation_boundary(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(24, 12)))
+    worker = SimulationWorker(model, maximum_steps_per_second=5.0)
+    switch_sequence = worker.switch_solver("pic-flip")
+    worker.start()
+    try:
+        switched = worker.wait_for_command(switch_sequence)
+        assert switched.simulation_time == pytest.approx(model.scenario.output_dt)
+        assert "PIC/FLIP" in switched.status
+    finally:
+        worker.close()

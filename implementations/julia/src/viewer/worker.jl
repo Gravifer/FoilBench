@@ -114,6 +114,7 @@ end
 
 function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
     model = worker.model
+    publish_boundary = false
     command isa TogglePauseCommand && toggle_pause!(model)
     command isa ToggleVorticityCommand && toggle_vorticity!(model)
     command isa ToggleTracerCommand && toggle_tracer_mode!(model)
@@ -127,6 +128,7 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
         reset_viewer!(model)
         worker.recovery_pending = false
         _clear_failure_history!(worker)
+        publish_boundary = true
     end
     command isa SetAngleCommand && set_angle!(model, command.angle_degrees, command.timestamp)
     command isa ReleaseAngleCommand && release_angle!(model)
@@ -139,10 +141,11 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
         switch_solver!(model, command.solver_id)
         worker.recovery_pending = false
         _clear_failure_history!(worker)
+        publish_boundary = true
     end
     command isa AdjustTuningCommand && adjust_tuning!(model, command.amount)
     command isa StopViewerCommand && (worker.running[] = false)
-    return nothing
+    return publish_boundary
 end
 
 function _drain_commands!(worker::ViewerWorker)
@@ -170,8 +173,16 @@ function _worker_loop(worker::ViewerWorker)
             take!(worker.wake_signal)
         end
         queued = _drain_commands!(worker)
+        publish_boundary = false
         for selected in queued
-            _apply_command!(worker, selected.command)
+            try
+                publish_boundary =
+                    _apply_command!(worker, selected.command) || publish_boundary
+            catch error
+                worker.model.paused = true
+                worker.model.status_message =
+                    "worker command error $(typeof(error)): " * sprint(showerror, error)
+            end
             worker.applied_command = max(worker.applied_command, selected.sequence)
         end
         if !isempty(queued)
@@ -186,6 +197,17 @@ function _worker_loop(worker::ViewerWorker)
         if worker.model.paused
             isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
             take!(worker.wake_signal)
+            active_wall_started = time_ns()
+            active_simulation_started = worker.model.simulation_time
+            continue
+        end
+        if publish_boundary
+            _publish_latest!(worker, snapshot(worker.model))
+            timedwait(
+                () -> isready(worker.wake_signal),
+                1 / 60;
+                pollint = 0.001,
+            )
             active_wall_started = time_ns()
             active_simulation_started = worker.model.simulation_time
             continue

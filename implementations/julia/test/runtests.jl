@@ -1,4 +1,8 @@
 using FoilBenchJulia
+
+struct FailingViewerCommand <: FoilBenchJulia.ViewerCommand end
+FoilBenchJulia._apply_command!(::ViewerWorker, ::FailingViewerCommand) =
+    throw(ArgumentError("injected command bug"))
 using JSON3
 using StaticArrays
 using Test
@@ -917,6 +921,27 @@ end
     @test worker.task === nothing
     @test something(latest_snapshot(worker)).applied_command > final_pose_sequence
     @test_throws ArgumentError enqueue!(worker, SetAngleCommand(0.0, 3.0))
+
+    boundary_worker = ViewerWorker(
+        ViewerModel(scenario; tracer_count = 16, history_length = 3),
+    )
+    switch_sequence = enqueue!(boundary_worker, SwitchSolverCommand("pic-flip"))
+    start!(boundary_worker)
+    switched_snapshot = wait_for_command(boundary_worker, switch_sequence)
+    @test switched_snapshot.time ≈ scenario.output_dt
+    @test switched_snapshot.solver_id == "pic-flip"
+    close!(boundary_worker)
+
+    failing_worker = ViewerWorker(
+        ViewerModel(scenario; tracer_count = 16, history_length = 3),
+    )
+    failure_sequence = enqueue!(failing_worker, FailingViewerCommand())
+    start!(failing_worker)
+    failed_command = wait_for_command(failing_worker, failure_sequence)
+    @test failed_command.paused
+    @test occursin("worker command error", failed_command.status)
+    close!(failing_worker)
+    @test failing_worker.task === nothing
 end
 
 @testset "All directed Julia warm swaps" begin
