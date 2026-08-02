@@ -32,18 +32,20 @@ Python; it does not import Python code or host Python solvers.
 
 ## Automated evidence
 
-The native Julia suite passes 550 checks covering shared RNG and geometry
+The native Julia suite passes 574 checks covering shared RNG and geometry
 fixtures, scenarios and canonical states, malformed input, all solver
 contracts, runtime Reynolds changes, thin-3D rejection, all six swaps at low
 and high attack angles, transactional switch validation, typed and bounded
-graceful recovery, ordered command barriers and shutdown, tracer continuity,
-hidden-vorticity suppression, and headless viewer behavior.
+graceful recovery, ordered command barriers and shutdown, concurrent command
+producers, tracer continuity, hidden-vorticity suppression, exact warming
+transitions, typed import outcomes, reachable post-import recovery
+classification, and headless viewer behavior.
 
 The matched fidelity repertoire exercises uniform flow, Taylor-Green decay,
 Poiseuille flow, NACA 0012 symmetry and penetration, and the dynamic NACA 2412
 wake for all three solvers. The combined root verifier runs the strict Python
 tooling and the complete Julia suite. On 2026-08-02 it passed Ruff, strict
-Pyright with zero errors or warnings, all 130 Python tests, all 550 Julia
+Pyright with zero errors or warnings, all 132 Python tests, all 574 Julia
 checks, and the headless GLMakie environment smoke test.
 
 ## Preview performance gate

@@ -97,7 +97,7 @@ extension's separate timing, refinement, spectrum, and paired-trajectory
 evidence is recorded in `chaotic-wake-experiment.md`.
 
 On 2026-08-02, the completed cross-language viewer-contract reconciliation and
-high-priority QA pass raised the Python suite to 130 passing tests. Timestamped drag control,
+maintenance pass raised the Python suite to 132 passing tests. Timestamped drag control,
 transactional warm-import validation, time-preserving recovery epochs,
 explicit tracer generations, typed presentation state, command barriers,
 bounded typed failure recovery, hidden-vorticity throttling, honest interactive

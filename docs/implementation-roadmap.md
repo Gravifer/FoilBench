@@ -21,7 +21,7 @@ and adds online Reynolds control, diagnostic cropping, rapid-motion recovery,
 and fail-fast pressure-solver safety.
 
 The completed 2026-08-02 shared viewer-contract reconciliation and
-high-priority QA pass raise the Python suite to 130 tests and align timestamped
+maintenance pass raise the Python suite to 132 tests and align timestamped
 drag controls, transactional switching, typed and bounded recovery, tracer
 continuity, presentation state, ordered commands, snapshot semantics, and
 interactive performance accounting with Julia.
@@ -71,7 +71,7 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 550 passing checks. On the development
+The automated Julia suite contains 574 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads
@@ -102,11 +102,22 @@ requiring additional policy decisions:
 The focused implementation commits are `2b550b4`, `9fda478`, `ffc3bb6`,
 `c918572`, `70ffc35`, and `3df6e11`.
 
-Medium-priority agent-actionable follow-up includes making post-import failure
-classification reachable, preventing stale diagnostics from leaving warming,
-replacing message-based import rejection with dedicated typed outcomes, and
-reproducing or ruling out bounded Julia command-channel deadlock under
-concurrent producer pressure.
+The subsequent medium-priority closure pass is also complete:
+
+- the first successful step after reset or recovery refreshes every displayed
+  solver diagnostic before leaving `warming`;
+- Julia command and wake channels no longer impose bounded backpressure while
+  coordination locks are held, with a four-producer regression crossing the
+  former queue bound;
+- solver import APIs in both languages return accepted or rejected
+  `ImportOutcome` values directly for expected incompatibility and numerical
+  reconstruction failures rather than classifying exception messages; and
+- the first ordinary step after a published warm switch retains an explicit
+  post-import marker, which is cleared only by a successful step and produces
+  `stage=post-import` recovery telemetry on failure.
+
+The focused closure commits are `4e49007`, `eaf60f9`, `c65c2bf`, and
+`d80974b`.
 
 ### User-attention items — temporarily deferred
 
