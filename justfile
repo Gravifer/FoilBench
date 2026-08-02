@@ -47,8 +47,8 @@ jl-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
     julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view "{{ scenario }}" --solver "{{ solver }}"
 
 # Open the TypeScript development viewer.
-ts-view:
-    npm --prefix implementations/typescript run view
+ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
+    npm --prefix implementations/typescript run view -- "{{ scenario }}" --solver "{{ solver }}"
 
 # Run a TypeScript Chromium benchmark matrix.
 ts-bench matrix="benchmark-matrices/smoke.json":

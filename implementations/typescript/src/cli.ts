@@ -4,6 +4,7 @@ import {dirname, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createServer} from "vite";
 import {compareResults, runBrowserMatrix} from "./benchmark/runner.js";
+import type {SolverId} from "./core/contracts.js";
 import {parseScenario} from "./core/scenario.js";
 
 const solvers = [
@@ -27,9 +28,14 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === "view") {
+    const scenarioPath = resolve(repositoryRoot, args[1] ?? "scenarios/airfoil/default.json");
+    const solverFlag = args.indexOf("--solver");
+    const solverId = (solverFlag >= 0 ? args[solverFlag + 1] : "stable-fluids") as SolverId;
+    if (!solvers.some((solver) => solver.id === solverId)) throw new RangeError(`unknown solver: ${solverId}`);
     const server = await createServer({root: join(repositoryRoot, "implementations/typescript"), server: {host: "127.0.0.1", port: 4173, strictPort: true}});
     await server.listen();
-    server.printUrls();
+    const parameters = new URLSearchParams({scenario: `/@fs/${scenarioPath.replaceAll("\\", "/")}`, solver: solverId});
+    console.log(`FoilBench TypeScript viewer: http://127.0.0.1:4173/?${parameters.toString()}`);
     return;
   }
   if (command === "bench") {
