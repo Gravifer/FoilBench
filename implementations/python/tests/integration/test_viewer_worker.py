@@ -41,7 +41,10 @@ def test_worker_publishes_detached_snapshots_and_processes_paused_commands(
         assert cropped.crop_enabled == model.crop_enabled
 
         switched = worker.wait_for_command(worker.switch_solver("pic-flip"))
-        assert switched.simulation_time == paused_time
+        assert switched.simulation_time > paused_time
+        assert switched.simulation_time == pytest.approx(
+            paused_time + model.scenario.output_dt * model.playback_rate
+        )
         assert "PIC/FLIP" in switched.status
         assert np.isfinite(switched.positions).all()
     finally:

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import replace
+from time import perf_counter
 
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import (
@@ -13,6 +14,7 @@ from foilbench_py.core.models import (
     ImportReport,
     NumericalFailure,
     Scenario,
+    StepReport,
 )
 from foilbench_py.core.protocol import FlowSolver
 
@@ -69,6 +71,8 @@ class SolverManager:
         self._solver = factory(initial_solver)
         self._solver.initialize(scenario, geometry, scenario.seed)
         self._last_import: ImportReport | None = None
+        self._last_validation_report: StepReport | None = None
+        self._last_validation_elapsed = 0.0
 
     @property
     def solver(self) -> FlowSolver:
@@ -79,6 +83,14 @@ class SolverManager:
         return self._last_import
 
     @property
+    def last_validation_report(self) -> StepReport | None:
+        return self._last_validation_report
+
+    @property
+    def last_validation_elapsed(self) -> float:
+        return self._last_validation_elapsed
+
+    @property
     def reynolds(self) -> float:
         return self._reynolds
 
@@ -86,9 +98,17 @@ class SolverManager:
         self._solver.set_reynolds(reynolds)
         self._reynolds = self._solver.reynolds
 
-    def switch(self, destination: str, control: ControlState) -> ImportOutcome:
+    def switch(
+        self,
+        destination: str,
+        control: ControlState,
+        validation_control: ControlState,
+        validation_dt: float,
+    ) -> ImportOutcome:
         if destination == self._solver.info.id:
             report = ImportReport(destination, destination, ())
+            self._last_validation_report = None
+            self._last_validation_elapsed = 0.0
             return ImportOutcome("accepted", "none", report)
         try:
             state = self._solver.export_state()
@@ -97,7 +117,13 @@ class SolverManager:
             candidate.set_reynolds(self._reynolds)
             report = candidate.import_state(state, control)
             candidate.diagnostics()
+            started = perf_counter()
+            validation_report = candidate.advance(validation_control, validation_dt)
+            validation_elapsed = max(perf_counter() - started, 1.0e-9)
+            candidate.diagnostics()
         except (ValueError, FloatingPointError, NumericalFailure) as error:
+            self._last_validation_report = None
+            self._last_validation_elapsed = 0.0
             return ImportOutcome(
                 "rejected",
                 classify_import_failure(error),
@@ -105,6 +131,8 @@ class SolverManager:
             )
         self._solver = candidate
         self._last_import = report
+        self._last_validation_report = validation_report
+        self._last_validation_elapsed = validation_elapsed
         return ImportOutcome("accepted", "none", report, report.warnings)
 
     def restart_at(self, control: ControlState) -> None:
@@ -130,3 +158,5 @@ class SolverManager:
         candidate.diagnostics()
         self._solver = candidate
         self._last_import = None
+        self._last_validation_report = None
+        self._last_validation_elapsed = 0.0

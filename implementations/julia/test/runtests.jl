@@ -726,7 +726,8 @@ end
     @test update!(model).time == updated.time
     @test accepted(switch_solver!(model, "lbm-d2q9"))
     @test solver_info(model.solver).id == "lbm-d2q9"
-    @test diagnostics(model.solver).values["time"] ≈ updated.time
+    @test model.simulation_time ≈ updated.time + scenario.output_dt
+    @test diagnostics(model.solver).values["time"] ≈ model.simulation_time
     @test !adjust_tuning!(model, 0.05)
     @test occursin("no adjustable tuning", model.status_message)
     @test accepted(switch_solver!(model, "stable-fluids"))
@@ -847,10 +848,11 @@ end
         @test accepted(switch_solver!(model, destination))
         @test solver_info(model.solver).id == destination
         @test model.manual_angle == angle
+        @test model.simulation_time == scenario.output_dt
         @test all(isfinite, export_state(model.solver).velocity)
         release_angle!(model)
         updated = update!(model)
-        @test updated.time == scenario.output_dt
+        @test updated.time == 2 * scenario.output_dt
         @test all(isfinite, updated.velocity)
     end
 end

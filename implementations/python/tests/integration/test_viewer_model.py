@@ -50,10 +50,13 @@ def test_headless_viewer_update_and_switch(
     assert model.solver_steps_per_second > 0.0
     assert "step=" in model.status()
     assert "AoA=" in model.status()
-    history = model.tracers.history.copy()
+    generations = model.tracers.generations.copy()
     model.switch_solver("lbm-d2q9")
     assert model.manager.solver.info.id == "lbm-d2q9"
-    np.testing.assert_array_equal(history, model.tracers.history)
+    generation_changes = model.tracers.generations - generations
+    assert np.all((generation_changes == 0) | (generation_changes == 1))
+    assert np.count_nonzero(generation_changes) < 0.1 * generation_changes.size
+    assert model.time == pytest.approx(2.0 * scenario.output_dt)
     assert "warm-import transient" in model.status()
 
 
@@ -320,8 +323,8 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
         "stable-fluids",
     )
     model.update(model.scenario.output_dt)
-    recovery_time = model.time
     model.switch_solver("pic-flip")
+    recovery_time = model.time
     model.set_angle(30.0)
     positions = model.tracers.positions.copy()
     history = model.tracers.history.copy()

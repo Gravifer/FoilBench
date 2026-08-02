@@ -321,8 +321,35 @@ class ViewerModel:
         self.pose_only_guarded_trial = False
 
     def switch_solver(self, solver_id: str) -> ImportOutcome:
-        control = self.control(self.scenario.output_dt)
-        outcome = self.manager.switch(solver_id, control)
+        current_control = self.control(self.scenario.output_dt)
+        if solver_id == self.manager.solver.info.id:
+            return self.manager.switch(
+                solver_id,
+                current_control,
+                current_control,
+                self.scenario.output_dt,
+            )
+        validation_dt = self.scenario.output_dt * self.playback_rate
+        validation_time = self.time + validation_dt
+        scheduled = self.scenario.control_at(validation_time)
+        validation_angular_velocity = (
+            scheduled.angular_velocity_degrees
+            if self.angle_override is None
+            else self.manual_angular_velocity_degrees
+        )
+        if self.pose_only_drag:
+            validation_angular_velocity = 0.0
+        validation_control = ControlState(
+            validation_time,
+            scheduled.angle_degrees if self.angle_override is None else self.angle_override,
+            validation_angular_velocity,
+        )
+        outcome = self.manager.switch(
+            solver_id,
+            current_control,
+            validation_control,
+            validation_dt,
+        )
         if not outcome.accepted:
             self.tuning_notice = None
             self.recovery_notice = f"warm import rejected ({outcome.reason})"
@@ -330,10 +357,16 @@ class ViewerModel:
         self._apply_stable_transport_mode()
         self.recovery_notice = None
         self.tuning_notice = None
+        self.time = validation_time
+        self.last_report = self.manager.last_validation_report
+        elapsed = self.manager.last_validation_elapsed
+        self.solver_steps_per_second = 1.0 / elapsed
+        self.simulated_seconds_per_wall_second = validation_dt / elapsed
+        self.tracers.update(self.manager.solver, validation_control, validation_dt)
+        self.previous_angle = validation_control.angle_degrees
         self._refresh_diagnostics()
-        self.last_report = None
-        self.metrics_warming = True
-        self.warm_validation_pending = True
+        self.metrics_warming = False
+        self.warm_validation_pending = False
         return outcome
 
     def recover_solver(

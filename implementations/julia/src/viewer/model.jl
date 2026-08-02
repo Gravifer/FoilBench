@@ -815,37 +815,81 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
         model.status_message = "warm export rejected ($reason); source retained"
         return ImportOutcome(:rejected, reason; warnings = [detail])
     end
-    control = ControlState(
+    import_control = ControlState(
         T(state.time),
         something(model.manual_angle, T(state.angle_degrees)),
-        model.angular_velocity,
+        model.pose_only_drag ? zero(T) : model.angular_velocity,
     )
-    try
+    report = try
         initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
         _apply_stable_transport!(model, incoming)
         set_reynolds!(incoming, selected_reynolds)
-        report = import_state!(incoming, state, control)
-        model.solver = incoming
-        model.status_message = isempty(report.warnings) ? "switched from $(state.source_solver)" :
-            first(report.warnings)
-        model.last_substeps = 0
-        model.last_max_speed = zero(T)
-        model.step_rate = 0.0
-        model.simulated_seconds_per_wall_second = 0.0
-        model.metrics_warming = true
-        model.warm_validation_pending = true
-        _refresh_presentation!(
-            model;
-            force_vorticity = model.presentation.vorticity_visible,
-        )
-        return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
+        selected_report = import_state!(incoming, state, import_control)
+        diagnostics(incoming)
+        selected_report
     catch error
-        (error isa ArgumentError || error isa DimensionMismatch) || rethrow()
+        (error isa ArgumentError || error isa DimensionMismatch ||
+            error isa NumericalFailure) || rethrow()
         reason = classify_viewer_failure(error)
         detail = sprint(showerror, error)
         model.status_message = "warm import rejected ($reason); source retained"
         return ImportOutcome(:rejected, reason; warnings = [detail])
     end
+    target_dt = model.scenario.output_dt * model.playback_rate
+    validation_time = model.simulation_time + target_dt
+    scheduled = control_at(model.scenario, validation_time)
+    requested_control = model.manual_angle === nothing ? scheduled :
+        ControlState(validation_time, something(model.manual_angle), model.angular_velocity)
+    validation_control = model.pose_only_drag ?
+        ControlState(validation_time, requested_control.angle_degrees, zero(T)) :
+        requested_control
+    started = time_ns()
+    validation_report = try
+        selected_report = advance!(incoming, validation_control, target_dt)
+        diagnostics(incoming)
+        selected_report
+    catch error
+        error isa NumericalFailure || rethrow()
+        reason = classify_viewer_failure(error)
+        detail = sprint(showerror, error)
+        model.status_message = "warm validation rejected ($reason); source retained"
+        return ImportOutcome(:rejected, reason; warnings = [detail])
+    end
+    elapsed = max((time_ns() - started) / 1.0e9, 1.0e-9)
+    candidate_diagnostics = diagnostics(incoming)
+    candidate_velocity = cell_velocity(incoming)
+    candidate_vorticity = model.presentation.vorticity_visible ?
+        _viewer_vorticity(
+            candidate_velocity,
+            model.scenario,
+            model.geometry,
+            validation_control.angle_degrees,
+        ) : model.presentation.vorticity
+
+    model.solver = incoming
+    model.simulation_time = validation_time
+    model.last_substeps = validation_report.substeps
+    model.last_max_speed = validation_report.max_speed
+    model.step_rate = inv(elapsed)
+    model.simulated_seconds_per_wall_second = target_dt / elapsed
+    model.metrics_warming = false
+    model.warm_validation_pending = false
+    model.presentation.diagnostics = candidate_diagnostics
+    model.presentation.velocity = candidate_velocity
+    model.presentation.vorticity = candidate_vorticity
+    model.presentation.diagnostic_elapsed = zero(T)
+    model.presentation.diagnostic_revision += 1
+    advance_tracers!(
+        model.tracers,
+        incoming,
+        model.scenario,
+        model.geometry,
+        validation_control,
+        target_dt,
+    )
+    model.status_message = isempty(report.warnings) ? "switched from $(state.source_solver)" :
+        first(report.warnings)
+    return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
 end
 
 function adjust_blend!(model::ViewerModel, amount::Real)
