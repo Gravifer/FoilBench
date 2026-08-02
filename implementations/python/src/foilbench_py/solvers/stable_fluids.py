@@ -309,7 +309,10 @@ class StableFluidsSolver:
             state.source_solver,
             self.info.id,
             ("pressure", "face-centered projection history"),
-            () if not self._projection_warning else (self._projection_warning,),
+            (
+                "Stable Fluids rebuilt pressure and face-projection history.",
+                *((self._projection_warning,) if self._projection_warning else ()),
+            ),
         )
 
     def diagnostics(self) -> Diagnostics:

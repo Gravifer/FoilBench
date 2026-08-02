@@ -575,8 +575,11 @@ function toggle_vorticity!(model::ViewerModel)
     return model.presentation.vorticity_visible
 end
 
-toggle_crop!(model::ViewerModel) =
-    (model.presentation.crop_enabled = !model.presentation.crop_enabled)
+function toggle_crop!(model::ViewerModel)
+    option(model.scenario, "viewer_crop_cells", 0) > 0 || return false
+    model.presentation.crop_enabled = !model.presentation.crop_enabled
+    return model.presentation.crop_enabled
+end
 
 function toggle_tracer_mode!(model::ViewerModel)
     model.tracers.mode = model.tracers.mode == :display ? :material : :display

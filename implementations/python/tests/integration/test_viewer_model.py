@@ -50,6 +50,11 @@ def test_headless_viewer_update_and_switch(
     assert model.solver_steps_per_second > 0.0
     assert "step=" in model.status()
     assert "AoA=" in model.status()
+    assert "div=" in model.status()
+    assert "leak=" in model.status()
+    model.paused = True
+    assert "PAUSED" in model.status()
+    model.paused = False
     generations = model.tracers.generations.copy()
     model.switch_solver("lbm-d2q9")
     assert model.manager.solver.info.id == "lbm-d2q9"

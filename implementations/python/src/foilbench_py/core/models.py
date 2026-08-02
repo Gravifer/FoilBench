@@ -233,6 +233,8 @@ class CanonicalFlowState:
             raise TypeError("density dtype does not match canonical precision")
         if not np.isfinite(self.velocity).all():
             raise ValueError("canonical velocity contains non-finite values")
+        if self.density is not None and not np.isfinite(self.density).all():
+            raise ValueError("canonical density contains non-finite values")
 
 
 FloatScalar = Float[np.ndarray, ""]

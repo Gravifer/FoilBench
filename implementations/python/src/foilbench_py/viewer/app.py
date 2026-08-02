@@ -532,15 +532,19 @@ class ViewerModel:
         warming = self.metrics_warming or diagnostics is None or report is None
         energy = 0.0 if diagnostics is None else diagnostics.values.get("kinetic_energy", 0.0)
         enstrophy = 0.0 if diagnostics is None else diagnostics.values.get("enstrophy", 0.0)
+        divergence = 0.0 if diagnostics is None else diagnostics.values.get("divergence_l2", 0.0)
+        leakage = 0.0 if diagnostics is None else diagnostics.values.get("solid_leakage", 0.0)
+        paused = "  PAUSED" if self.paused else ""
         control = self.control(self.scenario.output_dt)
         measurements = (
-            "step=   —/s  sim/wall=   —  sub=—  max|u|=   —  E=—  Ω=—"
+            "step=   —/s  sim/wall=   —  sub=—  max|u|=   —  E=—  Ω=—  div=—  leak=—"
             if warming
             else (
                 f"step={self.solver_steps_per_second:4.1f}/s  "
                 f"sim/wall={self.simulated_seconds_per_wall_second:4.2f}  "
                 f"sub={substeps}  max|u|={speed:4.2f}  "
-                f"E={energy:.3f}  Ω={enstrophy:.3f}"
+                f"E={energy:.3f}  Ω={enstrophy:.3f}  "
+                f"div={divergence:.2e}  leak={leakage:.2e}"
             )
         )
         return (
@@ -550,7 +554,7 @@ class ViewerModel:
             f"{measurements}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"
             f"  view={'cropped' if self.crop_enabled else 'full'}"
-            f"{transport}{blend}{effective_reynolds}{motion_mode}{recovery_epoch}{warning}"
+            f"{transport}{blend}{effective_reynolds}{motion_mode}{recovery_epoch}{paused}{warning}"
             f"{f'  tune={self.tuning_notice}' if self.tuning_notice is not None else ''}"
         )
 

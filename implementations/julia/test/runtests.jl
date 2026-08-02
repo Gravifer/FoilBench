@@ -577,6 +577,8 @@ end
     @test occursin("sim/wall=", initial.status)
     @test occursin("tracers=display", initial.status)
     @test initial.vorticity_visible
+    @test !toggle_crop!(model)
+    @test !model.presentation.crop_enabled
 
     periodic_tracer = 1
     x0, x1 = scenario.domain.bounds[1]

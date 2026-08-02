@@ -41,6 +41,27 @@ def test_canonical_state_rejects_wrong_shape() -> None:
         )
 
 
+def test_canonical_state_rejects_nonfinite_density() -> None:
+    density = np.ones((1, 4, 8), dtype=np.float32)
+    density[0, 2, 3] = np.nan
+    with pytest.raises(ValueError, match="density contains non-finite"):
+        CanonicalFlowState(
+            schema_version=1,
+            dimension=2,
+            bounds=((0.0, 2.0), (0.0, 1.0)),
+            resolution=(8, 4),
+            periodic_axes=(),
+            time=0.0,
+            precision="float32",
+            angle_degrees=0.0,
+            angular_velocity_degrees=0.0,
+            source_language="python",
+            source_solver="test",
+            velocity=np.zeros((1, 4, 8, 2), dtype=np.float32),
+            density=density,
+        )
+
+
 def test_sampling_rejects_swapped_axes_wrong_rank_and_dimension() -> None:
     domain = DomainSpec(2, ((0.0, 2.0), (0.0, 1.0)), (8, 4))
     points = np.zeros((3, 2), dtype=np.float32)

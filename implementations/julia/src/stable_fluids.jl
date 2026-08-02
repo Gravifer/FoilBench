@@ -344,7 +344,7 @@ function import_state!(
         state.source_solver,
         solver_info(solver).id,
         ["pressure", "face-centered projection history"],
-        String[],
+        ["Stable Fluids rebuilt pressure and face-projection history."],
     )
 end
 
