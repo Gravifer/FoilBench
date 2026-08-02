@@ -3,6 +3,7 @@ import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, cellToFaces, cellVelocity, dimensions, project, sampleCell} from "../core/grid.js";
 import {fieldDiagnostics} from "../core/metrics.js";
+import {validateCanonicalState} from "../core/stateValidation.js";
 
 type TransportMode = "maccormack" | "semi-lagrangian" | "skew-rk2";
 
@@ -95,6 +96,27 @@ export class StableFluidsSolver implements FlowSolver {
 
   public sampleVelocity(points: FloatArray): FloatArray { const scenario = this.requireScenario(); if (points.length % 2 !== 0) throw new RangeError("points must contain x/y pairs"); const velocity = cellVelocity(this.u, this.v, dimensions(scenario.domain).nx, dimensions(scenario.domain).ny, scenario.precision); const output = allocate(scenario.precision, points.length); for (let index = 0; index < points.length; index += 2) { const sampled = sampleCell(velocity, scenario.domain, points[index] ?? 0, points[index + 1] ?? 0); output[index] = sampled[0]; output[index + 1] = sampled[1]; } return output; }
   public exportState(): CanonicalFlowState { const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); return {schemaVersion: 1, dimension: 2, bounds: scenario.domain.bounds, resolution: scenario.domain.resolution, periodicAxes: scenario.domain.periodicAxes, time: this.time, precision: scenario.precision, angleDegrees: this.control.angleDegrees, angularVelocityDegrees: this.control.angularVelocityDegrees, sourceLanguage: "typescript", sourceSolver: this.info.id, velocity: cellVelocity(this.u, this.v, nx, ny, scenario.precision), density: null}; }
-  public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { const scenario = this.requireScenario(); if (state.dimension !== 2 || state.resolution[0] !== scenario.domain.resolution[0] || state.resolution[1] !== scenario.domain.resolution[1]) return {status: "rejected", reason: "incompatible_domain", discardedState: [], warnings: []}; if (!state.velocity.every(Number.isFinite) || (state.density !== null && !state.density.every(Number.isFinite))) return {status: "rejected", reason: "nonfinite_state", discardedState: [], warnings: []}; const {nx, ny, dx, dy} = dimensions(scenario.domain); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); ({u: this.u, v: this.v} = cellToFaces(state.velocity, nx, ny, scenario.precision, periodicX, periodicY)); this.time = state.time; this.control = control; this.updateSolid(control); this.enforceSolidFaces(control); project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) return {status: "rejected", reason: "projection_failure", discardedState: [], warnings: []}; return {status: "accepted", reason: "none", discardedState: ["pressure history"], warnings: []}; }
+  public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
+    const scenario = this.requireScenario();
+    const invalid = validateCanonicalState(state, scenario);
+    if (invalid !== null) return invalid;
+    const savedU = this.u; const savedV = this.v; const savedSolid = this.solid; const savedTime = this.time; const savedControl = this.control;
+    const {nx, ny, dx, dy} = dimensions(scenario.domain); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
+    try {
+      ({u: this.u, v: this.v} = cellToFaces(state.velocity, nx, ny, scenario.precision, periodicX, periodicY));
+      this.solid = new Uint8Array(nx * ny); this.time = state.time; this.control = control;
+      this.updateSolid(control); this.enforceSolidFaces(control);
+      project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY);
+      this.enforceSolidFaces(control);
+      if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) {
+        this.u = savedU; this.v = savedV; this.solid = savedSolid; this.time = savedTime; this.control = savedControl;
+        return {status: "rejected", reason: "projection_failure", discardedState: [], warnings: []};
+      }
+    } catch (error) {
+      this.u = savedU; this.v = savedV; this.solid = savedSolid; this.time = savedTime; this.control = savedControl;
+      throw error;
+    }
+    return {status: "accepted", reason: "none", discardedState: ["pressure history"], warnings: []};
+  }
   public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); return {values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), effective_reynolds: this.reynolds}, warnings: []}; }
 }

@@ -43,4 +43,13 @@ describe("shared solver protocol", () => {
     };
     expect(() => createSolver(solverId).initialize(unsupported, 0)).toThrow(/2D/);
   });
+
+  for (const solverId of solverIds) it(`${solverId} rejects incompatible and malformed canonical state`, async () => {
+    const scenario = await uniformScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0); const state = solver.exportState(); const control = controlAt(scenario, state.time);
+    expect(solver.importState({...state, bounds: [[-2, 2], state.bounds[1] ?? [-1, 1]]}, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, periodicAxes: []}, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, velocity: state.velocity.slice(2)}, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, time: Number.NaN}, control).reason).toBe("nonfinite_state");
+    if (state.density !== null) expect(solver.importState({...state, density: state.density.slice(1)}, control).reason).toBe("incompatible_domain");
+  });
 });
