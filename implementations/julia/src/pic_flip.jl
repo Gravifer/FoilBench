@@ -70,6 +70,25 @@ function set_pic_flip_blend!(solver::PicFlipSolver{T}, selected::Real) where {T}
     return solver.blend
 end
 
+function interactive_tuning(solver::PicFlipSolver)
+    selected = Float64(pic_flip_blend(solver))
+    return InteractiveTuning(
+        "pic-flip-blend", "blend", selected,
+        string(round(selected; digits = 2)), selected > 0, selected < 1,
+    )
+end
+
+function adjust_interactive_tuning!(solver::PicFlipSolver, direction::Integer)
+    set_pic_flip_blend!(solver, pic_flip_blend(solver) + (direction < 0 ? -0.05 : 0.05))
+    return interactive_tuning(solver)
+end
+
+function apply_interactive_tuning!(solver::PicFlipSolver, value::InteractiveTuningValue)
+    value isa Float64 || throw(ArgumentError("PIC/FLIP tuning value must be numeric"))
+    set_pic_flip_blend!(solver, value)
+    return interactive_tuning(solver)
+end
+
 function _pic_require(solver::PicFlipSolver)
     solver.scenario === nothing && throw(ArgumentError("PIC/FLIP is not initialized"))
     solver.geometry === nothing && throw(ArgumentError("PIC/FLIP is not initialized"))

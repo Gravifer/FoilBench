@@ -8,6 +8,17 @@ struct SolverInfo
     acceleration::Symbol
 end
 
+const InteractiveTuningValue = Union{String,Float64}
+
+struct InteractiveTuning
+    id::String
+    label::String
+    value::InteractiveTuningValue
+    display_value::String
+    can_decrease::Bool
+    can_increase::Bool
+end
+
 struct ControlState{T<:AbstractFloat}
     time::T
     angle_degrees::T
@@ -96,6 +107,9 @@ export_state(::AbstractFlowSolver) = error("export_state is not implemented")
 import_state!(::AbstractFlowSolver, state, ::ControlState) =
     error("import_state! is not implemented")
 diagnostics(::AbstractFlowSolver) = error("diagnostics is not implemented")
+interactive_tuning(::AbstractFlowSolver) = nothing
+adjust_interactive_tuning!(::AbstractFlowSolver, ::Integer) = nothing
+apply_interactive_tuning!(::AbstractFlowSolver, ::InteractiveTuningValue) = nothing
 
 function supports(info::SolverInfo, scenario)
     return dimension(scenario) in info.dimensions

@@ -1,6 +1,7 @@
 abstract type ViewerCommand end
 struct TogglePauseCommand <: ViewerCommand end
 struct ToggleVorticityCommand <: ViewerCommand end
+struct ToggleDiagnosticsCommand <: ViewerCommand end
 struct ToggleTracerCommand <: ViewerCommand end
 struct ToggleCropCommand <: ViewerCommand end
 struct ResetReynoldsCommand <: ViewerCommand end
@@ -28,15 +29,16 @@ end
 
 mutable struct ViewerWorker{T<:AbstractFloat}
     model::ViewerModel{T}
-    commands::Channel{QueuedViewerCommand}
+    commands::Vector{QueuedViewerCommand}
     latest_angle::Base.RefValue{Union{Nothing,QueuedViewerCommand}}
     command_lock::ReentrantLock
+    command_condition::Threads.Condition
     next_sequence::UInt64
     accepting_commands::Bool
     task::Union{Nothing,Task}
     running::Base.RefValue{Bool}
-    wake_signal::Channel{Nothing}
     snapshot_lock::ReentrantLock
+    snapshot_condition::Threads.Condition
     latest::Base.RefValue{Union{Nothing,ViewerSnapshot{T}}}
     revision::UInt64
     applied_command::UInt64
@@ -45,17 +47,20 @@ mutable struct ViewerWorker{T<:AbstractFloat}
 end
 
 function ViewerWorker(model::ViewerModel{T}) where {T}
+    command_lock = ReentrantLock()
+    snapshot_lock = ReentrantLock()
     return ViewerWorker(
         model,
-        Channel{QueuedViewerCommand}(Inf),
+        QueuedViewerCommand[],
         Ref{Union{Nothing,QueuedViewerCommand}}(nothing),
-        ReentrantLock(),
+        command_lock,
+        Threads.Condition(command_lock),
         UInt64(1),
         true,
         nothing,
         Ref(false),
-        Channel{Nothing}(Inf),
-        ReentrantLock(),
+        snapshot_lock,
+        Threads.Condition(snapshot_lock),
         Ref{Union{Nothing,ViewerSnapshot{T}}}(nothing),
         UInt64(0),
         UInt64(0),
@@ -88,7 +93,6 @@ function _with_revision(
         selected.solver_id,
         selected.tracer_positions,
         selected.path_segments,
-        selected.velocity,
         selected.vorticity,
         selected.diagnostics,
         selected.status,
@@ -96,6 +100,11 @@ function _with_revision(
         selected.vorticity_visible,
         selected.crop_enabled,
         selected.tracer_mode,
+        selected.phase,
+        selected.motion_mode,
+        selected.diagnostic_mode,
+        selected.schedule_active,
+        selected.recovery_epoch,
     )
 end
 
@@ -103,12 +112,46 @@ function _publish_latest!(worker::ViewerWorker, selected::ViewerSnapshot)
     lock(worker.snapshot_lock) do
         worker.revision += 1
         worker.latest[] = _with_revision(selected, worker.revision, worker.applied_command)
+        notify(worker.snapshot_condition; all = true)
     end
     return nothing
 end
 
-function _signal!(worker::ViewerWorker)
-    isready(worker.wake_signal) || put!(worker.wake_signal, nothing)
+function _failed_snapshot(selected::ViewerSnapshot{T}, message::AbstractString) where {T}
+    return ViewerSnapshot(
+        selected.revision,
+        selected.applied_command,
+        selected.time,
+        selected.angle_degrees,
+        selected.solver_id,
+        selected.tracer_positions,
+        selected.path_segments,
+        selected.vorticity,
+        selected.diagnostics,
+        selected.status * "  owner-error=" * String(message),
+        true,
+        selected.vorticity_visible,
+        selected.crop_enabled,
+        selected.tracer_mode,
+        :failed,
+        selected.motion_mode,
+        selected.diagnostic_mode,
+        selected.schedule_active,
+        selected.recovery_epoch,
+    )
+end
+
+function _publish_model!(worker::ViewerWorker)
+    try
+        _publish_latest!(worker, snapshot(worker.model))
+    catch error
+        worker.model.paused = true
+        worker.model.status_message =
+            "snapshot failure $(typeof(error)): " * sprint(showerror, error)
+        previous = latest_snapshot(worker)
+        previous === nothing && rethrow()
+        _publish_latest!(worker, _failed_snapshot(previous, sprint(showerror, error)))
+    end
     return nothing
 end
 
@@ -117,6 +160,7 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
     publish_boundary = false
     command isa TogglePauseCommand && toggle_pause!(model)
     command isa ToggleVorticityCommand && toggle_vorticity!(model)
+    command isa ToggleDiagnosticsCommand && toggle_diagnostics!(model)
     command isa ToggleTracerCommand && toggle_tracer_mode!(model)
     command isa ToggleCropCommand && toggle_crop!(model)
     if command isa ResetReynoldsCommand
@@ -153,31 +197,48 @@ function _apply_command!(worker::ViewerWorker, command::ViewerCommand)
 end
 
 function _drain_commands!(worker::ViewerWorker)
-    queued = QueuedViewerCommand[]
-    lock(worker.command_lock) do
+    return lock(worker.command_lock) do
+        queued = copy(worker.commands)
+        empty!(worker.commands)
         selected = worker.latest_angle[]
         worker.latest_angle[] = nothing
         selected === nothing || push!(queued, selected)
+        sort!(queued; by = command -> command.sequence)
+        queued
     end
-    while isready(worker.commands)
-        push!(queued, take!(worker.commands))
+end
+
+function _wait_for_commands!(worker::ViewerWorker, timeout::Union{Nothing,Float64} = nothing)
+    timer = nothing
+    lock(worker.command_lock)
+    try
+        (!isempty(worker.commands) || worker.latest_angle[] !== nothing || !worker.running[]) &&
+            return nothing
+        if timeout !== nothing
+            timeout <= 0 && return nothing
+            timer = Timer(timeout) do _
+                lock(worker.command_lock) do
+                    notify(worker.command_condition; all = true)
+                end
+            end
+        end
+        wait(worker.command_condition)
+    finally
+        timer === nothing || close(timer)
+        unlock(worker.command_lock)
     end
-    sort!(queued; by = command -> command.sequence)
-    return queued
+    return nothing
 end
 
 function _worker_loop(worker::ViewerWorker)
     worker.running[] = true
-    _publish_latest!(worker, snapshot(worker.model))
+    _publish_model!(worker)
     active_wall_started = Int(time_ns())
     active_simulation_started = worker.model.simulation_time
     interactive_throughput = nothing
     step_interval_ns = round(Int, 1.0e9 / 60)
     next_step_deadline = active_wall_started + step_interval_ns
     while worker.running[]
-        while isready(worker.wake_signal)
-            take!(worker.wake_signal)
-        end
         queued = _drain_commands!(worker)
         publish_boundary = false
         for selected in queued
@@ -192,19 +253,19 @@ function _worker_loop(worker::ViewerWorker)
             worker.applied_command = max(worker.applied_command, selected.sequence)
         end
         if !worker.running[]
-            _publish_latest!(worker, snapshot(worker.model))
+            _publish_model!(worker)
             break
         end
         if worker.model.paused
-            isempty(queued) || _publish_latest!(worker, snapshot(worker.model))
-            take!(worker.wake_signal)
+            isempty(queued) || _publish_model!(worker)
+            _wait_for_commands!(worker)
             active_wall_started = Int(time_ns())
             active_simulation_started = worker.model.simulation_time
             next_step_deadline = active_wall_started
             continue
         end
         if publish_boundary
-            _publish_latest!(worker, snapshot(worker.model))
+            _publish_model!(worker)
             active_wall_started = Int(time_ns())
             active_simulation_started = worker.model.simulation_time
             interactive_throughput = nothing
@@ -213,11 +274,7 @@ function _worker_loop(worker::ViewerWorker)
         end
         remaining_before_step = (next_step_deadline - Int(time_ns())) / 1.0e9
         if remaining_before_step > 0
-            timedwait(
-                () -> isready(worker.wake_signal),
-                remaining_before_step;
-                pollint = min(0.001, remaining_before_step),
-            )
+            _wait_for_commands!(worker, remaining_before_step)
             continue
         end
         started = Int(time_ns())
@@ -236,7 +293,7 @@ function _worker_loop(worker::ViewerWorker)
             worker.model.simulated_seconds_per_wall_second = interactive_throughput
             active_wall_started = completed
             active_simulation_started = worker.model.simulation_time
-            _publish_latest!(worker, snapshot(worker.model))
+            _publish_model!(worker)
             guarded_trial && (worker.model.pose_only_guarded_trial = false)
             worker.recovery_pending = false
         catch error
@@ -244,7 +301,7 @@ function _worker_loop(worker::ViewerWorker)
                 worker.model.paused = true
                 worker.model.status_message =
                     "worker error $(typeof(error)): " * sprint(showerror, error)
-                _publish_latest!(worker, snapshot(worker.model))
+                _publish_model!(worker)
                 continue
             end
             failure_count = _record_failure!(worker, Int(time_ns()) / 1.0e9)
@@ -281,14 +338,35 @@ function _worker_loop(worker::ViewerWorker)
                         sprint(showerror, recovery_error)
                 end
             end
-            _publish_latest!(worker, snapshot(worker.model))
+            _publish_model!(worker)
         end
         remaining = 1 / 60 - (Int(time_ns()) - started) / 1.0e9
-        remaining > 0 && timedwait(
-            () -> isready(worker.wake_signal),
-            remaining;
-            pollint = min(0.001, remaining),
-        )
+        remaining > 0 && _wait_for_commands!(worker, remaining)
+    end
+    return nothing
+end
+
+function _supervised_worker_loop(worker::ViewerWorker)
+    try
+        _worker_loop(worker)
+    catch error
+        worker.model.paused = true
+        worker.model.status_message =
+            "owner failure $(typeof(error)): " * sprint(showerror, error)
+        try
+            _publish_model!(worker)
+        catch
+        end
+        rethrow()
+    finally
+        worker.running[] = false
+        lock(worker.command_lock) do
+            worker.accepting_commands = false
+            notify(worker.command_condition; all = true)
+        end
+        lock(worker.snapshot_lock) do
+            notify(worker.snapshot_condition; all = true)
+        end
     end
     return nothing
 end
@@ -296,7 +374,7 @@ end
 function start!(worker::ViewerWorker)
     worker.task === nothing || throw(ArgumentError("viewer worker is already started"))
     worker.accepting_commands || throw(ArgumentError("viewer worker is closed"))
-    worker.task = Threads.@spawn _worker_loop(worker)
+    worker.task = errormonitor(Threads.@spawn _supervised_worker_loop(worker))
     return worker
 end
 
@@ -306,9 +384,9 @@ function enqueue!(worker::ViewerWorker, command::SetAngleCommand)
         queued = QueuedViewerCommand(worker.next_sequence, command)
         worker.next_sequence += 1
         worker.latest_angle[] = queued
+        notify(worker.command_condition; all = true)
         queued
     end
-    _signal!(worker)
     return selected.sequence
 end
 
@@ -316,14 +394,14 @@ function enqueue!(worker::ViewerWorker, command::ViewerCommand)
     selected = lock(worker.command_lock) do
         worker.accepting_commands || throw(ArgumentError("viewer worker is closed"))
         pending_pose = worker.latest_angle[]
-        pending_pose === nothing || put!(worker.commands, pending_pose)
+        pending_pose === nothing || push!(worker.commands, pending_pose)
         worker.latest_angle[] = nothing
         queued = QueuedViewerCommand(worker.next_sequence, command)
         worker.next_sequence += 1
-        put!(worker.commands, queued)
+        push!(worker.commands, queued)
+        notify(worker.command_condition; all = true)
         queued
     end
-    _signal!(worker)
     return selected.sequence
 end
 
@@ -331,12 +409,13 @@ function _enqueue_stop!(worker::ViewerWorker)
     return lock(worker.command_lock) do
         worker.accepting_commands || return nothing
         pending_pose = worker.latest_angle[]
-        pending_pose === nothing || put!(worker.commands, pending_pose)
+        pending_pose === nothing || push!(worker.commands, pending_pose)
         worker.latest_angle[] = nothing
         queued = QueuedViewerCommand(worker.next_sequence, StopViewerCommand())
         worker.next_sequence += 1
-        put!(worker.commands, queued)
+        push!(worker.commands, queued)
         worker.accepting_commands = false
+        notify(worker.command_condition; all = true)
         queued.sequence
     end
 end
@@ -353,12 +432,24 @@ function wait_for_revision(
     timeout::Float64 = 10.0,
 )
     deadline = time() + timeout
-    while time() < deadline
-        selected = latest_snapshot(worker)
-        selected !== nothing && selected.revision >= revision && return selected
-        sleep(0.001)
+    timer = nothing
+    lock(worker.snapshot_lock)
+    try
+        timer = Timer(timeout) do _
+            lock(worker.snapshot_lock) do
+                notify(worker.snapshot_condition; all = true)
+            end
+        end
+        while true
+            selected = worker.latest[]
+            selected !== nothing && selected.revision >= revision && return selected
+            time() >= deadline && error("timed out waiting for viewer revision $revision")
+            wait(worker.snapshot_condition)
+        end
+    finally
+        timer === nothing || close(timer)
+        unlock(worker.snapshot_lock)
     end
-    error("timed out waiting for viewer revision $revision")
 end
 
 function wait_for_command(
@@ -367,12 +458,24 @@ function wait_for_command(
     timeout::Float64 = 10.0,
 )
     deadline = time() + timeout
-    while time() < deadline
-        selected = latest_snapshot(worker)
-        selected !== nothing && selected.applied_command >= sequence && return selected
-        sleep(0.001)
+    timer = nothing
+    lock(worker.snapshot_lock)
+    try
+        timer = Timer(timeout) do _
+            lock(worker.snapshot_lock) do
+                notify(worker.snapshot_condition; all = true)
+            end
+        end
+        while true
+            selected = worker.latest[]
+            selected !== nothing && selected.applied_command >= sequence && return selected
+            time() >= deadline && error("timed out waiting for viewer command $sequence")
+            wait(worker.snapshot_condition)
+        end
+    finally
+        timer === nothing || close(timer)
+        unlock(worker.snapshot_lock)
     end
-    error("timed out waiting for viewer command $sequence")
 end
 
 function close!(worker::ViewerWorker)
@@ -383,7 +486,6 @@ function close!(worker::ViewerWorker)
         return nothing
     end
     sequence = _enqueue_stop!(worker)
-    sequence === nothing || _signal!(worker)
     sequence === nothing || wait_for_command(worker, sequence)
     wait(worker.task)
     worker.task = nothing

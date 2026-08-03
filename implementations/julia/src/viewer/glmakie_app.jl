@@ -108,7 +108,7 @@ function run_viewer(
     Label(
         figure[3, 1],
         "1/2/3 solver   left-drag foil   Space pause   R reset   -/+ Re   " *
-        "0 Re reset   [/] solver tuning   V vorticity   T tracers   C crop";
+        "0 Re reset   [/] solver tuning   V vorticity   D diagnostics   T tracers   C crop";
         color = RGBf(0.72, 0.78, 0.88),
         fontsize = 10,
         tellwidth = false,
@@ -166,6 +166,8 @@ function run_viewer(
             ResetReynoldsCommand()
         elseif lowercase(character) == 'v'
             ToggleVorticityCommand()
+        elseif lowercase(character) == 'd'
+            ToggleDiagnosticsCommand()
         elseif lowercase(character) == 't'
             ToggleTracerCommand()
         elseif lowercase(character) == 'c'

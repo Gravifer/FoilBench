@@ -56,6 +56,25 @@ function set_stable_transport_mode!(solver::StableFluidsSolver, mode::AbstractSt
     return stable_transport_mode(solver)
 end
 
+function interactive_tuning(solver::StableFluidsSolver)
+    mode = stable_transport_mode(solver)
+    return InteractiveTuning(
+        "stable-advection", "adv", mode, mode,
+        mode != "maccormack", mode != "skew-rk2",
+    )
+end
+
+function adjust_interactive_tuning!(solver::StableFluidsSolver, direction::Integer)
+    set_stable_transport_mode!(solver, direction < 0 ? "maccormack" : "skew-rk2")
+    return interactive_tuning(solver)
+end
+
+function apply_interactive_tuning!(solver::StableFluidsSolver, value::InteractiveTuningValue)
+    value isa String || throw(ArgumentError("Stable Fluids tuning value must be a string"))
+    set_stable_transport_mode!(solver, value)
+    return interactive_tuning(solver)
+end
+
 function set_reynolds!(solver::StableFluidsSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))

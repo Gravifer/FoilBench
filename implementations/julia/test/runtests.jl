@@ -852,9 +852,11 @@ end
     @test reynolds(model.solver) == scenario.reynolds
     @test toggle_tracer_mode!(model) == :material
     @test !toggle_vorticity!(model)
+    @test toggle_diagnostics!(model) == Symbol("every-step")
     toggled = snapshot(model)
     @test occursin("tracers=material", toggled.status)
     @test occursin("vort=off", toggled.status)
+    @test toggled.diagnostic_mode == Symbol("every-step")
     @test toggle_pause!(model)
     @test update!(model).time == updated.time
     @test accepted(switch_solver!(model, "lbm-d2q9"))
@@ -875,6 +877,8 @@ end
     reset_viewer!(model)
     @test diagnostics(model.solver).values["time"] == 0.0
     @test model.status_message == "reset"
+    @test snapshot(model).diagnostic_mode == Symbol("every-step")
+    @test viewer_session_state(model).diagnostic_mode == Symbol("every-step")
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "maccormack"
     model.presentation.diagnostic_interval = 10.0
     @test model.metrics_warming
@@ -902,8 +906,7 @@ end
     update!(model)
     recovery_time = model.simulation_time
     stable = model.solver::StableFluidsSolver{Float64}
-    set_stable_transport_mode!(stable, "skew-rk2")
-    model.stable_transport = "skew-rk2"
+    @test adjust_tuning!(model, 0.05)
     stable.u[1, 1] = NaN
     recover_solver!(model, ArgumentError("injected finite-state failure"))
     @test model.recovery_count == 1
@@ -1080,7 +1083,7 @@ end
         release_angle!(model)
         updated = update!(model)
         @test updated.time == 2 * scenario.output_dt
-        @test all(isfinite, updated.velocity)
+        @test all(isfinite, export_state(model.solver).velocity)
     end
 end
 

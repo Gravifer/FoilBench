@@ -31,6 +31,7 @@ include("viewer/worker.jl")
 
 export AbstractFlowSolver
 export ImportOutcome
+export InteractiveTuning
 export NumericalFailure
 export accepted
 export CanonicalFlowState
@@ -64,6 +65,9 @@ export cell_to_faces
 export cell_velocity
 export control_at
 export diagnostics
+export interactive_tuning
+export adjust_interactive_tuning!
+export apply_interactive_tuning!
 export dimension
 export divergence_l2
 export dx
@@ -136,6 +140,7 @@ export ToggleCropCommand
 export TogglePauseCommand
 export ToggleTracerCommand
 export ToggleVorticityCommand
+export ToggleDiagnosticsCommand
 export TracerState
 export PresentationState
 export ViewerModel
@@ -159,7 +164,6 @@ export run_chaotic_wake_case
 export temporal_spectral_statistics
 export advance_tracers!
 export adjust_reynolds!
-export adjust_blend!
 export adjust_tuning!
 export close!
 export enqueue!
@@ -181,6 +185,8 @@ export toggle_crop!
 export toggle_pause!
 export toggle_tracer_mode!
 export toggle_vorticity!
+export toggle_diagnostics!
+export viewer_session_state
 export update!
 export reset_reynolds!
 export reset_viewer!
