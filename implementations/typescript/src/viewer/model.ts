@@ -25,6 +25,7 @@ export class ViewerModel {
   public paused = false;
   public appliedCommand = 0;
   public revision = 0;
+  public playbackRate = 1;
   private manualAngle: number | null = null;
   private angularVelocity = 0;
   private dragging = false;
@@ -34,6 +35,8 @@ export class ViewerModel {
   private lastReport: StepReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, warnings: []};
   private failureTimes: number[] = [];
   private diagnosticsReady = false;
+  private diagnosticsCache: Readonly<Record<string, number>> = {};
+  private nextDiagnosticsTime = 0;
   private vorticityCache = new Float32Array();
   private nextVorticityTime = 0;
   private stableTransport: "maccormack" | "semi-lagrangian" | "skew-rk2";
@@ -91,7 +94,9 @@ export class ViewerModel {
   }
 
   public setReynolds(reynolds: number): void {
-    this.solver.setReynolds(reynolds);
+    const selected = Math.max(50, Math.min(100_000, reynolds));
+    this.solver.setReynolds(selected);
+    this.playbackRate = Math.max(0.5, Math.min(2, (selected / this.scenario.reynolds) ** Math.log10(1.5)));
     this.status = "Re changed; warming";
     this.clearMeasurements();
   }
@@ -128,6 +133,7 @@ export class ViewerModel {
     this.dragging = false;
     this.poseSamples = [];
     this.presentation.poseOnly = false;
+    this.playbackRate = 1;
     this.failureTimes = [];
     this.tracers.reseed();
     this.status = "warming";
@@ -146,7 +152,7 @@ export class ViewerModel {
       this.status = `switch rejected: ${outcome.reason}; source retained`;
       return false;
     }
-    const validationDt = this.scenario.outputDt;
+    const validationDt = this.scenario.outputDt * this.playbackRate;
     let report: StepReport;
     try {
       report = incoming.advance(this.control(this.time + validationDt), validationDt);
@@ -166,17 +172,16 @@ export class ViewerModel {
     return true;
   }
 
-  public step(): void {
-    if (this.paused) return;
-    const dt = this.scenario.outputDt;
-    const started = performance.now();
+  public step(): number {
+    if (this.paused) return 0;
+    const dt = this.scenario.outputDt * this.playbackRate;
     let report: StepReport;
     try {
       report = this.solver.advance(this.control(this.time + dt), dt);
     } catch (error) {
       if (error instanceof NumericalFailure) this.recover(error);
       else { this.paused = true; this.status = `unexpected ${error instanceof Error ? error.name : "failure"}; paused`; }
-      return;
+      return 0;
     }
     this.lastReport = report;
     this.time += report.advancedDt;
@@ -186,17 +191,21 @@ export class ViewerModel {
       this.status = "motion resolved; running";
     } else this.status = "running";
     try {
-      const displayScale = Math.min(1.5, Math.max(0.5, 1 + 0.5 * Math.log10(this.solver.reynolds / Math.max(this.scenario.reynolds, 1))));
-      this.tracers.advance(this.solver, dt, displayScale);
+      this.tracers.advance(this.solver, dt, 1);
     } catch (error) {
       this.status = `presentation failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
     }
-    const elapsed = Math.max((performance.now() - started) / 1000, 1e-9);
-    const instantRate = 1 / elapsed; const instantThroughput = dt / elapsed;
-    this.stepRate = this.stepRate === null ? instantRate : 0.85 * this.stepRate + 0.15 * instantRate;
-    this.simulatedPerWall = this.simulatedPerWall === null ? instantThroughput : 0.85 * this.simulatedPerWall + 0.15 * instantThroughput;
     const stableCutoff = performance.now() - 3000;
     this.failureTimes = this.failureTimes.filter((value) => value >= stableCutoff);
+    return report.advancedDt;
+  }
+
+  public recordOwnerCycle(advancedDt: number, elapsedSeconds: number): void {
+    if (!(advancedDt > 0) || !(elapsedSeconds > 0) || !Number.isFinite(elapsedSeconds)) return;
+    const instantRate = 1 / elapsedSeconds;
+    const instantThroughput = advancedDt / elapsedSeconds;
+    this.stepRate = this.stepRate === null ? instantRate : 0.85 * this.stepRate + 0.15 * instantRate;
+    this.simulatedPerWall = this.simulatedPerWall === null ? instantThroughput : 0.85 * this.simulatedPerWall + 0.15 * instantThroughput;
   }
 
   private recover(error: NumericalFailure): void {
@@ -226,6 +235,7 @@ export class ViewerModel {
       const outcome = replacement.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0});
       if (outcome.status === "rejected") throw new NumericalFailure("projection_failure", `fresh state import rejected: ${outcome.reason}`);
       this.solver = replacement;
+      if (resetReynolds) this.playbackRate = 1;
       this.manualAngle = angle;
       this.angularVelocity = 0;
       this.poseSamples = [];
@@ -243,6 +253,8 @@ export class ViewerModel {
     this.stepRate = null;
     this.simulatedPerWall = null;
     this.diagnosticsReady = false;
+    this.diagnosticsCache = {};
+    this.nextDiagnosticsTime = this.time;
     this.lastReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, warnings: []};
     this.invalidateVorticity();
   }
@@ -265,21 +277,36 @@ export class ViewerModel {
     return output.slice();
   }
 
+  private diagnostics(): Readonly<Record<string, number>> {
+    if (!this.diagnosticsReady) return {};
+    if (Object.keys(this.diagnosticsCache).length > 0 && this.time < this.nextDiagnosticsTime) return this.diagnosticsCache;
+    try {
+      this.diagnosticsCache = this.solver.diagnostics().values;
+      this.nextDiagnosticsTime = this.time + 0.1;
+    } catch (error) {
+      this.status = `diagnostic failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
+    }
+    return this.diagnosticsCache;
+  }
+
   public snapshot(): ViewerSnapshot {
     const {nx, ny} = dimensions(this.scenario.domain);
     const bounds = bounds2d(this.scenario.domain);
     const angle = this.control(this.time).angleDegrees;
-    const diagnostics = this.diagnosticsReady ? this.solver.diagnostics().values : {};
+    const diagnostics = this.diagnostics();
+    let vorticity: Float32Array = new Float32Array();
+    try { vorticity = this.vorticity(); }
+    catch (error) { this.status = `vorticity failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
     this.revision += 1;
     return {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
-      solverId: this.solver.info.id, time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds,
+      solverId: this.solver.info.id, time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds, playbackRate: this.playbackRate,
       paused: this.paused, vorticityVisible: this.vorticityVisible, cropEnabled: this.cropEnabled, tracerMode: this.tracers.mode,
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,
       maxSpeed: this.lastReport.maxSpeed, diagnostics, status: this.status,
       recoveryEpoch: this.presentation.recoveryEpoch, poseOnly: this.presentation.poseOnly, scheduleActive: this.manualAngle === null, solverTuning: this.solver instanceof StableFluidsSolver ? `adv=${this.stableTransport}` : this.solver instanceof PicFlipSolver ? `FLIP=${this.picBlend.toFixed(2)}` : "TRT",
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions: this.tracers.positions.slice(),
-      pathSegments: this.tracers.segments(), vorticity: this.vorticity(), foilOutline: new NacaFoil(this.scenario.foil).outline(angle),
+      pathSegments: this.tracers.segments(), vorticity, foilOutline: new NacaFoil(this.scenario.foil).outline(angle),
     };
   }
 }

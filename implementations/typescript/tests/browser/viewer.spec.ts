@@ -29,6 +29,7 @@ test("viewer renders and applies interactive controls", async ({page}) => {
 
   await page.keyboard.press("Space");
   await page.waitForTimeout(100);
+  await expect(overlay).toContainText("PAUSED");
   const pausedText = await overlay.textContent();
   await page.waitForTimeout(150);
   expect(await overlay.textContent()).toBe(pausedText);
