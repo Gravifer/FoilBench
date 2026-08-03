@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/drag-calibration-result.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "language", "scenario", "resolution", "runs"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "contract_id": {"const": "foilbench-phase2-v1-drag-calibration"},
+    "language": {"enum": ["python", "julia", "typescript"]},
+    "scenario": {"type": "string", "minLength": 1},
+    "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"type": "integer"}, {"type": "integer"}], "items": false},
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "solver", "trace", "tip_speed_cap", "smoothing_window_seconds", "max_measured_tip_speed_ratio", "max_solver_tip_speed_ratio", "successful_steps", "requested_steps", "failure_reason", "maximum_flow_speed", "wall_seconds"],
+      "properties": {
+        "candidate": {"type": "string"},
+        "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+        "trace": {"enum": ["gentle", "fast", "violent"]},
+        "tip_speed_cap": {"type": "number", "exclusiveMinimum": 0},
+        "smoothing_window_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "max_measured_tip_speed_ratio": {"type": "number", "minimum": 0},
+        "max_solver_tip_speed_ratio": {"type": "number", "minimum": 0},
+        "successful_steps": {"type": "integer", "minimum": 0},
+        "requested_steps": {"type": "integer", "minimum": 1},
+        "failure_reason": {"type": ["string", "null"]},
+        "maximum_flow_speed": {"type": "number", "minimum": 0},
+        "wall_seconds": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

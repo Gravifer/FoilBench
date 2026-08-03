@@ -9,6 +9,8 @@ import {parseScenario} from "./core/scenario.js";
 import {validateDocument} from "./core/scenario.js";
 import {runChaoticWakeCase, runChaosSensitivity} from "./experiments/chaoticWake.js";
 import type {ExperimentEnvelope, WakeCase} from "./experiments/chaoticWake.js";
+import {runDragCalibration} from "./experiments/dragCalibration.js";
+import type {DragCandidate, DragTrace} from "./experiments/dragCalibration.js";
 
 const solvers = [
   {id: "stable-fluids", display_name: "Stable Fluids (MAC)", dimensions: [2]},
@@ -65,6 +67,36 @@ async function main(args: readonly string[]): Promise<void> {
     for (const result of results) validateDocument(result, resultSchema);
     const text = JSON.stringify(command === "chaos-sweep" ? results : results[0], null, 2);
     if (args[2] !== undefined) await writeFile(resolve(repositoryRoot, args[2]), text, "utf8");
+    console.log(text);
+    return;
+  }
+  if (command === "drag-calibration") {
+    const fixture = JSON.parse(await readFile(join(repositoryRoot, "spec/conformance/drag-calibration.json"), "utf8")) as {
+      scenario: string;
+      resolution: readonly [number, number];
+      solvers: readonly SolverId[];
+      candidates: readonly DragCandidate[];
+      traces: readonly DragTrace[];
+    };
+    const scenario = parseScenario(
+      JSON.parse(await readFile(join(repositoryRoot, fixture.scenario), "utf8")) as unknown,
+      JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object,
+    );
+    const result = {
+      schema_version: 1,
+      contract_id: "foilbench-phase2-v1-drag-calibration",
+      language: "typescript",
+      scenario: fixture.scenario,
+      resolution: fixture.resolution,
+      runs: fixture.candidates.flatMap((candidate) =>
+        fixture.solvers.flatMap((solverId) =>
+          fixture.traces.map((trace) => runDragCalibration(scenario, fixture.resolution, solverId, candidate, trace)),
+        ),
+      ),
+    };
+    validateDocument(result, JSON.parse(await readFile(join(repositoryRoot, "spec/drag-calibration-result.schema.json"), "utf8")) as object);
+    const text = JSON.stringify(result, null, 2);
+    if (args[1] !== undefined) await writeFile(resolve(repositoryRoot, args[1]), text, "utf8");
     console.log(text);
     return;
   }

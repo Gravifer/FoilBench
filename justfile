@@ -125,3 +125,21 @@ ts-chaos-sweep:
 # Run TypeScript's paired chaotic-wake trajectory experiment.
 ts-chaos-paired:
     npm --prefix implementations/typescript run chaos:paired
+
+# Run the matched raw-solver drag calibration in Python.
+py-drag-calibration:
+    uv run --project implementations/python python experiments/drag_calibration.py --output results/drag-calibration-python.json
+
+# Run the matched raw-solver drag calibration in Julia.
+jl-drag-calibration:
+    julia --project=implementations/julia implementations/julia/experiments/drag_calibration.jl results/drag-calibration-julia.json
+
+# Run the matched raw-solver drag calibration in TypeScript.
+ts-drag-calibration:
+    npm --prefix implementations/typescript run drag:calibration -- results/drag-calibration-typescript.json
+
+# Run all three language drag calibrations for the policy decision gate.
+drag-calibration:
+    uv run --project implementations/python python experiments/drag_calibration.py --output results/drag-calibration-python.json
+    julia --project=implementations/julia implementations/julia/experiments/drag_calibration.jl results/drag-calibration-julia.json
+    npm --prefix implementations/typescript run drag:calibration -- results/drag-calibration-typescript.json

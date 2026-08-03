@@ -16,6 +16,7 @@
     "src/benchmark/runner.ts",
     "src/benchmark/previewGate.ts",
     "src/experiments/chaoticWake.ts",
+    "src/experiments/dragCalibration.ts",
     "src/cli.ts"
   ]
 }

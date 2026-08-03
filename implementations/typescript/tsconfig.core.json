@@ -16,6 +16,7 @@
     "src/viewer/protocol.ts",
     "src/viewer/tracers.ts",
     "src/benchmark/types.ts",
-    "src/experiments/chaoticWake.ts"
+    "src/experiments/chaoticWake.ts",
+    "src/experiments/dragCalibration.ts"
   ]
 }

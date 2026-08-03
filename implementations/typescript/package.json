@@ -21,7 +21,8 @@
     "gate:preview": "tsx src/benchmark/previewGate.ts",
     "compare": "tsx src/cli.ts compare",
     "chaos:sweep": "tsx src/cli.ts chaos-sweep",
-    "chaos:paired": "tsx src/cli.ts chaos-paired"
+    "chaos:paired": "tsx src/cli.ts chaos-paired",
+    "drag:calibration": "tsx src/cli.ts drag-calibration"
   },
   "dependencies": {
     "ajv": "^8.17.1",

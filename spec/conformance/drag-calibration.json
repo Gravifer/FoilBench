@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario": "scenarios/airfoil/chaotic-experimental.json",
+  "resolution": [80, 48],
+  "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+  "candidates": [
+    {"id": "conservative", "tip_speed_cap": 4.0, "smoothing_window_seconds": 0.08},
+    {"id": "current", "tip_speed_cap": 8.0, "smoothing_window_seconds": 0.08},
+    {"id": "long-window", "tip_speed_cap": 8.0, "smoothing_window_seconds": 0.12},
+    {"id": "generous", "tip_speed_cap": 12.0, "smoothing_window_seconds": 0.08}
+  ],
+  "traces": [
+    {"id": "gentle", "samples": [[0.0, 0.0], [0.1, 4.0], [0.2, 8.0], [0.3, 12.0], [0.4, 16.0], [0.5, 20.0]]},
+    {"id": "fast", "samples": [[0.0, 0.0], [0.0125, 10.0], [0.025, 20.0], [0.05, 30.0]]},
+    {"id": "violent", "samples": [[0.0, 0.0], [0.01, 30.0], [0.02, -30.0], [0.03, 30.0], [0.04, -30.0], [0.05, 30.0], [0.06, -30.0], [0.08, 0.0]]}
+  ]
+}
