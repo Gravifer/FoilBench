@@ -9,6 +9,12 @@ Runs are matched by physical domain, resolution, Reynolds number, control
 history, precision, seed, and simulated duration. Each solver may choose the
 stable internal timestep and number of substeps it needs.
 
+Every result JSON repeats that identity directly: benchmark-matrix and
+scenario IDs, bounds and periodic axes, resolution, Reynolds number,
+freestream, foil specification, control history, requested and actually
+simulated duration, output interval, precision, and seed. Comparisons therefore
+do not have to infer physical equivalence from a filename or scenario ID.
+
 The runner records cold initialization and the first cold solver step
 separately from steady-state work. Initialization-time compilation is therefore
 visible in `initialization_seconds`, while first-use compilation is visible in

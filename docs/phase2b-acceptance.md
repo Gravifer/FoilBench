@@ -1,6 +1,7 @@
 # Phase 2B acceptance
 
-Phase 2B has completed its automated engineering acceptance. It adds an
+Phase 2B completed and revalidated its automated engineering acceptance on
+2026-08-03 after an extensive parallel QA and remediation pass. It adds an
 independent strict TypeScript implementation; it does not load Python or Julia
 solvers. Final phase closure remains subject to the user-attention policy gate
 recorded below.
@@ -20,7 +21,8 @@ recorded below.
   tracers, batched path history, subtle vorticity, cropping, Reynolds control,
   live tuning, overlays, warm switching, and bounded recovery.
 - Chromium-native benchmark execution with startup and steady-state timing,
-  JSON/CSV output, optional canonical snapshots, and offline artifact
+  JSON/CSV output, optional canonical snapshots, wake-spectrum and recovery
+  diagnostics, self-contained matched-run identity, and offline artifact
   comparison.
 
 The accepted wake bar remains a coherent alternating vortex street. The
@@ -53,12 +55,14 @@ npm --prefix implementations/typescript run gate:preview
 ## Automated evidence
 
 - Strict TypeScript and ESLint pass.
-- The current Vitest repertoire passes shared RNG, geometry, scenario,
+- All 72 current Vitest checks pass shared RNG, geometry, scenario,
   canonical-layout, solver protocol, fidelity, recovery, and integration
   checks.
-- All twelve directed solver conversions pass at both `4°` and `25°`.
-- Uniform flow, Taylor–Green, Poiseuille, NACA 0012, and dynamic diagnostic
-  cases pass the matched tolerances.
+- All six directed solver conversions pass at both `4°` and `25°`, directly
+  and through the viewer model.
+- Uniform flow, Taylor–Green, quantitative Poiseuille profile/wall leakage,
+  quantitative NACA 0012 symmetry/penetration, and actual dynamic NACA 2412
+  diagnostic cases pass the matched tolerances.
 - Unsupported thin-3D scenarios fail through the solver capability boundary.
 - The production Vite build and live Chromium interaction smoke test pass.
 - A snapshot-enabled browser matrix emits schema-valid manifests and
@@ -69,12 +73,24 @@ npm --prefix implementations/typescript run gate:preview
 
   | Solver | Median step latency | Approximate steps/s |
   | --- | ---: | ---: |
-  | Stable Fluids | `18.2–19.7 ms` | `51–55` |
-  | D2Q9 TRT LBM | `58.7–71.8 ms` | `14–17` |
-  | Blended PIC/FLIP | `60.4–78.3 ms` | `13–17` |
+  | Stable Fluids | `18.0–20.9 ms` | `48–56` |
+  | D2Q9 TRT LBM | `78.1–85.8 ms` | `12–13` |
+  | Blended PIC/FLIP | `80.9–84.2 ms` | `12` |
 
 Generated benchmark results remain gitignored; rerun the gate for current
 machine evidence.
+
+## Post-acceptance QA remediation
+
+The initial automated acceptance record preceded a deliberately blind,
+high-effort review. That review found substantive defects despite the green
+suite: incomplete canonical validation, nominal rather than physical LBM time
+scaling, a nonconventional PIC/FLIP update, unbounded worker publication,
+solver-only interactive timing, superficial airfoil/channel assertions, and
+missing matched wake/recovery evidence. The focused correction commits are
+`da7feb8`, `3ba149d`, `09288e8`, `7773965`, `0314c7e`, `a408952`, and
+`d304a52`. The evidence above was regenerated after those corrections; it is
+not inherited from the superseded implementation.
 
 ## Open user-policy acceptance
 

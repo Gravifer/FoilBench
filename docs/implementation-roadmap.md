@@ -142,8 +142,9 @@ parity.
 
 ## Phase 2B: TypeScript
 
-**Status:** Automated implementation and acceptance complete on
-`codex/phase2b-typescript`; final interactive-policy acceptance remains open.
+**Status:** Automated implementation and acceptance revalidated on 2026-08-03
+on `codex/phase2b-typescript`; final interactive-policy acceptance remains
+open.
 
 Phase 2B begins by formalizing the shared solver, scenario, benchmark-matrix,
 canonical-manifest, result, and PCG32 contracts. It then adds an independent
@@ -172,10 +173,35 @@ Chromium-native benchmark runner. The matched validation suite, production
 build, browser interaction smoke test, and snapshot interoperability checks
 pass. Python successfully loads the TypeScript C-order canonical artifacts.
 
+An extensive parallel QA pass after the initial acceptance record found that
+several tests and implementation shortcuts were weaker than those claims. The
+resulting corrective sequence is complete:
+
+- canonical imports validate full metadata and array payloads and roll back
+  atomically on failure (`da7feb8`);
+- LBM uses exact requested physical intervals, a true D2Q9 Mach cap, adaptive
+  temporal scaling, both interpolated bounce-back branches, channel-wall
+  reflection, and zeroed solid-cell canonical velocity (`3ba149d`, `0314c7e`);
+- PIC/FLIP now performs the conventional particle-to-MAC transfer, projection,
+  PIC/FLIP update, and RK2 particle advection cycle with deterministic
+  occupancy maintenance and transactional rollback (`09288e8`);
+- the Web Worker coalesces pointer poses, permits only one transferable
+  snapshot in flight, publishes latest-only revisions, isolates presentation
+  failures, and reports owner-loop rather than solver-only timing (`7773965`);
+- quantitative Poiseuille and NACA 0012 checks, all viewer-level warm-swap
+  directions, wake spectra, and excursion recovery evidence replace the
+  earlier superficial coverage (`0314c7e`, `a408952`); and
+- benchmark artifacts now carry a self-contained matched-run identity across
+  all three languages (`d304a52`).
+
+The revalidated TypeScript suite contains 72 passing Vitest checks plus the
+live Chromium smoke test. The shared Julia suite contains 577 passing checks
+after adopting the expanded result contract.
+
 The reproducible `preview-gate.json` matrix passed three repetitions for every
 solver at `160 x 96`. Observed median step ranges on the development machine
-were `18.2–19.7 ms` for Stable Fluids, `58.7–71.8 ms` for LBM, and
-`60.4–78.3 ms` for PIC/FLIP. See
+were `18.0–20.9 ms` for Stable Fluids, `78.1–85.8 ms` for LBM, and
+`80.9–84.2 ms` for PIC/FLIP after the conventional solver corrections. See
 [Phase 2B acceptance](phase2b-acceptance.md) for commands and evidence.
 
 A coherent alternating vortex street remains sufficient wake behavior. The

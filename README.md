@@ -4,8 +4,9 @@ FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
 is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 2A is complete with an independent Julia implementation. The Phase 2B
-TypeScript implementation and automated acceptance are complete, with its
-documented interactive-policy gate still awaiting user evaluation. Rust/WASM
+TypeScript implementation and automated acceptance are complete and revalidated
+after extensive QA, with its documented interactive-policy gate still awaiting
+user evaluation. Rust/WASM
 follows in Phase 3.
 
 The implementations share scenarios, schemas, and result artifacts. They do
