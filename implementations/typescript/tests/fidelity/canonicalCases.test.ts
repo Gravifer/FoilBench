@@ -44,14 +44,24 @@ describe("matched canonical fidelity cases", () => {
     expect(solver.diagnostics().values["kinetic_energy"]).toBeLessThanOrEqual(initialEnergy * 1.01);
   });
 
-  for (const solverId of solverIds) it(`${solverId} keeps the Poiseuille center faster than its walls`, async () => {
-    const scenario = await validationScenario("poiseuille.json", [32, 16], 0.1); const solver = advance(solverId, scenario, 5); const velocity = solver.exportState().velocity; const [nx, ny] = scenario.domain.resolution as readonly [number, number]; let center = 0; let walls = 0;
+  for (const solverId of solverIds) it(`${solverId} retains the Poiseuille profile without wall-normal leakage`, async () => {
+    const scenario = await validationScenario("poiseuille.json", [64, 32], 0.2); const solver = advance(solverId, scenario, 10); const velocity = solver.exportState().velocity; const [nx, ny] = scenario.domain.resolution as readonly [number, number]; const [[x0, x1], [y0, y1]] = scenario.domain.bounds as readonly [readonly [number, number], readonly [number, number]]; void x0; void x1; const radius = 0.5 * (y1 - y0); const centerY = 0.5 * (y0 + y1); let center = 0; let walls = 0; let squareError = 0; let normalLeakage = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const py = y0 + (y + 0.5) * (y1 - y0) / ny; const expected = 1.5 * (1 - ((py - centerY) / radius) ** 2); const cell = y * nx + x; squareError += ((velocity[2 * cell] ?? 0) - expected) ** 2; if (y === 0 || y + 1 === ny) normalLeakage = Math.max(normalLeakage, Math.abs(velocity[2 * cell + 1] ?? 0)); }
     for (let x = 0; x < nx; x += 1) { center += velocity[2 * (Math.floor(ny / 2) * nx + x)] ?? 0; walls += 0.5 * ((velocity[2 * x] ?? 0) + (velocity[2 * ((ny - 1) * nx + x)] ?? 0)); }
     expect(center / nx).toBeGreaterThan(walls / nx);
+    expect(Math.sqrt(squareError / (nx * ny))).toBeLessThan(0.25);
+    expect(normalLeakage).toBeLessThan(0.01);
   });
 
-  for (const solverId of solverIds) it(`${solverId} reports finite dynamic-airfoil metrics`, async () => {
-    const scenario = await validationScenario("naca0012-zero.json", [40, 24], 0.1); const diagnostics = advance(solverId, scenario, 6).diagnostics().values;
+  for (const solverId of solverIds) it(`${solverId} keeps zero-angle NACA 0012 symmetric and impenetrable`, async () => {
+    const scenario = await validationScenario("naca0012-zero.json", [80, 48], 0.5); const solver = advance(solverId, scenario, 30); const velocity = solver.exportState().velocity; const [nx, ny] = scenario.domain.resolution as readonly [number, number]; let squareError = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const mirror = (ny - y - 1) * nx + x; const cell = y * nx + x; squareError += ((velocity[2 * cell] ?? 0) - (velocity[2 * mirror] ?? 0)) ** 2 + ((velocity[2 * cell + 1] ?? 0) + (velocity[2 * mirror + 1] ?? 0)) ** 2; }
+    expect(Math.sqrt(squareError / velocity.length)).toBeLessThan(0.01);
+    expect(solver.diagnostics().values["solid_leakage"]).toBeLessThan(1e-6);
+  });
+
+  for (const solverId of solverIds) it(`${solverId} reports finite dynamic NACA 2412 metrics`, async () => {
+    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const document = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown; const loaded = parseScenario(document, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [32, 20]}, duration: 0.05}; const diagnostics = advance(solverId, scenario, 3).diagnostics().values;
     for (const name of ["wake_width", "recirculation_area", "enstrophy", "solid_leakage"] as const) expect(Number.isFinite(diagnostics[name])).toBe(true);
   });
 });
