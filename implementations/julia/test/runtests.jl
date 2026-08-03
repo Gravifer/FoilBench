@@ -1101,6 +1101,7 @@ end
 
     result = Dict{String,Any}(
         "schema_version" => 1,
+        "benchmark_matrix_id" => "test",
         "scenario_id" => "test",
         "language" => "julia",
         "solver" => "stable-fluids",
@@ -1108,6 +1109,15 @@ end
         "machine" => Dict{String,Any}(),
         "precision" => "float64",
         "resolution" => [16, 8],
+        "bounds" => [[-1.0, 1.0], [-0.5, 0.5]],
+        "periodic_axes" => ["x"],
+        "reynolds" => 100.0,
+        "freestream" => [1.0, 0.0],
+        "foil" => Dict("naca" => "0012", "chord" => 1.0, "pivot" => [0.0, 0.0]),
+        "control_history" => [Dict("time" => 0.0, "angle_degrees" => 0.0)],
+        "requested_duration" => 0.1,
+        "simulated_duration" => 0.1,
+        "output_dt" => 0.01,
         "seed" => 0,
         "initialization_seconds" => 0.1,
         "cold_step_seconds" => 0.2,

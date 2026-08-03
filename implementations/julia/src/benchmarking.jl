@@ -195,6 +195,7 @@ function run_benchmark_matrix(
             particle_count = get(diagnostic_values, "particle_count", 0.0)
             result = Dict{String,Any}(
                 "schema_version" => 1,
+                "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,
                 "language" => "julia",
                 "solver" => solver_id,
@@ -202,6 +203,22 @@ function run_benchmark_matrix(
                 "machine" => _machine_description(),
                 "precision" => T === Float32 ? "float32" : "float64",
                 "resolution" => collect(resolution),
+                "bounds" => [collect(pair) for pair in scenario.domain.bounds],
+                "periodic_axes" => string.(scenario.domain.periodic_axes),
+                "reynolds" => Float64(scenario.reynolds),
+                "freestream" => collect(scenario.freestream),
+                "foil" => Dict{String,Any}(
+                    "naca" => scenario.foil.naca,
+                    "chord" => Float64(scenario.foil.chord),
+                    "pivot" => collect(scenario.foil.pivot),
+                ),
+                "control_history" => [Dict{String,Any}(
+                    "time" => Float64(keyframe.time),
+                    "angle_degrees" => Float64(keyframe.angle_degrees),
+                ) for keyframe in scenario.controls],
+                "requested_duration" => matrix.duration,
+                "simulated_duration" => Float64(elapsed_simulated),
+                "output_dt" => Float64(scenario.output_dt),
                 "seed" => Int(scenario.seed),
                 "initialization_seconds" => initialization_seconds,
                 "cold_step_seconds" => cold_step_seconds,

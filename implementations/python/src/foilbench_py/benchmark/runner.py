@@ -282,6 +282,7 @@ def run_matrix(
                 )
                 result: dict[str, object] = {
                     "schema_version": 1,
+                    "benchmark_matrix_id": matrix.id,
                     "scenario_id": scenario.id,
                     "language": "python",
                     "solver": solver_id,
@@ -289,6 +290,22 @@ def run_matrix(
                     "machine": _machine(),
                     "precision": scenario.precision,
                     "resolution": list(scenario.domain.resolution),
+                    "bounds": [list(pair) for pair in scenario.domain.bounds],
+                    "periodic_axes": list(scenario.domain.periodic_axes),
+                    "reynolds": scenario.reynolds,
+                    "freestream": list(scenario.freestream),
+                    "foil": {
+                        "naca": scenario.foil.naca,
+                        "chord": scenario.foil.chord,
+                        "pivot": list(scenario.foil.pivot),
+                    },
+                    "control_history": [
+                        {"time": keyframe.time, "angle_degrees": keyframe.angle_degrees}
+                        for keyframe in scenario.controls
+                    ],
+                    "requested_duration": matrix.duration,
+                    "simulated_duration": elapsed_simulated,
+                    "output_dt": scenario.output_dt,
                     "seed": scenario.seed,
                     "initialization_seconds": initialization_seconds,
                     "cold_step_seconds": cold_step_seconds,
