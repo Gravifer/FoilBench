@@ -1087,6 +1087,71 @@ end
     end
 end
 
+@testset "Shared viewer transcript" begin
+    transcript_path = joinpath(REPOSITORY_ROOT, "spec", "conformance", "viewer-basic.json")
+    transcript = JSON3.read(read(transcript_path, String))
+    scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(transcript.scenario)))
+    model = ViewerModel(scenario; solver_id = String(transcript.solver))
+    stopped = false
+    last_sequence = 0
+    for action in transcript.actions
+        sequence = Int(action.sequence)
+        @test sequence > last_sequence
+        last_sequence = sequence
+        previous_time = model.simulation_time
+        kind = String(action.kind)
+        if kind == "step"
+            update!(model)
+        elseif kind == "pause"
+            toggle_pause!(model)
+        elseif kind == "reset"
+            reset_viewer!(model)
+        elseif kind == "set-angle"
+            set_angle!(model, Float64(action.angle_degrees), Float64(action.at))
+        elseif kind == "release-angle"
+            release_angle!(model)
+        elseif kind == "switch"
+            switch_solver!(model, String(action.solver))
+        elseif kind == "set-reynolds"
+            set_reynolds!(model, Float64(action.reynolds))
+        elseif kind == "toggle-diagnostics"
+            toggle_diagnostics!(model)
+        elseif kind == "shutdown"
+            stopped = true
+        else
+            error("unsupported transcript action: $kind")
+        end
+        expected = action.expect
+        state = viewer_session_state(model)
+        if haskey(expected, :phase)
+            @test String(stopped ? :stopped : state.phase) == String(expected.phase)
+        end
+        if haskey(expected, :motion_mode)
+            @test String(state.motion_mode) == String(expected.motion_mode)
+        end
+        if haskey(expected, :diagnostic_mode)
+            @test String(state.diagnostic_mode) == String(expected.diagnostic_mode)
+        end
+        if haskey(expected, :schedule_active)
+            @test state.schedule_active == Bool(expected.schedule_active)
+        end
+        if haskey(expected, :angle_degrees)
+            angle = something(model.manual_angle, control_at(model.scenario, model.simulation_time).angle_degrees)
+            @test angle ≈ Float64(expected.angle_degrees)
+        end
+        if haskey(expected, :time_relation)
+            relation = String(expected.time_relation)
+            if relation == "advanced"
+                @test model.simulation_time > previous_time
+            elseif relation == "unchanged"
+                @test model.simulation_time == previous_time
+            elseif relation == "reset"
+                @test model.simulation_time == 0
+            end
+        end
+    end
+end
+
 @testset "Julia benchmark contracts" begin
     matrix = load_benchmark_matrix(joinpath(REPOSITORY_ROOT, "benchmark-matrices", "test.json"))
     @test matrix.id == "test"
