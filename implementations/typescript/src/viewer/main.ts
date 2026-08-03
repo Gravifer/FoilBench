@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type {SolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
-import type {ViewerCommandInput, ViewerEvent, ViewerSnapshot} from "./protocol.js";
+import type {ViewerCommandInput, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
 
 const app = document.querySelector<HTMLDivElement>("#app"); if (app === null) throw new Error("viewer root is missing");
 const renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x000000); app.append(renderer.domElement);
@@ -11,13 +11,14 @@ const points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMate
 const foil = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0xe7eef8})); scene.add(foil);
 const vortCanvas = document.createElement("canvas"); const vortTexture = new THREE.CanvasTexture(vortCanvas); vortTexture.minFilter = THREE.LinearFilter; vortTexture.magFilter = THREE.LinearFilter; const vortMaterial = new THREE.MeshBasicMaterial({map: vortTexture, transparent: true, opacity: 0.35, depthWrite: false}); const vortPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), vortMaterial); vortPlane.position.z = -1; scene.add(vortPlane);
 const overlay = document.createElement("div"); overlay.id = "foilbench-overlay"; overlay.style.cssText = "position:absolute;left:16px;top:12px;white-space:pre;color:#eee;font-size:13px;pointer-events:none;text-shadow:0 1px 2px #000"; app.append(overlay);
-const help = document.createElement("div"); help.id = "foilbench-help"; help.style.cssText = "position:absolute;left:16px;bottom:12px;color:#bbb;font-size:12px;pointer-events:none"; help.textContent = "1/2/3 solver  left-drag foil  Space pause  R reset  +/- Re  0 Re reset  [/] tuning  V vorticity  T tracers  C crop"; app.append(help);
+const help = document.createElement("div"); help.id = "foilbench-help"; help.style.cssText = "position:absolute;left:16px;bottom:12px;color:#bbb;font-size:12px;pointer-events:none"; help.textContent = "1/2/3 solver  left-drag foil  Space pause  R reset  +/- Re  0 Re reset  [/] tuning  V vorticity  D diagnostics  T tracers  C crop"; app.append(help);
 
-let sequence = 0; let latest: ViewerSnapshot | null = null; let renderedRevision = -1; let shutdownAcknowledged = false;
+let sequence = 0; let latest: ViewerSnapshot | null = null; let latestStatus: ViewerStatusEvent | null = null; let statusGeneration = 0; let renderedStatusGeneration = -1; let renderedRevision = -1; let shutdownAcknowledged = false;
 const worker = new Worker(new URL("../worker/simulationWorker.ts", import.meta.url), {type: "module"});
 const send = (command: ViewerCommandInput): void => { sequence += 1; worker.postMessage({...command, sequence}); };
 worker.onmessage = (event: MessageEvent<ViewerEvent>): void => {
   if (event.data.kind === "shutdown-ack") { shutdownAcknowledged = true; return; }
+  if (event.data.kind === "status") { latestStatus = event.data; statusGeneration += 1; return; }
   latest = event.data;
 };
 worker.onerror = (event): void => { overlay.textContent = `worker failure: ${event.message}`; };
@@ -26,8 +27,19 @@ const query = new URLSearchParams(location.search); const scenarioUrl = query.ge
 const [scenarioDocument, schemaDocument] = await Promise.all([fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>), fetch(schemaUrl).then(async (response) => response.json() as Promise<object>)]); const scenario = parseScenario(scenarioDocument, schemaDocument); const selected = (query.get("solver") ?? "stable-fluids") as SolverId; send({kind: "initialize", scenario, solverId: selected});
 
 function updateGeometry(geometry: THREE.BufferGeometry, values: Float32Array): void {
-  const xyz = new Float32Array(3 * values.length / 2); for (let index = 0; index < values.length / 2; index += 1) { xyz[3 * index] = values[2 * index] ?? 0; xyz[3 * index + 1] = values[2 * index + 1] ?? 0; }
-  geometry.setAttribute("position", new THREE.BufferAttribute(xyz, 3));
+  const vertexCount = values.length / 2;
+  let attribute = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (attribute === undefined || attribute.array.length < 3 * vertexCount) {
+    let capacity = 3;
+    while (capacity < 3 * vertexCount) capacity *= 2;
+    attribute = new THREE.BufferAttribute(new Float32Array(capacity), 3);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute("position", attribute);
+  }
+  const xyz = attribute.array as Float32Array;
+  for (let index = 0; index < vertexCount; index += 1) { xyz[3 * index] = values[2 * index] ?? 0; xyz[3 * index + 1] = values[2 * index + 1] ?? 0; xyz[3 * index + 2] = 0; }
+  attribute.needsUpdate = true;
+  geometry.setDrawRange(0, vertexCount);
 }
 
 function updateCamera(snapshot: ViewerSnapshot): void {
@@ -44,12 +56,15 @@ function updateVorticity(snapshot: ViewerSnapshot): void {
 
 function updateOverlay(snapshot: ViewerSnapshot): void {
   const rate = snapshot.stepRate === null ? "warming" : snapshot.stepRate.toFixed(1).padStart(5); const throughput = snapshot.simulatedPerWall === null ? "warming" : snapshot.simulatedPerWall.toFixed(2).padStart(5); const metric = (name: string): string => snapshot.diagnostics[name]?.toFixed(3) ?? "—"; const effective = snapshot.diagnostics["effective_reynolds"]; const effectiveText = effective === undefined ? "" : `  Re_eff=${effective.toFixed(0).padStart(6)}`; const paused = snapshot.paused ? "  PAUSED" : "";
-  overlay.textContent = `${snapshot.solverId}  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${snapshot.angleDegrees.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(snapshot.recoveryEpoch)}  motion=${snapshot.poseOnly ? "pose-only" : "resolved"}\n${snapshot.status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  view=${snapshot.cropEnabled ? "cropped" : "full"}`;
+  const control = latestStatus !== null && latestStatus.revision >= snapshot.revision ? latestStatus : null;
+  const status = control?.status ?? snapshot.status; const phase = control?.phase ?? snapshot.phase; const recovery = control?.recoveryEpoch ?? snapshot.recoveryEpoch;
+  overlay.textContent = `${snapshot.solverId}  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${snapshot.angleDegrees.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(recovery)}  motion=${snapshot.motionMode}  phase=${phase}\n${status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  diag=${snapshot.diagnosticMode}  view=${snapshot.cropEnabled ? "cropped" : "full"}`;
 }
 
 function draw(): void {
   requestAnimationFrame(draw); const snapshot = latest; if (snapshot === null) return;
-  if (snapshot.revision !== renderedRevision) { renderedRevision = snapshot.revision; updateCamera(snapshot); updateGeometry(paths.geometry, snapshot.pathSegments); updateGeometry(points.geometry, snapshot.tracerPositions); updateGeometry(foil.geometry, snapshot.foilOutline); updateVorticity(snapshot); updateOverlay(snapshot); worker.postMessage({kind: "snapshot-consumed", revision: snapshot.revision}); }
+  if (snapshot.revision !== renderedRevision) { renderedRevision = snapshot.revision; updateCamera(snapshot); updateGeometry(paths.geometry, snapshot.pathSegments); updateGeometry(points.geometry, snapshot.tracerPositions); updateGeometry(foil.geometry, snapshot.foilOutline); updateVorticity(snapshot); updateOverlay(snapshot); renderedStatusGeneration = statusGeneration; worker.postMessage({kind: "snapshot-consumed", revision: snapshot.revision}); }
+  else if (statusGeneration !== renderedStatusGeneration) { renderedStatusGeneration = statusGeneration; updateOverlay(snapshot); }
   renderer.render(scene, camera);
 }
 draw();
@@ -64,5 +79,7 @@ renderer.domElement.addEventListener("pointermove", (event) => { if (dragging) q
 renderer.domElement.addEventListener("pointerup", releasePointer); renderer.domElement.addEventListener("pointercancel", releasePointer); renderer.domElement.addEventListener("lostpointercapture", (event) => { if (dragging) releasePointer(event); });
 
 window.addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); renderedRevision = -1; });
-window.addEventListener("keydown", (event: KeyboardEvent) => { if (event.key === " ") send({kind: "pause"}); else if (event.key.toLowerCase() === "r") send({kind: "reset"}); else if (event.key === "1" || event.key === "2" || event.key === "3") send({kind: "switch", solverId: (["stable-fluids", "lbm-d2q9", "pic-flip"] as const)[Number(event.key) - 1] ?? "stable-fluids"}); else if (event.key === "+" || event.key === "=") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) * 10 ** 0.25}); else if (event.key === "-") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) / 10 ** 0.25}); else if (event.key === "0") send({kind: "set-reynolds", reynolds: scenario.reynolds}); else if (event.key === "[") send({kind: "adjust-tuning", amount: -1}); else if (event.key === "]") send({kind: "adjust-tuning", amount: 1}); else if (event.key.toLowerCase() === "v") send({kind: "toggle-vorticity"}); else if (event.key.toLowerCase() === "t") send({kind: "toggle-tracers"}); else if (event.key.toLowerCase() === "c") send({kind: "toggle-crop"}); });
-window.addEventListener("beforeunload", () => { if (!shutdownAcknowledged) send({kind: "shutdown"}); });
+window.addEventListener("keydown", (event: KeyboardEvent) => { if (event.key === " ") send({kind: "pause"}); else if (event.key.toLowerCase() === "r") send({kind: "reset"}); else if (event.key === "1" || event.key === "2" || event.key === "3") send({kind: "switch", solverId: (["stable-fluids", "lbm-d2q9", "pic-flip"] as const)[Number(event.key) - 1] ?? "stable-fluids"}); else if (event.key === "+" || event.key === "=") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) * 10 ** 0.25}); else if (event.key === "-") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) / 10 ** 0.25}); else if (event.key === "0") send({kind: "set-reynolds", reynolds: scenario.reynolds}); else if (event.key === "[") send({kind: "adjust-tuning", amount: -1}); else if (event.key === "]") send({kind: "adjust-tuning", amount: 1}); else if (event.key.toLowerCase() === "v") send({kind: "toggle-vorticity"}); else if (event.key.toLowerCase() === "d") send({kind: "toggle-diagnostics"}); else if (event.key.toLowerCase() === "t") send({kind: "toggle-tracers"}); else if (event.key.toLowerCase() === "c") send({kind: "toggle-crop"}); });
+document.addEventListener("visibilitychange", () => { send({kind: "visibility", visible: document.visibilityState === "visible"}); });
+const requestShutdown = (): void => { if (!shutdownAcknowledged) send({kind: "shutdown"}); };
+window.addEventListener("pagehide", requestShutdown); window.addEventListener("beforeunload", requestShutdown);

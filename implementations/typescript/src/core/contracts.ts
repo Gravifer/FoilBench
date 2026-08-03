@@ -64,6 +64,14 @@ export interface StepReport {
 }
 
 export interface Diagnostics {readonly values: Readonly<Record<string, number>>; readonly warnings: readonly string[]}
+export type InteractiveTuningValue = string | number;
+export interface InteractiveTuning {
+  readonly id: string;
+  readonly label: string;
+  readonly value: InteractiveTuningValue;
+  readonly canDecrease: boolean;
+  readonly canIncrease: boolean;
+}
 export type ImportReason = "none" | "excessive_velocity" | "nonfinite_state" | "incompatible_geometry" | "incompatible_domain" | "projection_failure" | "invalid_density" | "unsupported_conversion";
 export interface ImportOutcome {readonly status: "accepted" | "rejected"; readonly reason: ImportReason; readonly discardedState: readonly string[]; readonly warnings: readonly string[]}
 
@@ -93,6 +101,9 @@ export interface FlowSolver {
   exportState(): CanonicalFlowState;
   importState(state: CanonicalFlowState, control: ControlState): ImportOutcome;
   diagnostics(): Diagnostics;
+  interactiveTuning?(): InteractiveTuning;
+  adjustInteractiveTuning?(direction: -1 | 1): InteractiveTuning;
+  applyInteractiveTuning?(value: InteractiveTuningValue): InteractiveTuning;
 }
 
 export class NumericalFailure extends Error {

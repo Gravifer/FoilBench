@@ -1,65 +1,121 @@
 /// <reference lib="webworker" />
-import type {SnapshotConsumed, ViewerCommand, ViewerEvent, ViewerSnapshot} from "../viewer/protocol.js";
+import type {SnapshotConsumed, ViewerCommand, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "../viewer/protocol.js";
 import {ViewerModel} from "../viewer/model.js";
+import type {ViewerSnapshotStorage} from "../viewer/model.js";
 
 type PoseCommand = Extract<ViewerCommand, {readonly kind: "set-angle"}>;
 
+const minimumCycleMilliseconds = 1000 / 60;
 let model: ViewerModel | null = null;
+let snapshotStorage: ViewerSnapshotStorage | null = null;
 let scheduled = false;
 let shuttingDown = false;
+let visible = true;
 let pendingPose: PoseCommand | null = null;
 let poseFlushScheduled = false;
-let snapshotInFlight = false;
+let snapshotInFlightRevision: number | null = null;
 let publishPending = false;
 let lastCycleWall: number | null = null;
+let lastStatusSignature = "";
 
 function postSnapshot(snapshot: ViewerSnapshot): void {
-  const buffers = [snapshot.tracerPositions.buffer, snapshot.pathSegments.buffer, snapshot.vorticity.buffer, snapshot.foilOutline.buffer];
-  postMessage(snapshot satisfies ViewerEvent, {transfer: buffers});
+  postMessage(snapshot satisfies ViewerEvent);
+}
+
+function publishStatus(force = false): void {
+  if (model === null || shuttingDown) return;
+  const session = model.sessionState();
+  const signature = `${String(model.appliedCommand)}|${session.phase}|${model.status}|${String(session.recoveryEpoch)}|${session.recoveryReason ?? ""}|${session.recoveryStage ?? ""}`;
+  if (!force && signature === lastStatusSignature) return;
+  lastStatusSignature = signature;
+  postMessage({
+    kind: "status",
+    revision: model.revision,
+    appliedCommand: model.appliedCommand,
+    phase: session.phase,
+    status: model.status,
+    recoveryEpoch: session.recoveryEpoch,
+    recoveryReason: session.recoveryReason,
+    recoveryStage: session.recoveryStage,
+  } satisfies ViewerStatusEvent);
 }
 
 function publish(): void {
   if (model === null || shuttingDown) return;
-  if (snapshotInFlight) { publishPending = true; return; }
+  publishStatus();
+  if (!visible) { publishPending = true; return; }
+  if (snapshotInFlightRevision !== null) { publishPending = true; return; }
   try {
-    const snapshot = model.snapshot(); snapshotInFlight = true; publishPending = false; postSnapshot(snapshot);
+    const snapshot = model.snapshot(snapshotStorage ?? undefined);
+    postSnapshot(snapshot);
+    snapshotInFlightRevision = snapshot.revision;
+    publishPending = false;
   } catch (error) {
+    snapshotInFlightRevision = null;
     model.status = `snapshot failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
+    publishStatus(true);
   }
 }
 
 function applyPendingPose(): void {
   if (model === null || pendingPose === null) return;
-  const command = pendingPose; pendingPose = null; model.appliedCommand = command.sequence; model.setAngle(command.angleDegrees, command.timestamp);
+  const command = pendingPose;
+  pendingPose = null;
+  model.appliedCommand = command.sequence;
+  model.setAngle(command.angleDegrees, command.timestamp);
 }
 
-function schedule(): void {
+function schedule(delayMilliseconds = 0): void {
   if (scheduled || model === null || model.paused || shuttingDown) return;
-  scheduled = true; setTimeout(loop, 0);
+  scheduled = true;
+  setTimeout(loop, Math.max(0, delayMilliseconds));
 }
 
 function loop(): void {
-  scheduled = false; if (model === null || model.paused || shuttingDown) return;
-  applyPendingPose(); const advanced = model.step(); const completed = performance.now();
-  if (advanced > 0 && lastCycleWall !== null) model.recordOwnerCycle(advanced, Math.max((completed - lastCycleWall) / 1000, 1e-9));
-  lastCycleWall = completed; publish(); schedule();
+  scheduled = false;
+  if (model === null || model.paused || shuttingDown) return;
+  const started = performance.now();
+  try {
+    applyPendingPose();
+    const advanced = model.step();
+    const completed = performance.now();
+    if (advanced > 0 && lastCycleWall !== null) model.recordOwnerCycle(advanced, Math.max((completed - lastCycleWall) / 1000, 1e-9));
+    lastCycleWall = completed;
+    publish();
+    schedule(Math.max(0, minimumCycleMilliseconds - (completed - started)));
+  } catch (error) {
+    model.paused = true;
+    model.status = `owner failure: ${error instanceof Error ? error.name : "unknown"}; paused`;
+    publishStatus(true);
+    publish();
+  }
 }
 
 function queuePose(command: PoseCommand): void {
   pendingPose = command;
   if (poseFlushScheduled) return;
   poseFlushScheduled = true;
-  setTimeout(() => { poseFlushScheduled = false; if (shuttingDown) return; applyPendingPose(); publish(); schedule(); }, 0);
+  setTimeout(() => {
+    poseFlushScheduled = false;
+    if (shuttingDown) return;
+    applyPendingPose();
+    publish();
+    schedule();
+  }, 0);
 }
 
 function acknowledgeSnapshot(message: SnapshotConsumed): void {
-  void message.revision; snapshotInFlight = false;
+  if (message.revision !== snapshotInFlightRevision) return;
+  snapshotInFlightRevision = null;
   if (publishPending) publish();
 }
 
 function shutdown(command: Extract<ViewerCommand, {readonly kind: "shutdown"}>): void {
-  applyPendingPose(); shuttingDown = true; if (model !== null) model.appliedCommand = command.sequence;
-  postMessage({kind: "shutdown-ack", appliedCommand: command.sequence} satisfies ViewerEvent); close();
+  applyPendingPose();
+  shuttingDown = true;
+  if (model !== null) model.appliedCommand = command.sequence;
+  postMessage({kind: "shutdown-ack", appliedCommand: command.sequence} satisfies ViewerEvent);
+  close();
 }
 
 self.onmessage = (event: MessageEvent<ViewerCommand | SnapshotConsumed>): void => {
@@ -67,11 +123,21 @@ self.onmessage = (event: MessageEvent<ViewerCommand | SnapshotConsumed>): void =
   if (command.kind === "snapshot-consumed") { acknowledgeSnapshot(command); return; }
   if (command.kind === "shutdown") { shutdown(command); return; }
   if (shuttingDown) return;
-  if (command.kind === "initialize") { model = new ViewerModel(command.scenario, command.solverId); model.appliedCommand = command.sequence; lastCycleWall = performance.now(); publish(); schedule(); return; }
+  if (command.kind === "initialize") {
+    model = new ViewerModel(command.scenario, command.solverId);
+    snapshotStorage = model.createSnapshotStorage();
+    model.appliedCommand = command.sequence;
+    lastCycleWall = performance.now();
+    publishStatus(true);
+    publish();
+    schedule();
+    return;
+  }
   if (model === null) return;
   if (command.kind === "set-angle") { queuePose(command); return; }
   try {
-    applyPendingPose(); model.appliedCommand = command.sequence;
+    applyPendingPose();
+    model.appliedCommand = command.sequence;
     if (command.kind === "pause") { model.paused = !model.paused; lastCycleWall = model.paused ? null : performance.now(); }
     else if (command.kind === "reset") { model.reset(); lastCycleWall = performance.now(); }
     else if (command.kind === "switch") { model.switchSolver(command.solverId); lastCycleWall = performance.now(); }
@@ -80,9 +146,14 @@ self.onmessage = (event: MessageEvent<ViewerCommand | SnapshotConsumed>): void =
     else if (command.kind === "adjust-tuning") model.adjustSolverTuning(command.amount);
     else if (command.kind === "toggle-vorticity") model.toggleVorticity();
     else if (command.kind === "toggle-crop") model.toggleCrop();
+    else if (command.kind === "toggle-diagnostics") model.toggleDiagnostics();
+    else if (command.kind === "visibility") { visible = command.visible; if (visible) publishPending = true; }
     else model.tracers.mode = model.tracers.mode === "display" ? "flow" : "display";
   } catch (error) {
-    model.paused = true; model.status = `command failure: ${error instanceof Error ? error.name : "unknown"}; paused`;
+    model.paused = true;
+    model.status = `command failure: ${error instanceof Error ? error.name : "unknown"}; paused`;
   }
-  publish(); schedule();
+  publishStatus(true);
+  publish();
+  schedule();
 };

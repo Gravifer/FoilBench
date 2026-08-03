@@ -1,11 +1,9 @@
-import type {ControlState, FlowSolver, Scenario, SolverId, StepReport} from "../core/contracts.js";
+import type {ControlState, FlowSolver, ImportReason, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {createSolver} from "../solvers/factory.js";
-import {PicFlipSolver} from "../solvers/picFlip.js";
-import {StableFluidsSolver} from "../solvers/stableFluids.js";
 import type {ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
@@ -14,8 +12,30 @@ interface PresentationState {
   cropEnabled: boolean;
   status: string;
   recoveryEpoch: number;
+  recoveryReason: string | null;
+  recoveryStage: string | null;
   poseOnly: boolean;
+  diagnosticMode: "cadenced" | "every-step";
 }
+
+export interface ViewerSessionState {
+  readonly phase: "warming" | "running" | "paused" | "failed";
+  readonly motionMode: "resolved" | "pose-only";
+  readonly diagnosticMode: "cadenced" | "every-step";
+  readonly scheduleActive: boolean;
+  readonly recoveryEpoch: number;
+  readonly recoveryReason: string | null;
+  readonly recoveryStage: string | null;
+}
+
+export interface ViewerSnapshotStorage {
+  readonly tracerPositions: Float32Array;
+  readonly pathSegments: Float32Array;
+  readonly vorticity: Float32Array;
+  readonly foilOutline: Float32Array;
+}
+
+export type SolverFactory = (id: SolverId) => FlowSolver;
 
 export class ViewerModel {
   public solver: FlowSolver;
@@ -39,22 +59,24 @@ export class ViewerModel {
   private nextDiagnosticsTime = 0;
   private vorticityCache = new Float32Array();
   private nextVorticityTime = 0;
-  private stableTransport: "maccormack" | "semi-lagrangian" | "skew-rk2";
-  private picBlend: number;
+  private readonly tuningValues = new Map<SolverId, InteractiveTuningValue>();
+  private readonly presentationFoil: NacaFoil;
 
-  public constructor(public readonly scenario: Scenario, solverId: SolverId) {
-    this.solver = createSolver(solverId);
+  public constructor(public readonly scenario: Scenario, solverId: SolverId, private readonly solverFactory: SolverFactory = createSolver) {
+    this.solver = this.solverFactory(solverId);
     this.solver.initialize(scenario, scenario.seed);
-    this.stableTransport = scenario.solverOptions.stableAdvection ?? "maccormack";
-    this.picBlend = scenario.solverOptions.picFlipBlend ?? 0.95;
-    this.configureSolver(this.solver);
+    this.rememberTuning(this.solver);
     this.tracers = new TracerSystem(scenario);
+    this.presentationFoil = new NacaFoil(scenario.foil);
     this.presentation = {
       vorticityVisible: true,
       cropEnabled: scenario.solverOptions.viewerCropDefault ?? false,
       status: "warming",
       recoveryEpoch: 0,
+      recoveryReason: null,
+      recoveryStage: null,
       poseOnly: false,
+      diagnosticMode: "cadenced",
     };
   }
 
@@ -103,36 +125,52 @@ export class ViewerModel {
 
   public toggleVorticity(): void { this.vorticityVisible = !this.vorticityVisible; }
   public toggleCrop(): void { if ((this.scenario.solverOptions.viewerCropCells ?? 0) > 0) this.cropEnabled = !this.cropEnabled; }
+  public toggleDiagnostics(): void {
+    this.presentation.diagnosticMode = this.presentation.diagnosticMode === "cadenced" ? "every-step" : "cadenced";
+    this.nextDiagnosticsTime = this.time;
+    this.nextVorticityTime = this.time;
+  }
   public adjustSolverTuning(amount: -1 | 1): void {
-    if (this.solver instanceof StableFluidsSolver) {
-      this.stableTransport = amount < 0 ? "maccormack" : "skew-rk2";
-      this.solver.setTransportMode(this.stableTransport);
-      this.status = `transport=${this.stableTransport}`;
-    } else if (this.solver instanceof PicFlipSolver) {
-      this.picBlend = Math.max(0, Math.min(1, this.picBlend + 0.05 * amount));
-      this.solver.setBlend(this.picBlend);
-      this.status = `FLIP=${this.picBlend.toFixed(2)}`;
-    } else this.status = "no live tuning for LBM";
+    if (this.solver.adjustInteractiveTuning === undefined) { this.status = "no live tuning available"; return; }
+    const tuning = this.solver.adjustInteractiveTuning(amount);
+    this.tuningValues.set(this.solver.info.id, tuning.value);
+    this.status = `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
   }
 
-  private configureSolver(solver: FlowSolver): void {
-    if (solver instanceof StableFluidsSolver) solver.setTransportMode(this.stableTransport);
-    if (solver instanceof PicFlipSolver) solver.setBlend(this.picBlend);
+  private rememberTuning(solver: FlowSolver): void {
+    const tuning = solver.interactiveTuning?.();
+    if (tuning !== undefined) this.tuningValues.set(solver.info.id, tuning.value);
+  }
+
+  private applySavedTuning(solver: FlowSolver): void {
+    const saved = this.tuningValues.get(solver.info.id);
+    if (saved !== undefined) solver.applyInteractiveTuning?.(saved);
+    else this.rememberTuning(solver);
+  }
+
+  private formatTuningValue(value: InteractiveTuningValue): string {
+    return typeof value === "number" ? value.toFixed(2) : value;
+  }
+
+  private tuningLabel(): string {
+    const tuning = this.solver.interactiveTuning?.();
+    return tuning === undefined ? "tuning=none" : `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
   }
 
   public reset(): void {
     const id = this.solver.info.id;
-    this.solver = createSolver(id);
+    this.solver = this.solverFactory(id);
     this.solver.initialize(this.scenario, this.scenario.seed);
-    this.stableTransport = this.scenario.solverOptions.stableAdvection ?? "maccormack";
-    this.picBlend = this.scenario.solverOptions.picFlipBlend ?? 0.95;
-    this.configureSolver(this.solver);
+    this.tuningValues.clear();
+    this.rememberTuning(this.solver);
     this.time = 0;
     this.manualAngle = null;
     this.angularVelocity = 0;
     this.dragging = false;
     this.poseSamples = [];
     this.presentation.poseOnly = false;
+    this.presentation.recoveryReason = null;
+    this.presentation.recoveryStage = null;
     this.playbackRate = 1;
     this.failureTimes = [];
     this.tracers.reseed();
@@ -142,15 +180,14 @@ export class ViewerModel {
 
   public switchSolver(id: SolverId): boolean {
     if (id === this.solver.info.id) return true;
-    const incoming = createSolver(id);
+    const incoming = this.solverFactory(id);
     incoming.initialize(this.scenario, this.scenario.seed);
-    this.configureSolver(incoming);
+    this.applySavedTuning(incoming);
     incoming.setReynolds(this.solver.reynolds);
     const importedAt = this.control(this.time);
     const outcome = incoming.importState(this.solver.exportState(), importedAt);
     if (outcome.status === "rejected") {
-      this.status = `switch rejected: ${outcome.reason}; source retained`;
-      return false;
+      return this.rejectOrFallback(id, outcome.reason === "none" ? "unsupported_conversion" : outcome.reason);
     }
     const validationDt = this.scenario.outputDt * this.playbackRate;
     let report: StepReport;
@@ -158,8 +195,7 @@ export class ViewerModel {
       report = incoming.advance(this.control(this.time + validationDt), validationDt);
     } catch (error) {
       if (error instanceof NumericalFailure) {
-        this.status = `switch rejected: ${error.reason}; source retained`;
-        return false;
+        return this.rejectOrFallback(id, error.reason);
       }
       throw error;
     }
@@ -169,6 +205,38 @@ export class ViewerModel {
     this.status = `switched; discarded ${outcome.discardedState.join(", ")}`;
     this.clearMeasurements();
     this.diagnosticsReady = true;
+    return true;
+  }
+
+  private rejectOrFallback(id: SolverId, reason: Exclude<ImportReason, "none">): boolean {
+    const transient = reason === "excessive_velocity" || reason === "nonfinite_state" || reason === "projection_failure" || reason === "invalid_density";
+    if (!transient) { this.status = `warm import rejected (${reason}); source retained`; return false; }
+    const angle = this.control(this.time).angleDegrees;
+    const incoming = this.solverFactory(id);
+    try {
+      const freshScenario: Scenario = {...this.scenario, controls: [{time: 0, angleDegrees: angle}]};
+      incoming.initialize(freshScenario, this.scenario.seed);
+      this.applySavedTuning(incoming);
+      incoming.setReynolds(this.solver.reynolds);
+      const fresh = incoming.exportState();
+      const control = {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0};
+      const outcome = incoming.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, control);
+      if (outcome.status === "rejected") throw new NumericalFailure("projection_failure", `fresh destination rejected: ${outcome.reason}`);
+    } catch (error) {
+      const detail = error instanceof NumericalFailure ? error.reason : error instanceof Error ? error.name : "unknown";
+      this.status = `warm import rejected (${reason}); fresh destination failed (${detail}); source retained`;
+      return false;
+    }
+    this.solver = incoming;
+    this.manualAngle = angle;
+    this.angularVelocity = 0;
+    this.poseSamples = [];
+    this.presentation.recoveryEpoch += 1;
+    this.presentation.recoveryReason = reason;
+    this.presentation.recoveryStage = "warm-import-fallback";
+    this.tracers.reseed();
+    this.status = `fresh destination reason=${reason}; stage=warm-import-fallback; private-state-discarded`;
+    this.clearMeasurements();
     return true;
   }
 
@@ -225,11 +293,11 @@ export class ViewerModel {
     }
     const requestedReynolds = resetReynolds ? this.scenario.reynolds : this.solver.reynolds;
     const angle = this.control(this.time).angleDegrees;
-    const replacement = createSolver(this.solver.info.id);
+    const replacement = this.solverFactory(this.solver.info.id);
     try {
       const freshScenario: Scenario = {...this.scenario, controls: [{time: 0, angleDegrees: angle}]};
       replacement.initialize(freshScenario, this.scenario.seed);
-      this.configureSolver(replacement);
+      this.applySavedTuning(replacement);
       replacement.setReynolds(requestedReynolds);
       const fresh = replacement.exportState();
       const outcome = replacement.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0});
@@ -240,8 +308,10 @@ export class ViewerModel {
       this.angularVelocity = 0;
       this.poseSamples = [];
       this.presentation.recoveryEpoch += 1;
+      this.presentation.recoveryReason = error.reason;
+      this.presentation.recoveryStage = "ordinary-step";
       this.tracers.reseed();
-      this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
+      this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=ordinary-step discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
       this.clearMeasurements();
     } catch (recoveryError) {
       this.paused = true;
@@ -263,7 +333,7 @@ export class ViewerModel {
 
   private vorticity(): Float32Array {
     if (!this.vorticityVisible) return new Float32Array();
-    if (this.vorticityCache.length > 0 && this.time < this.nextVorticityTime) return this.vorticityCache.slice();
+    if (this.presentation.diagnosticMode === "cadenced" && this.vorticityCache.length > 0 && this.time < this.nextVorticityTime) return this.vorticityCache;
     const {nx, ny, dx, dy} = dimensions(this.scenario.domain);
     const velocity = this.solver.exportState().velocity;
     const output = new Float32Array(nx * ny);
@@ -274,12 +344,12 @@ export class ViewerModel {
     }
     this.vorticityCache = output;
     this.nextVorticityTime = this.time + 0.1;
-    return output.slice();
+    return output;
   }
 
   private diagnostics(): Readonly<Record<string, number>> {
     if (!this.diagnosticsReady) return {};
-    if (Object.keys(this.diagnosticsCache).length > 0 && this.time < this.nextDiagnosticsTime) return this.diagnosticsCache;
+    if (this.presentation.diagnosticMode === "cadenced" && Object.keys(this.diagnosticsCache).length > 0 && this.time < this.nextDiagnosticsTime) return this.diagnosticsCache;
     try {
       this.diagnosticsCache = this.solver.diagnostics().values;
       this.nextDiagnosticsTime = this.time + 0.1;
@@ -289,14 +359,44 @@ export class ViewerModel {
     return this.diagnosticsCache;
   }
 
-  public snapshot(): ViewerSnapshot {
+  public sessionState(): ViewerSessionState {
+    const failed = this.paused && (this.status.includes("failed") || this.status.includes("failure"));
+    return {
+      phase: failed ? "failed" : this.paused ? "paused" : this.diagnosticsReady ? "running" : "warming",
+      motionMode: this.presentation.poseOnly ? "pose-only" : "resolved",
+      diagnosticMode: this.presentation.diagnosticMode,
+      scheduleActive: this.manualAngle === null,
+      recoveryEpoch: this.presentation.recoveryEpoch,
+      recoveryReason: this.presentation.recoveryReason,
+      recoveryStage: this.presentation.recoveryStage,
+    };
+  }
+
+  public createSnapshotStorage(): ViewerSnapshotStorage {
+    const {nx, ny} = dimensions(this.scenario.domain);
+    return {
+      tracerPositions: new Float32Array(this.tracers.positions.length),
+      pathSegments: new Float32Array(this.tracers.maximumSegmentScalars),
+      vorticity: new Float32Array(nx * ny),
+      foilOutline: new Float32Array(384),
+    };
+  }
+
+  public snapshot(storage?: ViewerSnapshotStorage): ViewerSnapshot {
     const {nx, ny} = dimensions(this.scenario.domain);
     const bounds = bounds2d(this.scenario.domain);
     const angle = this.control(this.time).angleDegrees;
     const diagnostics = this.diagnostics();
+    const session = this.sessionState();
     let vorticity: Float32Array = new Float32Array();
     try { vorticity = this.vorticity(); }
     catch (error) { this.status = `vorticity failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
+    const tracerPositions = storage?.tracerPositions ?? new Float32Array(this.tracers.positions.length);
+    tracerPositions.set(this.tracers.positions);
+    const pathSegments = this.tracers.segments(storage?.pathSegments);
+    const vorticityOutput = storage === undefined ? vorticity.slice() : storage.vorticity.subarray(0, vorticity.length);
+    if (storage !== undefined) vorticityOutput.set(vorticity);
+    const foilOutline = this.presentationFoil.outline(angle, 192, storage?.foilOutline);
     this.revision += 1;
     return {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
@@ -304,9 +404,11 @@ export class ViewerModel {
       paused: this.paused, vorticityVisible: this.vorticityVisible, cropEnabled: this.cropEnabled, tracerMode: this.tracers.mode,
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,
       maxSpeed: this.lastReport.maxSpeed, diagnostics, status: this.status,
-      recoveryEpoch: this.presentation.recoveryEpoch, poseOnly: this.presentation.poseOnly, scheduleActive: this.manualAngle === null, solverTuning: this.solver instanceof StableFluidsSolver ? `adv=${this.stableTransport}` : this.solver instanceof PicFlipSolver ? `FLIP=${this.picBlend.toFixed(2)}` : "TRT",
-      resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions: this.tracers.positions.slice(),
-      pathSegments: this.tracers.segments(), vorticity, foilOutline: new NacaFoil(this.scenario.foil).outline(angle),
+      recoveryEpoch: session.recoveryEpoch, recoveryReason: session.recoveryReason, recoveryStage: session.recoveryStage,
+      poseOnly: this.presentation.poseOnly, motionMode: session.motionMode, scheduleActive: session.scheduleActive,
+      phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.tuningLabel(),
+      resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,
+      pathSegments, vorticity: vorticityOutput, foilOutline,
     };
   }
 }

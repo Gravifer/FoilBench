@@ -1,13 +1,20 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "allowImportingTsExtensions": false,
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
+    "lib": ["ES2022"],
     "types": ["node"],
     "noEmit": false
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/viewer/**/*.ts", "src/worker/**/*.ts"]
+  "include": [
+    "src/core/**/*.ts",
+    "src/solvers/**/*.ts",
+    "src/benchmark/types.ts",
+    "src/benchmark/runner.ts",
+    "src/benchmark/previewGate.ts",
+    "src/cli.ts"
+  ]
 }

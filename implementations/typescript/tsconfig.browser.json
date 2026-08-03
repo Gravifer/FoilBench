@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "dist-types/browser",
+    "rootDir": "src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": []
+  },
+  "references": [{"path": "./tsconfig.core.json"}],
+  "include": [
+    "src/viewer/main.ts",
+    "src/worker/**/*.ts",
+    "src/benchmark/browserEntry.ts",
+    "src/benchmark/benchmarkWorker.ts"
+  ]
+}

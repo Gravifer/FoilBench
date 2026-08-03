@@ -1,13 +1,14 @@
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, Scenario, SolverInfo, StepReport} from "../../src/core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, ImportReason, Scenario, SolverId, SolverInfo, StepReport} from "../../src/core/contracts.js";
 import {NumericalFailure} from "../../src/core/contracts.js";
 import {parseScenario} from "../../src/core/scenario.js";
+import {createSolver} from "../../src/solvers/factory.js";
 import {ViewerModel} from "../../src/viewer/model.js";
 
 class FailingSolver implements FlowSolver {
-  public constructor(private readonly inner: FlowSolver, private readonly error: Error) {}
+  public constructor(protected readonly inner: FlowSolver, private readonly error: Error) {}
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
   public initialize(scenario: Scenario, seed: number): void { this.inner.initialize(scenario, seed); }
@@ -17,6 +18,15 @@ class FailingSolver implements FlowSolver {
   public exportState(): CanonicalFlowState { return this.inner.exportState(); }
   public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { return this.inner.importState(state, control); }
   public diagnostics(): Diagnostics { return this.inner.diagnostics(); }
+}
+
+class RejectingImportSolver extends FailingSolver {
+  public constructor(inner: FlowSolver, private readonly reason: Exclude<ImportReason, "none">) { super(inner, new Error("unused")); }
+  public override advance(control: ControlState, targetDt: number): StepReport { return this.inner.advance(control, targetDt); }
+  public override importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
+    void state; void control;
+    return {status: "rejected", reason: this.reason, discardedState: [], warnings: []};
+  }
 }
 
 async function scenario(): Promise<Scenario> {
@@ -71,5 +81,40 @@ describe("interactive recovery semantics", () => {
     expect(model.paused).toBe(false);
     model.solver = new FailingSolver(model.solver, numericalFailure()); model.step();
     expect(model.paused).toBe(true);
+  });
+
+  it("attempts one fresh destination after a transient warm-import rejection", async () => {
+    let destinationCreations = 0;
+    const factory = (id: SolverId): FlowSolver => {
+      const solver = createSolver(id);
+      if (id === "lbm-d2q9" && destinationCreations++ === 0) return new RejectingImportSolver(solver, "nonfinite_state");
+      return solver;
+    };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory); model.step();
+    const completedTime = model.time; const tracers = model.tracers.positions.slice();
+    expect(model.switchSolver("lbm-d2q9")).toBe(true);
+    const snapshot = model.snapshot();
+    expect(destinationCreations).toBe(2);
+    expect(snapshot.solverId).toBe("lbm-d2q9");
+    expect(snapshot.time).toBe(completedTime);
+    expect(snapshot.recoveryEpoch).toBe(1);
+    expect(snapshot.recoveryReason).toBe("nonfinite_state");
+    expect(snapshot.recoveryStage).toBe("warm-import-fallback");
+    expect(snapshot.scheduleActive).toBe(false);
+    expect([...model.tracers.positions]).not.toEqual([...tracers]);
+  });
+
+  it("retains the source and skips fallback for structural import rejection", async () => {
+    let destinationCreations = 0;
+    const factory = (id: SolverId): FlowSolver => {
+      const solver = createSolver(id);
+      if (id === "lbm-d2q9") { destinationCreations += 1; return new RejectingImportSolver(solver, "incompatible_domain"); }
+      return solver;
+    };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory); const source = model.solver;
+    expect(model.switchSolver("lbm-d2q9")).toBe(false);
+    expect(destinationCreations).toBe(1);
+    expect(model.solver).toBe(source);
+    expect(model.snapshot().recoveryEpoch).toBe(0);
   });
 });

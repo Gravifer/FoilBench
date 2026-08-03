@@ -23,6 +23,8 @@ export class TracerSystem {
     this.reseed();
   }
 
+  public get maximumSegmentScalars(): number { return 4 * this.count * (this.depth - 1); }
+
   public reseed(): void {
     for (let index = 0; index < this.count; index += 1) {
       this.generations[index] = (this.generations[index] ?? 0) + 1;
@@ -97,8 +99,10 @@ export class TracerSystem {
     this.historyGenerations.set(this.generations, this.cursor * this.count);
   }
 
-  public segments(): Float32Array {
-    const output = new Float32Array(4 * this.count * (this.depth - 1)); let cursor = 0;
+  public segments(destination?: Float32Array): Float32Array {
+    const capacity = 4 * this.count * (this.depth - 1);
+    if (destination !== undefined && destination.length < capacity) throw new RangeError("path destination is too small");
+    const output = destination ?? new Float32Array(capacity); let cursor = 0;
     for (let age = this.depth - 1; age > 0; age -= 1) {
       const older = (this.cursor - age + this.depth) % this.depth; const newer = (older + 1) % this.depth;
       for (let index = 0; index < this.count; index += 1) {
@@ -111,6 +115,6 @@ export class TracerSystem {
         cursor += 4;
       }
     }
-    return output.slice(0, cursor);
+    return output.subarray(0, cursor);
   }
 }
