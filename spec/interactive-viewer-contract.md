@@ -1,7 +1,8 @@
 # Interactive viewer contract
 
-Status: adopted baseline after Phase 2A reconciliation. The explicitly named
-open decisions remain deferred pending user evaluation.
+Status: normative component of `foilbench-phase2-v1`. Drag-resolution
+constants remain user-gated; the other former Phase 2 open decisions are now
+settled below.
 
 This document defines the observable semantics shared by FoilBench interactive
 viewers. It intentionally does not require Python's worker design, Julia's
@@ -289,7 +290,20 @@ A permitted fresh recovery has these baseline semantics:
 - never crossfade away the conversion or recovery transient.
 
 The exact policy deciding when a rejected warm import may fall back to fresh
-state is not yet settled; see [Open decisions](#open-decisions).
+state is:
+
+- `excessive_velocity`, `nonfinite_state`, `projection_failure`, and
+  `invalid_density` permit exactly one fresh-destination attempt for the
+  initiating switch command;
+- `incompatible_geometry`, `incompatible_domain`, and
+  `unsupported_conversion` retain the source without a fresh attempt;
+- a successful fresh destination becomes active, preserves time, visible
+  pose, requested Reynolds number, and presentation settings, cancels the
+  angle schedule, fully reseeds tracers, increments the recovery epoch, and
+  reports `stage=warm-import-fallback`;
+- a failed fresh attempt retains the still-valid source and does not retry,
+  pause it, or disable that solver pair; and
+- benchmarks and solver conformance tests never apply viewer fallback.
 
 ### Reynolds circuit breaker
 
@@ -363,9 +377,11 @@ When vorticity is hidden, ordinary evolution should not compute or upload a
 new vorticity field. It should also avoid repeatedly copying an unchanged full
 field into snapshots or renderer observables. Toggling it on, resetting,
 switching, or recovering should request an immediate diagnostic refresh.
-Ordinary presentation should use a configurable cadence with a target no
-slower than approximately 0.1 simulated seconds. A future diagnostic mode may
-request every-step updates.
+Ordinary presentation uses a configurable cadence with a target no slower
+than approximately 0.1 simulated seconds. Every viewer also exposes an
+every-step mode through `D`. The default is cadenced; the choice survives
+switch, recovery, and reset, and changing it requests an immediate refresh.
+Hidden vorticity remains uncomputed in either mode.
 
 Cropping is presentation-only. It changes the visible bounds but not the
 solver domain, boundaries, tracer evolution, diagnostics, or canonical state.
@@ -384,6 +400,7 @@ The overlay should expose at least:
 - internal substeps and maximum speed;
 - energy, enstrophy, divergence, and solid leakage when available;
 - tracer mode, vorticity state, crop state, and solver-specific live tuning;
+- diagnostic mode (`cadenced` or `every-step`);
 - pause, recovery, recovery epoch, pose-only, warming, and import-warning
   states.
 
@@ -423,6 +440,30 @@ observe every intermediate step. Revision numbers must still make skipped
 snapshots and newly applied commands observable. Careful locking, atomics, or
 native channels/conditions may be used; the contract does not prescribe one.
 
+Small control-plane events such as failure, recovery, pause, and shutdown
+must remain publishable when a bulk render frame is waiting for a consumer.
+Bulk ownership acknowledgements are revision-specific: stale or duplicate
+acknowledgements must not release a newer frame. A failed ownership transfer
+must restore the producer's ability to publish.
+
+Browser implementations continue simulation while hidden, subject to browser
+timer throttling, but suppress unnecessary bulk publication. They publish the
+latest revision promptly on becoming visible and never execute catch-up steps.
+All viewers attempt at most 60 requested output intervals per wall second;
+slower solvers expose their actual throughput rather than accumulating debt.
+
+## Interactive solver tuning
+
+Viewer code must not identify concrete solver classes to provide `[` and `]`
+controls. A solver may expose one optional typed tuning capability containing
+a stable tuning identifier, label, displayed value, and whether adjustment in
+either direction is currently available. Adjustment returns the new state.
+Solvers without a capability report none; the viewer then displays that no
+live tuning is available.
+
+Tuning selections are presentation/session state. They survive switching away
+and back and fresh recovery, while scenario reset restores scenario defaults.
+
 ## Conformance expectations
 
 Headless viewer tests should cover:
@@ -445,6 +486,9 @@ Headless viewer tests should cover:
 - periodic wrapping without inlet respawn or seam-crossing path segments;
 - isolation of tracer and diagnostic failures from solver recovery;
 - hidden-vorticity work suppression and immediate invalidation events;
+- cadenced and every-step diagnostic modes;
+- revision-specific bulk acknowledgements and independent status events;
+- hidden-browser publication suppression without catch-up;
 - cleared metrics and warming state after reset, switch, and recovery;
 - unsupported thin-3D capability rejection.
 
@@ -494,25 +538,6 @@ agent-actionable queue and the additional deferred experiential work are
 recorded in the
 [implementation roadmap](../docs/implementation-roadmap.md#post-reconciliation-qa-queue).
 
-### Fresh fallback after rejected warm import
-
-The project has not yet chosen one unconditional fallback rule. Before this
-section becomes normative, decide:
-
-1. Which rejection reasons permit an automatic fresh destination solver and
-   which must leave the source active or pause?
-2. How many fresh attempts are allowed before pausing?
-3. How prominently must the viewer disclose that the requested switch
-   discarded the imported flow state?
-4. How are rejected imports and fallback attempts recorded in interactive
-   telemetry, benchmark artifacts, and conformance tests?
-5. Should repeated successful-looking fallbacks that mask an incompatible
-   conversion eventually disable warm import for that solver pair?
-
-Until these questions are settled, implementations must at minimum expose the
-structured rejection, avoid infinite restart loops, preserve the user's foil
-pose, and make any discarded flow state visible in the overlay.
-
 ### Drag resolution parameters
 
 The nondimensional angular-velocity cap, smoothing-window length, and
@@ -520,8 +545,10 @@ hysteresis thresholds need matched experiments across Python and Julia. The
 observable requirements above apply now; numeric constants should not be
 frozen from either implementation's current event-loop accident.
 
-### Diagnostic cadence
+### Cross-language visual closeness
 
-Approximately `0.1` simulated seconds is the current presentation target, not
-a benchmark invariant. Profiling should determine whether the default and an
-optional every-step diagnostic mode need separate scenario settings.
+Phase 2 requires common observable behavior, controls, fidelity cases, and
+diagnostic meanings, not pixel-identical renderers. A later user-guided pass
+may define visual-closeness criteria. Agents must not turn renderer-specific
+color, line, typography, or timing choices into Phase 2 contract failures in
+the meantime.

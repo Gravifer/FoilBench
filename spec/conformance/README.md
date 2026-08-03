@@ -11,6 +11,9 @@ implementation must reproduce before solver comparisons are meaningful.
 - `canonical-state-f32-fortran/` is the same nonsymmetric state encoded with
   Fortran storage so readers cannot accidentally infer semantic axes from
   memory order.
+- `viewer-basic.json` is the first deterministic interactive command
+  transcript. All language harnesses consume the same monotonic input and
+  compare semantic state rather than renderer text or frame counts.
 
 PCG32 uses unsigned 64-bit state, multiplier `6364136223846793005`, and an
 odd increment `(stream << 1) | 1`. Initialization starts at state zero,

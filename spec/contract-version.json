@@ -1,0 +1,22 @@
+{
+  "contract_id": "foilbench-phase2-v1",
+  "revision": 1,
+  "compatibility": {
+    "breaking_changes_require_new_revision": true,
+    "backward_compatible_optional_capabilities_allowed": true
+  },
+  "normative_documents": [
+    "spec/solver-contract.md",
+    "spec/interactive-viewer-contract.md",
+    "spec/canonical-state.md",
+    "docs/benchmark-methodology.md"
+  ],
+  "schemas": [
+    "spec/scenario.schema.json",
+    "spec/canonical-manifest.schema.json",
+    "spec/result.schema.json",
+    "spec/benchmark-matrix.schema.json",
+    "spec/viewer-transcript.schema.json"
+  ],
+  "conformance_root": "spec/conformance"
+}

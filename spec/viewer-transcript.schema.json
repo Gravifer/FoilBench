@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/viewer-transcript.schema.json",
+  "title": "FoilBench deterministic viewer transcript",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "scenario", "solver", "actions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "scenario": {"type": "string", "minLength": 1},
+    "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/action"}
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "at", "kind", "expect"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "at": {"type": "number", "minimum": 0},
+        "kind": {
+          "enum": [
+            "step", "pause", "reset", "set-angle", "release-angle",
+            "switch", "set-reynolds", "toggle-diagnostics", "shutdown"
+          ]
+        },
+        "angle_degrees": {"type": "number"},
+        "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+        "reynolds": {"type": "number", "exclusiveMinimum": 0},
+        "expect": {"$ref": "#/$defs/expectation"}
+      }
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {"enum": ["warming", "running", "recovering", "paused", "failed", "stopped"]},
+        "motion_mode": {"enum": ["resolved", "pose-only"]},
+        "diagnostic_mode": {"enum": ["cadenced", "every-step"]},
+        "schedule_active": {"type": "boolean"},
+        "angle_degrees": {"type": "number"},
+        "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+        "recovery_epoch": {"type": "integer", "minimum": 0},
+        "time": {"type": "number", "minimum": 0},
+        "time_relation": {"enum": ["unchanged", "advanced", "reset"]}
+      }
+    }
+  }
+}

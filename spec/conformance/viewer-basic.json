@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "viewer-basic-controls",
+  "scenario": "scenarios/airfoil/default.json",
+  "solver": "stable-fluids",
+  "actions": [
+    {"sequence": 1, "at": 0.0, "kind": "step", "expect": {"phase": "running", "motion_mode": "resolved", "diagnostic_mode": "cadenced", "schedule_active": true, "time_relation": "advanced"}},
+    {"sequence": 2, "at": 0.01, "kind": "set-angle", "angle_degrees": 40.0, "expect": {"angle_degrees": 30.0, "schedule_active": false}},
+    {"sequence": 3, "at": 0.04, "kind": "release-angle", "expect": {"angle_degrees": 30.0, "motion_mode": "resolved"}},
+    {"sequence": 4, "at": 0.05, "kind": "toggle-diagnostics", "expect": {"diagnostic_mode": "every-step"}},
+    {"sequence": 5, "at": 0.06, "kind": "pause", "expect": {"phase": "paused", "time_relation": "unchanged"}},
+    {"sequence": 6, "at": 0.07, "kind": "pause", "expect": {"phase": "running"}},
+    {"sequence": 7, "at": 0.08, "kind": "reset", "expect": {"phase": "warming", "diagnostic_mode": "every-step", "schedule_active": true, "time_relation": "reset"}},
+    {"sequence": 8, "at": 0.09, "kind": "shutdown", "expect": {"phase": "stopped"}}
+  ]
+}

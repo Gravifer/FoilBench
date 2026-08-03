@@ -25,6 +25,22 @@ A solver provides these semantic operations:
    outcome; expected incompatibility is not an exception.
 7. `diagnostics()` returns finite named scalar values plus warnings.
 
+An implementation may additionally expose one interactive tuning capability:
+
+```text
+id: stable-advection | pic-flip-blend | implementation-defined
+label: user-facing short name
+value: user-facing current value
+can_decrease: boolean
+can_increase: boolean
+adjust(direction: -1 | +1) -> updated capability state
+```
+
+The capability is optional and is not part of benchmark identity. Viewer code
+queries it through the solver interface or a typed companion interface rather
+than identifying concrete solver classes. Phase 2 Stable Fluids exposes its
+transport selection, PIC/FLIP exposes its blend, and LBM exposes no tuning.
+
 `advance` returns requested and advanced time, internal substeps, maximum
 speed, and warnings. A successful step advances by the requested interval
 within floating-point tolerance and publishes only finite state. A failed
