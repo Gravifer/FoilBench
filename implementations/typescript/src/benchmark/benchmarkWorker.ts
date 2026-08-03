@@ -1,7 +1,38 @@
 /// <reference lib="webworker" />
+import type {FloatArray} from "../core/contracts.js";
+import {dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
+import {analyzeWakeProbe, recoveryWindow} from "../core/wake.js";
 import {createSolver} from "../solvers/factory.js";
 import type {BrowserRunRequest, BrowserRunResult} from "./types.js";
 
 postMessage({kind: "ready"});
-self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => { const request = event.data; const {scenario, solverId, duration} = request; const warnings: string[] = []; let initializationSeconds = 0; let coldStepSeconds = 0; const stepSeconds: number[] = []; let elapsed = 0; let substeps = 0; let diagnostics: Readonly<Record<string, number>> = {}; let success = true; let snapshot: BrowserRunResult["snapshot"] = null; try { const cold = createSolver(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000; const coldDt = Math.min(scenario.outputDt, duration); started = performance.now(); cold.advance(controlAt(scenario, coldDt), coldDt); coldStepSeconds = (performance.now() - started) / 1000; const solver = createSolver(solverId); solver.initialize(scenario, scenario.seed); while (elapsed < duration - 1e-12) { const dt = Math.min(scenario.outputDt, duration - elapsed); started = performance.now(); const report = solver.advance(controlAt(scenario, elapsed + dt), dt); stepSeconds.push((performance.now() - started) / 1000); elapsed += report.advancedDt; substeps += report.substeps; warnings.push(...report.warnings); } const selected = solver.diagnostics(); diagnostics = selected.values; warnings.push(...selected.warnings); const state = solver.exportState(); snapshot = {precision: state.precision, bounds: state.bounds, resolution: state.resolution, periodicAxes: state.periodicAxes, time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: state.angularVelocityDegrees, velocity: [...state.velocity], density: state.density === null ? null : [...state.density]}; } catch (error) { success = false; warnings.push(error instanceof Error ? `${error.name}: ${error.message}` : "unknown benchmark failure"); } const result: BrowserRunResult = {initializationSeconds, coldStepSeconds, stepSeconds, simulatedSeconds: elapsed, substeps, diagnostics, warnings: [...new Set(warnings)].sort(), success, snapshot}; postMessage({kind: "result", result}); };
+
+self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => {
+  const {scenario, solverId, duration} = event.data;
+  const warnings: string[] = [];
+  let initializationSeconds = 0; let coldStepSeconds = 0; const stepSeconds: number[] = [];
+  let elapsed = 0; let substeps = 0; let diagnostics: Readonly<Record<string, number>> = {}; let success = true; let snapshot: BrowserRunResult["snapshot"] = null;
+  try {
+    const cold = createSolver(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000;
+    const coldDt = Math.min(scenario.outputDt, duration); started = performance.now(); cold.advance(controlAt(scenario, coldDt), coldDt); coldStepSeconds = (performance.now() - started) / 1000;
+    const solver = createSolver(solverId); solver.initialize(scenario, scenario.seed);
+    const wakeProbe: number[] = []; const recovery = recoveryWindow(scenario, duration); let recoveryBaseline: readonly [number, number] | null = null; let recoveryElapsed: number | null = null;
+    const {dx, dy} = dimensions(scenario.domain); const xMaximum = scenario.domain.bounds[0]?.[1] ?? 0; const probe = (scenario.precision === "float32" ? new Float32Array(2) : new Float64Array(2)) as FloatArray;
+    probe[0] = Math.min((scenario.foil.pivot[0] ?? 0) + 1.5 * scenario.foil.chord, xMaximum - 0.5 * dx); probe[1] = scenario.foil.pivot[1] ?? 0;
+    while (elapsed < duration - 1e-12) {
+      const dt = Math.min(scenario.outputDt, duration - elapsed); started = performance.now(); const report = solver.advance(controlAt(scenario, elapsed + dt), dt); stepSeconds.push((performance.now() - started) / 1000); elapsed += report.advancedDt; substeps += report.substeps; warnings.push(...report.warnings);
+      if (elapsed >= 0.5 * duration) wakeProbe.push(solver.sampleVelocity(probe)[1] ?? 0);
+      if (recovery !== null) {
+        const [baselineEnd, recoveryStart] = recovery; const crossedBaseline = recoveryBaseline === null && elapsed >= baselineEnd; const observingRecovery = recoveryBaseline !== null && recoveryElapsed === null && elapsed >= recoveryStart;
+        if (crossedBaseline || observingRecovery) { const transient = solver.diagnostics().values; const wake = transient["wake_width"] ?? 0; const recirculation = transient["recirculation_area"] ?? 0; if (crossedBaseline) recoveryBaseline = [wake, recirculation]; else if (recoveryBaseline !== null && wake <= Math.max(1.25 * recoveryBaseline[0], 2 * dy) && recirculation <= Math.max(1.25 * recoveryBaseline[1], 2 * dx * dy)) recoveryElapsed = elapsed - recoveryStart; }
+      }
+    }
+    const selected = solver.diagnostics(); const measured: Record<string, number> = {...selected.values}; warnings.push(...selected.warnings);
+    if (wakeProbe.length >= 8) { const freestreamSpeed = Math.max(Math.hypot(...scenario.freestream), 1e-12); const wake = analyzeWakeProbe(wakeProbe, scenario.outputDt, scenario.foil.chord, freestreamSpeed); Object.assign(measured, {wake_probe_samples: wake.sampleCount, wake_frequency_resolution: wake.frequencyResolution, wake_transverse_rms: wake.transverseRms, wake_mixing_index: wake.transverseRms / freestreamSpeed, wake_dominant_frequency: wake.dominantFrequency, wake_strouhal_number: wake.strouhalNumber, wake_dominant_power_fraction: wake.dominantPowerFraction}); }
+    if (recovery !== null && recoveryBaseline !== null) { const observed = recoveryElapsed !== null; Object.assign(measured, {recovery_baseline_time: recovery[0], recovery_start_time: recovery[1], recovery_observed: Number(observed), recovery_elapsed: recoveryElapsed ?? duration - recovery[1]}); if (!observed) warnings.push("wake recovery was not observed; recovery_elapsed is right-censored"); }
+    diagnostics = measured;
+    const state = solver.exportState(); snapshot = {precision: state.precision, bounds: state.bounds, resolution: state.resolution, periodicAxes: state.periodicAxes, time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: state.angularVelocityDegrees, velocity: [...state.velocity], density: state.density === null ? null : [...state.density]};
+  } catch (error) { success = false; warnings.push(error instanceof Error ? `${error.name}: ${error.message}` : "unknown benchmark failure"); }
+  const result: BrowserRunResult = {initializationSeconds, coldStepSeconds, stepSeconds, simulatedSeconds: elapsed, substeps, diagnostics, warnings: [...new Set(warnings)].sort(), success, snapshot}; postMessage({kind: "result", result});
+};
