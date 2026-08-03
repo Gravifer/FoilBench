@@ -30,6 +30,7 @@ from foilbench_py.core.models import (
     Diagnostics,
     ImportOutcome,
     ImportReport,
+    InteractiveTuning,
     NumericalFailure,
     Scenario,
     SolverInfo,
@@ -92,6 +93,25 @@ class StableFluidsSolver:
     def set_transport_mode(self, mode: StableTransportMode) -> None:
         self._maccormack = mode == "maccormack"
         self._skew_rk2 = mode == "skew-rk2"
+
+    def interactive_tuning(self) -> InteractiveTuning:
+        mode = self.transport_mode
+        return InteractiveTuning(
+            "stable-advection",
+            "adv",
+            mode,
+            mode,
+            mode != "maccormack",
+            mode != "skew-rk2",
+        )
+
+    def adjust_interactive_tuning(self, direction: int) -> InteractiveTuning:
+        self.set_transport_mode("maccormack" if direction < 0 else "skew-rk2")
+        return self.interactive_tuning()
+
+    def apply_interactive_tuning(self, value: str | float) -> InteractiveTuning:
+        self.set_transport_mode(parse_stable_transport_mode(value))
+        return self.interactive_tuning()
 
     def initialize(self, scenario: Scenario, geometry: NacaFoil, seed: int) -> None:
         del seed

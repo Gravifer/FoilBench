@@ -1,7 +1,7 @@
 """Single-owner simulation worker and immutable render snapshots."""
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from threading import Condition, Thread, current_thread
 from time import perf_counter
 from typing import Literal
@@ -21,6 +21,7 @@ type CommandKind = Literal[
     "adjust_reynolds",
     "reset_reynolds",
     "toggle_vorticity",
+    "toggle_diagnostics",
     "toggle_tracer",
     "toggle_crop",
     "shutdown",
@@ -53,6 +54,11 @@ class ViewerSnapshot:
     vorticity_revision: int
     show_vorticity: bool
     crop_enabled: bool
+    phase: str
+    motion_mode: str
+    diagnostic_mode: str
+    schedule_active: bool
+    recovery_epoch: int
     failure: str | None = None
 
 
@@ -96,7 +102,7 @@ class SimulationWorker:
             if not self._accepting_commands:
                 raise RuntimeError("simulation worker is closed")
             self._thread = Thread(
-                target=self._run,
+                target=self._supervised_run,
                 name="foilbench-simulation",
                 daemon=False,
             )
@@ -193,6 +199,9 @@ class SimulationWorker:
     def toggle_vorticity(self) -> int:
         return self._enqueue("toggle_vorticity")
 
+    def toggle_diagnostics(self) -> int:
+        return self._enqueue("toggle_diagnostics")
+
     def toggle_tracer_mode(self) -> int:
         return self._enqueue("toggle_tracer")
 
@@ -261,6 +270,8 @@ class SimulationWorker:
             self._clear_failure_history()
         elif command.kind == "toggle_vorticity":
             self._model.toggle_vorticity()
+        elif command.kind == "toggle_diagnostics":
+            self._model.toggle_diagnostics()
         elif command.kind == "toggle_tracer":
             self._model.toggle_tracer_mode()
         elif command.kind == "toggle_crop":
@@ -305,6 +316,7 @@ class SimulationWorker:
         status = self._model.status()
         if self._failure is not None:
             status = f"{status}  worker-error={self._failure}"
+        session = self._model.session_state
         return ViewerSnapshot(
             revision=revision,
             applied_command=applied_command,
@@ -317,6 +329,11 @@ class SimulationWorker:
             vorticity_revision=self._model.vorticity_revision,
             show_vorticity=self._model.show_vorticity,
             crop_enabled=self._model.crop_enabled,
+            phase="failed" if self._failure is not None else session.phase,
+            motion_mode=session.motion_mode,
+            diagnostic_mode=session.diagnostic_mode,
+            schedule_active=session.schedule_active,
+            recovery_epoch=0 if session.recovery is None else session.recovery.epoch,
             failure=self._failure,
         )
 
@@ -327,6 +344,38 @@ class SimulationWorker:
         with self._condition:
             self._snapshot = snapshot
             self._condition.notify_all()
+
+    def _safe_publish(self, applied_command: int) -> bool:
+        try:
+            self._publish(applied_command)
+        except Exception as error:
+            self._failure = f"snapshot {type(error).__name__}: {error}"
+            self._model.paused = True
+            with self._condition:
+                previous = self._snapshot
+                self._snapshot = replace(
+                    previous,
+                    revision=previous.revision + 1,
+                    applied_command=applied_command,
+                    status=f"{previous.status}  worker-error={self._failure}",
+                    phase="failed",
+                    failure=self._failure,
+                )
+                self._condition.notify_all()
+            return False
+        return True
+
+    def _supervised_run(self) -> None:
+        try:
+            self._run()
+        except Exception as error:
+            self._failure = f"owner {type(error).__name__}: {error}"
+            self._model.paused = True
+            self._safe_publish(self._snapshot.applied_command)
+            with self._condition:
+                self._accepting_commands = False
+                self._stop_requested = True
+                self._condition.notify_all()
 
     def _run(self) -> None:
         applied_command = 0
@@ -347,12 +396,12 @@ class SimulationWorker:
                 applied_command = command.sequence
 
             if self._stop_requested:
-                self._publish(applied_command)
+                self._safe_publish(applied_command)
                 return
 
             if self._model.paused:
                 if commands:
-                    self._publish(applied_command)
+                    self._safe_publish(applied_command)
                 with self._condition:
                     if not self._stop_requested and not self._commands:
                         self._condition.wait()
@@ -362,7 +411,7 @@ class SimulationWorker:
                 continue
 
             if publish_boundary:
-                self._publish(applied_command)
+                self._safe_publish(applied_command)
                 active_wall_started = perf_counter()
                 active_simulation_started = self._model.time
                 interactive_throughput = None
@@ -390,7 +439,7 @@ class SimulationWorker:
                 if not isinstance(error, NumericalFailure):
                     self._failure = f"{type(error).__name__}: {error}"
                     self._model.paused = True
-                    self._publish(applied_command)
+                    self._safe_publish(applied_command)
                     continue
                 failure_count = self._record_failure(perf_counter())
                 reynolds_is_modified = (
@@ -454,7 +503,7 @@ class SimulationWorker:
                 self._model.simulated_seconds_per_wall_second = interactive_throughput
                 active_wall_started = completed
                 active_simulation_started = self._model.time
-            self._publish(applied_command)
+            self._safe_publish(applied_command)
             remaining = self._step_interval - (perf_counter() - started)
             if remaining > 0.0:
                 with self._condition:

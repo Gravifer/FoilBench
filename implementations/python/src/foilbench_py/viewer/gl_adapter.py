@@ -154,7 +154,7 @@ class FoilWindow(pyglet.window.Window):
         )
         self.help_label = pyglet.text.Label(
             "1/2/3 solver  drag foil  Space pause  R reset  -/+ Re  0 Re reset  "
-            "[/] solver tuning  V vort  T tracers  C crop",
+            "[/] solver tuning  V vort  D diagnostics  T tracers  C crop",
             x=12,
             y=self.height - 32,
             anchor_x="left",
@@ -190,18 +190,21 @@ class FoilWindow(pyglet.window.Window):
     def _tick(self, dt: float) -> None:
         del dt
         latest = self.worker.latest_snapshot()
-        if latest.revision != self.snapshot.revision:
+        changed = latest.revision != self.snapshot.revision
+        if changed:
             self.snapshot = latest
-        if self.snapshot.crop_enabled != self.crop_enabled:
+        crop_changed = self.snapshot.crop_enabled != self.crop_enabled
+        if crop_changed:
             self.crop_enabled = self.snapshot.crop_enabled
             self.view_bounds = (
                 self.cropped_view_bounds if self.crop_enabled else self.full_view_bounds
             )
             self._update_field_view()
-        self.label.text = self.snapshot.status
-        self.label.y = self.height - 12
-        self.help_label.y = self.height - 32
-        self.invalid = True
+        if changed or crop_changed:
+            self.label.text = self.snapshot.status
+            self.label.y = self.height - 12
+            self.help_label.y = self.height - 32
+            self.invalid = True
 
     def on_draw(self) -> None:
         self.ctx.viewport = (0, 0, self.width, self.height)
@@ -259,6 +262,8 @@ class FoilWindow(pyglet.window.Window):
             self.worker.reset_reynolds()
         elif symbol == key.V:
             self.worker.toggle_vorticity()
+        elif symbol == key.D:
+            self.worker.toggle_diagnostics()
         elif symbol == key.T:
             self.worker.toggle_tracer_mode()
         elif symbol == key.C and self.crop_available:

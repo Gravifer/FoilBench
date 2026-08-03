@@ -8,6 +8,7 @@ from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
     ImportOutcome,
+    InteractiveTuning,
     Scenario,
     SolverInfo,
     StepReport,
@@ -35,3 +36,9 @@ class FlowSolver(Protocol):
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome: ...
 
     def diagnostics(self) -> Diagnostics: ...
+
+    def interactive_tuning(self) -> InteractiveTuning | None: ...
+
+    def adjust_interactive_tuning(self, direction: int) -> InteractiveTuning | None: ...
+
+    def apply_interactive_tuning(self, value: str | float) -> InteractiveTuning | None: ...

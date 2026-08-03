@@ -3,7 +3,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from foilbench_py.core.models import ControlState, NumericalFailure, StepReport
+from foilbench_py.core.models import (
+    ControlState,
+    ImportOutcome,
+    NumericalFailure,
+    StepReport,
+)
 from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.solvers.stable_fluids import StableFluidsSolver
 from foilbench_py.viewer.app import (
@@ -138,6 +143,52 @@ def test_hidden_vorticity_stops_field_refresh_until_reenabled(
     assert model.vorticity_revision == hidden_revision
     assert model.toggle_vorticity()
     assert model.vorticity_revision == hidden_revision + 1
+
+
+def test_diagnostic_mode_toggles_and_survives_reset(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    assert model.session_state.diagnostic_mode == "cadenced"
+
+    assert model.toggle_diagnostics() == "every-step"
+    model.reset()
+
+    assert model.session_state.diagnostic_mode == "every-step"
+    assert "diag=every-step" in model.status()
+
+
+def test_transient_warm_rejection_falls_back_once_but_structural_rejection_does_not(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    calls = 0
+
+    def reject_transient(*args: object, **kwargs: object) -> ImportOutcome:
+        del args, kwargs
+        nonlocal calls
+        calls += 1
+        return ImportOutcome("rejected", "projection_failure")
+
+    monkeypatch.setattr(model.manager, "switch", reject_transient)
+    outcome = model.switch_solver("lbm-d2q9")
+    assert outcome.accepted
+    assert calls == 1
+    assert model.manager.solver.info.id == "lbm-d2q9"
+    assert model.recovery_stage == "warm-import-fallback"
+    assert model.recovery_count == 1
+
+    model = ViewerModel.create(model.scenario, "stable-fluids")
+
+    def reject_structural(*args: object, **kwargs: object) -> ImportOutcome:
+        del args, kwargs
+        return ImportOutcome("rejected", "incompatible_domain")
+
+    monkeypatch.setattr(model.manager, "switch", reject_structural)
+    outcome = model.switch_solver("lbm-d2q9")
+    assert not outcome.accepted
+    assert model.manager.solver.info.id == "stable-fluids"
 
 
 def test_solver_tuning_is_context_sensitive_and_stable_mode_persists(

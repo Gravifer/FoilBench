@@ -19,6 +19,7 @@ from foilbench_py.core.models import (
     Diagnostics,
     ImportOutcome,
     ImportReport,
+    InteractiveTuning,
     NumericalFailure,
     Scenario,
     SolverInfo,
@@ -86,6 +87,26 @@ class PicFlipSolver:
     @blend.setter
     def blend(self, value: float) -> None:
         self._blend = float(np.clip(value, 0.0, 1.0))
+
+    def interactive_tuning(self) -> InteractiveTuning:
+        return InteractiveTuning(
+            "pic-flip-blend",
+            "blend",
+            self._blend,
+            f"{self._blend:.2f}",
+            self._blend > 0.0,
+            self._blend < 1.0,
+        )
+
+    def adjust_interactive_tuning(self, direction: int) -> InteractiveTuning:
+        self.blend = self._blend + (-0.05 if direction < 0 else 0.05)
+        return self.interactive_tuning()
+
+    def apply_interactive_tuning(self, value: str | float) -> InteractiveTuning:
+        if not isinstance(value, (int, float)):
+            raise TypeError("PIC/FLIP tuning value must be numeric")
+        self.blend = float(value)
+        return self.interactive_tuning()
 
     def _require(
         self,

@@ -21,6 +21,7 @@ ImportFailureReason = Literal[
     "invalid_density",
     "unsupported_conversion",
 ]
+TuningValue = str | float
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +155,16 @@ class SolverInfo:
     dimensions: tuple[int, ...]
     supports_moving_boundary: bool
     acceleration: str
+
+
+@dataclass(frozen=True, slots=True)
+class InteractiveTuning:
+    id: str
+    label: str
+    value: TuningValue
+    display_value: str
+    can_decrease: bool
+    can_increase: bool
 
 
 @dataclass(frozen=True, slots=True)

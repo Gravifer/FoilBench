@@ -20,6 +20,7 @@ from foilbench_py.core.models import (
     Diagnostics,
     ImportOutcome,
     ImportReport,
+    InteractiveTuning,
     NumericalFailure,
     Scenario,
     SolverInfo,
@@ -81,6 +82,17 @@ class LBMSolver:
         if not np.isfinite(reynolds) or reynolds <= 0.0:
             raise ValueError("Reynolds number must be finite and positive")
         self._reynolds = float(reynolds)
+
+    def interactive_tuning(self) -> InteractiveTuning | None:
+        return None
+
+    def adjust_interactive_tuning(self, direction: int) -> InteractiveTuning | None:
+        del direction
+        return None
+
+    def apply_interactive_tuning(self, value: str | float) -> InteractiveTuning | None:
+        del value
+        return None
 
     def _require(self) -> tuple[Scenario, NacaFoil, LatticePopulation, MaskField]:
         if (

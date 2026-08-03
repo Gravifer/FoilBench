@@ -181,3 +181,44 @@ class SolverManager:
         self._last_import = None
         self._last_validation_report = None
         self._last_validation_elapsed = 0.0
+
+    def switch_fresh(self, destination: str, control: ControlState) -> ImportOutcome:
+        """Atomically select a fresh destination after a transient warm rejection."""
+        source = self._solver.info.id
+        try:
+            candidate = self._factory(destination)
+        except KeyError as error:
+            return ImportOutcome(
+                "rejected",
+                "unsupported_conversion",
+                warnings=(str(error),),
+            )
+        initialization_scenario = replace(
+            self._scenario,
+            controls=(ControlKeyframe(0.0, control.angle_degrees),),
+        )
+        try:
+            candidate.initialize(initialization_scenario, self._geometry, self._scenario.seed)
+            candidate.set_reynolds(self._reynolds)
+            state = state_at_control(candidate.export_state(), control)
+            outcome = candidate.import_state(state, control)
+            if not outcome.accepted:
+                return outcome
+            candidate.diagnostics()
+        except NumericalFailure as error:
+            return ImportOutcome(
+                "rejected",
+                classify_import_failure(error),
+                warnings=(str(error),),
+            )
+        report = ImportReport(
+            source,
+            destination,
+            ("canonical-flow-history", "solver-private-state"),
+            ("fresh destination after rejected warm import",),
+        )
+        self._solver = candidate
+        self._last_import = report
+        self._last_validation_report = None
+        self._last_validation_elapsed = 0.0
+        return ImportOutcome("accepted", "none", report, report.warnings)

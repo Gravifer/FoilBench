@@ -4,6 +4,7 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 from time import perf_counter
+from typing import Literal
 
 import numpy as np
 
@@ -12,7 +13,9 @@ from foilbench_py.core.metrics import vorticity
 from foilbench_py.core.models import (
     ControlState,
     Diagnostics,
+    ImportFailureReason,
     ImportOutcome,
+    InteractiveTuning,
     NumericalFailure,
     Scenario,
     StepReport,
@@ -21,19 +24,19 @@ from foilbench_py.core.state_io import midspan_velocity
 from foilbench_py.core.switching import SolverManager, classify_import_failure
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
-from foilbench_py.solvers.lbm import LBMSolver
-from foilbench_py.solvers.pic_flip import PicFlipSolver
-from foilbench_py.solvers.stable_fluids import (
-    StableFluidsSolver,
-    StableTransportMode,
-    parse_stable_transport_mode,
-)
 from foilbench_py.types import ScalarField
 
 _POSE_ONLY_RELEASE_SPEED_RATIO = 0.5
 _POSE_ONLY_RELEASE_STEPS = 2
 _POSE_SAMPLE_WINDOW_SECONDS = 0.08
 _MAX_RESOLVED_TIP_SPEED_RATIO = 8.0
+_TRANSIENT_IMPORT_FAILURES: frozenset[ImportFailureReason] = frozenset(
+    ("excessive_velocity", "nonfinite_state", "projection_failure", "invalid_density")
+)
+
+type DiagnosticMode = Literal["cadenced", "every-step"]
+type ViewerPhase = Literal["warming", "running", "recovering", "paused", "failed"]
+type MotionMode = Literal["resolved", "pose-only"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +49,26 @@ class PoseSample:
 class PresentationState:
     show_vorticity: bool
     crop_enabled: bool
+    diagnostic_mode: DiagnosticMode = "cadenced"
     diagnostic_interval: float = 0.1
     diagnostic_elapsed: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryRecord:
+    epoch: int
+    reason: str
+    stage: str
+    discarded_private_state: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class ViewerSessionState:
+    phase: ViewerPhase
+    motion_mode: MotionMode
+    schedule_active: bool
+    diagnostic_mode: DiagnosticMode
+    recovery: RecoveryRecord | None
 
 
 def viewer_bounds(
@@ -108,7 +129,7 @@ class ViewerModel:
     pose_only_calm_steps: int = 0
     pose_only_guarded_trial: bool = False
     last_requested_angular_velocity_degrees: float = 0.0
-    stable_transport_mode: StableTransportMode = "maccormack"
+    tuning_values: dict[str, str | float] = field(default_factory=dict)
     tuning_notice: str | None = None
     manual_angular_velocity_degrees: float = 0.0
     pose_samples: deque[PoseSample] = field(default_factory=deque)
@@ -138,9 +159,6 @@ class ViewerModel:
             seed=scenario.seed,
         )
         initial_angle = scenario.control_at(0.0).angle_degrees
-        stable_transport_mode = parse_stable_transport_mode(
-            scenario.solver_options.get("stable_advection", "maccormack")
-        )
         model = cls(
             scenario,
             geometry,
@@ -151,8 +169,8 @@ class ViewerModel:
                 crop_enabled=viewer_crop_enabled_by_default(scenario),
             ),
             previous_angle=initial_angle,
-            stable_transport_mode=stable_transport_mode,
         )
+        model._remember_active_tuning()
         model._refresh_diagnostics()
         return model
 
@@ -167,6 +185,31 @@ class ViewerModel:
     @property
     def crop_enabled(self) -> bool:
         return self.presentation.crop_enabled
+
+    @property
+    def session_state(self) -> ViewerSessionState:
+        if self.paused:
+            phase: ViewerPhase = "failed" if self.recovery_notice else "paused"
+        elif self.metrics_warming:
+            phase = "warming"
+        else:
+            phase = "running"
+        recovery = (
+            RecoveryRecord(
+                self.recovery_count,
+                self.recovery_reason,
+                self.recovery_stage,
+            )
+            if self.recovery_count and self.recovery_reason and self.recovery_stage
+            else None
+        )
+        return ViewerSessionState(
+            phase,
+            "pose-only" if self.pose_only_drag else "resolved",
+            self.angle_override is None,
+            self.presentation.diagnostic_mode,
+            recovery,
+        )
 
     def _refresh_diagnostics(self, *, force_vorticity: bool = False) -> None:
         solver = self.manager.solver
@@ -268,7 +311,7 @@ class ViewerModel:
         self.tracers.update(self.manager.solver, control, simulation_dt)
         self.previous_angle = control.angle_degrees
         self.presentation.diagnostic_elapsed += simulation_dt
-        if was_warming or (
+        if self.presentation.diagnostic_mode == "every-step" or was_warming or (
             self.presentation.diagnostic_elapsed >= self.presentation.diagnostic_interval
         ):
             self._refresh_diagnostics()
@@ -324,6 +367,7 @@ class ViewerModel:
         self.pose_only_guarded_trial = False
 
     def switch_solver(self, solver_id: str) -> ImportOutcome:
+        self._remember_active_tuning()
         current_control = self.control(self.scenario.output_dt)
         if solver_id == self.manager.solver.info.id:
             return self.manager.switch(
@@ -354,10 +398,42 @@ class ViewerModel:
             validation_dt,
         )
         if not outcome.accepted:
+            if outcome.reason in _TRANSIENT_IMPORT_FAILURES:
+                fresh_control = ControlState(self.time, current_control.angle_degrees, 0.0)
+                fresh = self.manager.switch_fresh(solver_id, fresh_control)
+                if fresh.accepted:
+                    self._apply_saved_tuning()
+                    self.angle_override = current_control.angle_degrees
+                    self.previous_angle = current_control.angle_degrees
+                    self.manual_angular_velocity_degrees = 0.0
+                    self.pose_samples.clear()
+                    self.tracers.reseed_all(current_control.angle_degrees)
+                    self.recovery_count += 1
+                    self.recovery_reason = outcome.reason
+                    self.recovery_stage = "warm-import-fallback"
+                    self.recovery_notice = (
+                        f"fresh destination reason={outcome.reason}; "
+                        "stage=warm-import-fallback; private-state-discarded"
+                    )
+                    self.last_report = None
+                    self.last_diagnostics = None
+                    self.presentation.diagnostic_elapsed = 0.0
+                    self.solver_steps_per_second = 0.0
+                    self.simulated_seconds_per_wall_second = 0.0
+                    self.metrics_warming = True
+                    self.warm_validation_pending = False
+                    self._refresh_diagnostics()
+                    self.last_diagnostics = None
+                    return fresh
+                self.recovery_notice = (
+                    f"warm import rejected ({outcome.reason}); fresh destination "
+                    f"rejected ({fresh.reason}); source retained"
+                )
+                return outcome
             self.tuning_notice = None
-            self.recovery_notice = f"warm import rejected ({outcome.reason})"
+            self.recovery_notice = f"warm import rejected ({outcome.reason}); source retained"
             return outcome
-        self._apply_stable_transport_mode()
+        self._apply_saved_tuning()
         self.recovery_notice = None
         self.tuning_notice = None
         self.time = validation_time
@@ -386,7 +462,7 @@ class ViewerModel:
             self.reset_reynolds()
         recovery_control = ControlState(current_time, current_angle, 0.0)
         self.manager.restart_at(recovery_control)
-        self._apply_stable_transport_mode()
+        self._apply_saved_tuning()
         self.angle_override = current_angle
         self.previous_angle = current_angle
         self.manual_angular_velocity_degrees = 0.0
@@ -420,6 +496,7 @@ class ViewerModel:
         presentation = PresentationState(
             self.show_vorticity,
             self.crop_enabled,
+            self.presentation.diagnostic_mode,
             self.presentation.diagnostic_interval,
         )
         replacement = ViewerModel.create(self.scenario, solver_id)
@@ -443,7 +520,7 @@ class ViewerModel:
         self.drag_active = False
         self._disable_pose_only_drag()
         self.last_requested_angular_velocity_degrees = 0.0
-        self.stable_transport_mode = replacement.stable_transport_mode
+        self.tuning_values = replacement.tuning_values
         self.tuning_notice = None
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
@@ -452,26 +529,28 @@ class ViewerModel:
         self.metrics_warming = True
         self.warm_validation_pending = False
 
-    def adjust_blend(self, delta: float) -> None:
-        solver = self.manager.solver
-        if isinstance(solver, PicFlipSolver):
-            solver.blend = solver.blend + delta
+    def _remember_active_tuning(self) -> InteractiveTuning | None:
+        tuning = self.manager.solver.interactive_tuning()
+        if tuning is not None:
+            self.tuning_values[self.manager.solver.info.id] = tuning.value
+        return tuning
 
-    def _apply_stable_transport_mode(self) -> None:
+    def _apply_saved_tuning(self) -> InteractiveTuning | None:
         solver = self.manager.solver
-        if isinstance(solver, StableFluidsSolver):
-            solver.set_transport_mode(self.stable_transport_mode)
+        value = self.tuning_values.get(solver.info.id)
+        tuning = solver.interactive_tuning()
+        if value is not None and tuning is not None:
+            tuning = solver.apply_interactive_tuning(value)
+        if tuning is not None:
+            self.tuning_values[solver.info.id] = tuning.value
+        return tuning
 
     def adjust_solver_tuning(self, delta: float) -> bool:
         """Adjust the active solver's pedagogically useful live parameter."""
         solver = self.manager.solver
-        if isinstance(solver, StableFluidsSolver):
-            self.stable_transport_mode = "maccormack" if delta < 0.0 else "skew-rk2"
-            solver.set_transport_mode(self.stable_transport_mode)
-            self.tuning_notice = None
-            return True
-        if isinstance(solver, PicFlipSolver):
-            solver.blend = solver.blend + delta
+        tuning = solver.adjust_interactive_tuning(-1 if delta < 0.0 else 1)
+        if tuning is not None:
+            self.tuning_values[solver.info.id] = tuning.value
             self.tuning_notice = None
             return True
         self.tuning_notice = "no adjustable tuning"
@@ -494,6 +573,16 @@ class ViewerModel:
             self.presentation.diagnostic_elapsed = 0.0
         return self.show_vorticity
 
+    def toggle_diagnostics(self) -> DiagnosticMode:
+        self.presentation.diagnostic_mode = (
+            "every-step"
+            if self.presentation.diagnostic_mode == "cadenced"
+            else "cadenced"
+        )
+        self._refresh_diagnostics()
+        self.presentation.diagnostic_elapsed = 0.0
+        return self.presentation.diagnostic_mode
+
     def toggle_crop(self) -> bool:
         if viewer_bounds(self.scenario, cropped=True) == viewer_bounds(
             self.scenario,
@@ -512,15 +601,13 @@ class ViewerModel:
         report = self.last_report
         substeps = 0 if report is None else report.substeps
         speed = 0.0 if report is None else report.max_speed
-        blend = f"  blend={solver.blend:.2f}" if isinstance(solver, PicFlipSolver) else ""
-        transport = (
-            f"  adv={solver.transport_mode}"
-            if isinstance(solver, StableFluidsSolver)
-            else ""
+        tuning = solver.interactive_tuning()
+        tuning_display = (
+            f"  {tuning.label}={tuning.display_value}" if tuning is not None else ""
         )
         effective_reynolds = (
             f"  Re_eff={diagnostics.values.get('effective_reynolds', 0.0):.0f}"
-            if isinstance(solver, LBMSolver) and diagnostics is not None
+            if diagnostics is not None and "effective_reynolds" in diagnostics.values
             else ""
         )
         warning = ""
@@ -557,7 +644,8 @@ class ViewerModel:
             f"{measurements}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"
             f"  view={'cropped' if self.crop_enabled else 'full'}"
-            f"{transport}{blend}{effective_reynolds}{motion_mode}{recovery_epoch}{paused}{warning}"
+            f"  diag={self.presentation.diagnostic_mode}"
+            f"{tuning_display}{effective_reynolds}{motion_mode}{recovery_epoch}{paused}{warning}"
             f"{f'  tune={self.tuning_notice}' if self.tuning_notice is not None else ''}"
         )
 

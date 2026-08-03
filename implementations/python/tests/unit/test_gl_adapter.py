@@ -28,6 +28,11 @@ def _snapshot(revision: int, status: str, *, cropped: bool) -> ViewerSnapshot:
         vorticity_revision=0,
         show_vorticity=False,
         crop_enabled=cropped,
+        phase="running",
+        motion_mode="resolved",
+        diagnostic_mode="cadenced",
+        schedule_active=True,
+        recovery_epoch=0,
     )
 
 
@@ -59,3 +64,24 @@ def test_tick_consumes_latest_non_consuming_worker_snapshot() -> None:
     assert updates == [True]
     assert label.text == "advanced"
     assert window.invalid
+
+
+def test_tick_does_not_redraw_an_unchanged_snapshot() -> None:
+    snapshot = _snapshot(2, "paused", cropped=False)
+    window = SimpleNamespace(
+        worker=_SnapshotWorker(snapshot),
+        snapshot=snapshot,
+        crop_enabled=False,
+        cropped_view_bounds=((1.0, 2.0), (1.0, 2.0)),
+        full_view_bounds=((0.0, 3.0), (0.0, 3.0)),
+        view_bounds=((0.0, 3.0), (0.0, 3.0)),
+        label=SimpleNamespace(text="paused", y=0),
+        help_label=SimpleNamespace(y=0),
+        height=720,
+        invalid=False,
+        _update_field_view=lambda: None,
+    )
+
+    FoilWindow._tick(cast(Any, window), 1.0 / 60.0)
+
+    assert not window.invalid
