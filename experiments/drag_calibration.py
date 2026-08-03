@@ -29,6 +29,7 @@ def _run(
     solver_id: str,
     candidate: dict[str, object],
     trace: dict[str, object],
+    settle_steps: int,
 ) -> dict[str, object]:
     base = load_scenario(scenario_path)
     scenario = replace(
@@ -44,15 +45,21 @@ def _run(
     recent: list[tuple[float, float]] = []
     maximum_measured = 0.0
     maximum_solver = 0.0
+    solver_ratio_sum = 0.0
+    attempted = 0
     maximum_flow = 0.0
     successful = 0
     failure: str | None = None
     physical_time = 0.0
     reference_speed = scenario.reference_speed
     started = time.perf_counter()
-    for timestamp, raw_angle in (*samples, [samples[-1][0] + 0.02, samples[-1][1]]):
+    release_samples = [
+        [samples[-1][0] + 0.02 * (index + 1), samples[-1][1]]
+        for index in range(settle_steps)
+    ]
+    for sample_index, (timestamp, raw_angle) in enumerate((*samples, *release_samples)):
         angle = float(np.clip(raw_angle, -30.0, 30.0))
-        if successful == len(samples):
+        if sample_index >= len(samples):
             measured_degrees = 0.0
         else:
             recent.append((timestamp, angle))
@@ -70,6 +77,8 @@ def _run(
         solver_ratio = min(measured_ratio, cap)
         maximum_measured = max(maximum_measured, measured_ratio)
         maximum_solver = max(maximum_solver, solver_ratio)
+        solver_ratio_sum += solver_ratio
+        attempted += 1
         omega = math.degrees(solver_ratio * reference_speed / scenario.foil.chord)
         omega = math.copysign(omega, measured_degrees) if measured_degrees else 0.0
         physical_time += scenario.output_dt
@@ -94,8 +103,9 @@ def _run(
         "smoothing_window_seconds": window,
         "max_measured_tip_speed_ratio": maximum_measured,
         "max_solver_tip_speed_ratio": maximum_solver,
+        "mean_solver_tip_speed_ratio": solver_ratio_sum / max(attempted, 1),
         "successful_steps": successful,
-        "requested_steps": len(samples) + 1,
+        "requested_steps": len(samples) + settle_steps,
         "failure_reason": failure,
         "maximum_flow_speed": maximum_flow,
         "wall_seconds": time.perf_counter() - started,
@@ -110,9 +120,10 @@ def main() -> None:
     fixture = _object(root / "spec" / "conformance" / "drag-calibration.json")
     resolution_values = cast(list[int], fixture["resolution"])
     resolution = (resolution_values[0], resolution_values[1])
+    settle_steps = int(cast(int, fixture["settle_steps"]))
     scenario_path = root / cast(str, fixture["scenario"])
     runs = [
-        _run(scenario_path, resolution, solver, candidate, trace)
+        _run(scenario_path, resolution, solver, candidate, trace, settle_steps)
         for candidate in cast(list[dict[str, object]], fixture["candidates"])
         for solver in cast(list[str], fixture["solvers"])
         for trace in cast(list[dict[str, object]], fixture["traces"])

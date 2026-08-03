@@ -40,6 +40,7 @@ function run_drag_calibration(
     solver_id::AbstractString,
     candidate::Dict{String,Any},
     trace::Dict{String,Any},
+    settle_steps::Int,
 ) where {T}
     scenario = calibrated_scenario(base, resolution)
     solver = create_solver(solver_id, T)
@@ -50,6 +51,8 @@ function run_drag_calibration(
     recent = Tuple{Float64,Float64}[]
     maximum_measured = 0.0
     maximum_solver = 0.0
+    solver_ratio_sum = 0.0
+    attempted = 0
     maximum_flow = 0.0
     successful = 0
     failure = nothing
@@ -57,7 +60,11 @@ function run_drag_calibration(
     speed = Float64(reference_speed(scenario))
     chord = Float64(scenario.foil.chord)
     started = time_ns()
-    extended = vcat(samples, Any[[Float64(samples[end][1]) + 0.02, samples[end][2]]])
+    release_samples = Any[
+        [Float64(samples[end][1]) + 0.02 * index, samples[end][2]]
+        for index in 1:settle_steps
+    ]
+    extended = vcat(samples, release_samples)
     for (sample_index, sample) in enumerate(extended)
         timestamp = Float64(sample[1])
         angle = clamp(Float64(sample[2]), -30.0, 30.0)
@@ -76,6 +83,8 @@ function run_drag_calibration(
         solver_ratio = min(measured_ratio, cap)
         maximum_measured = max(maximum_measured, measured_ratio)
         maximum_solver = max(maximum_solver, solver_ratio)
+        solver_ratio_sum += solver_ratio
+        attempted += 1
         omega = iszero(measured_degrees) ? 0.0 :
             copysign(rad2deg(solver_ratio * speed / chord), measured_degrees)
         physical_time += scenario.output_dt
@@ -100,8 +109,9 @@ function run_drag_calibration(
         "smoothing_window_seconds" => window,
         "max_measured_tip_speed_ratio" => maximum_measured,
         "max_solver_tip_speed_ratio" => maximum_solver,
+        "mean_solver_tip_speed_ratio" => solver_ratio_sum / max(attempted, 1),
         "successful_steps" => successful,
-        "requested_steps" => length(samples) + 1,
+        "requested_steps" => length(samples) + settle_steps,
         "failure_reason" => failure,
         "maximum_flow_speed" => maximum_flow,
         "wall_seconds" => (time_ns() - started) / 1.0e9,
@@ -114,9 +124,10 @@ fixture = JSON3.read(
     Dict{String,Any},
 )
 resolution = (Int(fixture["resolution"][1]), Int(fixture["resolution"][2]))
+settle_steps = Int(fixture["settle_steps"])
 base = load_scenario(joinpath(root, fixture["scenario"]))
 runs = [
-    run_drag_calibration(base, resolution, solver_id, candidate, trace)
+    run_drag_calibration(base, resolution, solver_id, candidate, trace, settle_steps)
     for candidate in fixture["candidates"]
     for solver_id in fixture["solvers"]
     for trace in fixture["traces"]

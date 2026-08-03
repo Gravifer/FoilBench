@@ -74,6 +74,7 @@ async function main(args: readonly string[]): Promise<void> {
     const fixture = JSON.parse(await readFile(join(repositoryRoot, "spec/conformance/drag-calibration.json"), "utf8")) as {
       scenario: string;
       resolution: readonly [number, number];
+      settle_steps: number;
       solvers: readonly SolverId[];
       candidates: readonly DragCandidate[];
       traces: readonly DragTrace[];
@@ -90,7 +91,7 @@ async function main(args: readonly string[]): Promise<void> {
       resolution: fixture.resolution,
       runs: fixture.candidates.flatMap((candidate) =>
         fixture.solvers.flatMap((solverId) =>
-          fixture.traces.map((trace) => runDragCalibration(scenario, fixture.resolution, solverId, candidate, trace)),
+          fixture.traces.map((trace) => runDragCalibration(scenario, fixture.resolution, solverId, candidate, trace, fixture.settle_steps)),
         ),
       ),
     };

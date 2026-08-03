@@ -21,6 +21,7 @@ export interface DragRun {
   readonly smoothing_window_seconds: number;
   readonly max_measured_tip_speed_ratio: number;
   readonly max_solver_tip_speed_ratio: number;
+  readonly mean_solver_tip_speed_ratio: number;
   readonly successful_steps: number;
   readonly requested_steps: number;
   readonly failure_reason: string | null;
@@ -34,6 +35,7 @@ export function runDragCalibration(
   solverId: SolverId,
   candidate: DragCandidate,
   trace: DragTrace,
+  settleSteps: number,
 ): DragRun {
   const scenario: Scenario = {
     ...base,
@@ -49,12 +51,17 @@ export function runDragCalibration(
   const recent: [number, number][] = [];
   let maximumMeasured = 0;
   let maximumSolver = 0;
+  let solverRatioSum = 0;
+  let attempted = 0;
   let maximumFlow = 0;
   let successful = 0;
   let failure: string | null = null;
   let physicalTime = 0;
   const started = performance.now();
-  const samples = [...trace.samples, [(trace.samples.at(-1)?.[0] ?? 0) + 0.02, trace.samples.at(-1)?.[1] ?? 0] as const];
+  const lastTimestamp = trace.samples.at(-1)?.[0] ?? 0;
+  const lastAngle = trace.samples.at(-1)?.[1] ?? 0;
+  const releaseSamples = Array.from({length: settleSteps}, (_, index) => [lastTimestamp + 0.02 * (index + 1), lastAngle] as const);
+  const samples = [...trace.samples, ...releaseSamples];
   for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
     const sample = samples[sampleIndex];
     if (sample === undefined) continue;
@@ -72,6 +79,8 @@ export function runDragCalibration(
     const solverRatio = Math.min(measuredRatio, candidate.tip_speed_cap);
     maximumMeasured = Math.max(maximumMeasured, measuredRatio);
     maximumSolver = Math.max(maximumSolver, solverRatio);
+    solverRatioSum += solverRatio;
+    attempted += 1;
     const omega = measuredDegrees === 0 ? 0 : Math.sign(measuredDegrees) * solverRatio * reference / scenario.foil.chord * 180 / Math.PI;
     physicalTime += scenario.outputDt;
     try {
@@ -91,8 +100,9 @@ export function runDragCalibration(
     smoothing_window_seconds: candidate.smoothing_window_seconds,
     max_measured_tip_speed_ratio: maximumMeasured,
     max_solver_tip_speed_ratio: maximumSolver,
+    mean_solver_tip_speed_ratio: solverRatioSum / Math.max(attempted, 1),
     successful_steps: successful,
-    requested_steps: trace.samples.length + 1,
+    requested_steps: trace.samples.length + settleSteps,
     failure_reason: failure,
     maximum_flow_speed: maximumFlow,
     wall_seconds: (performance.now() - started) / 1000,

@@ -16,7 +16,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidate", "solver", "trace", "tip_speed_cap", "smoothing_window_seconds", "max_measured_tip_speed_ratio", "max_solver_tip_speed_ratio", "successful_steps", "requested_steps", "failure_reason", "maximum_flow_speed", "wall_seconds"],
+      "required": ["candidate", "solver", "trace", "tip_speed_cap", "smoothing_window_seconds", "max_measured_tip_speed_ratio", "max_solver_tip_speed_ratio", "mean_solver_tip_speed_ratio", "successful_steps", "requested_steps", "failure_reason", "maximum_flow_speed", "wall_seconds"],
       "properties": {
         "candidate": {"type": "string"},
         "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
@@ -25,6 +25,7 @@
         "smoothing_window_seconds": {"type": "number", "exclusiveMinimum": 0},
         "max_measured_tip_speed_ratio": {"type": "number", "minimum": 0},
         "max_solver_tip_speed_ratio": {"type": "number", "minimum": 0},
+        "mean_solver_tip_speed_ratio": {"type": "number", "minimum": 0},
         "successful_steps": {"type": "integer", "minimum": 0},
         "requested_steps": {"type": "integer", "minimum": 1},
         "failure_reason": {"type": ["string", "null"]},

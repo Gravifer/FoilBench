@@ -16,7 +16,7 @@ describe("matched drag calibration", () => {
     const candidate = {id: "conservative", tip_speed_cap: 4, smoothing_window_seconds: 0.08};
     const trace = {id: "gentle", samples: [[0, 0], [0.1, 4], [0.2, 8]] as const};
     const solvers: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
-    const runs = solvers.map((solverId) => runDragCalibration(scenario, [24, 16], solverId, candidate, trace));
+    const runs = solvers.map((solverId) => runDragCalibration(scenario, [24, 16], solverId, candidate, trace, 2));
     const result = {
       schema_version: 1,
       contract_id: "foilbench-phase2-v1-drag-calibration",
