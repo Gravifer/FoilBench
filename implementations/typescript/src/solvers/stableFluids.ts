@@ -7,6 +7,14 @@ import {validateCanonicalState} from "../core/stateValidation.js";
 
 type TransportMode = "maccormack" | "semi-lagrangian" | "skew-rk2";
 
+export interface StableCheckpoint {
+  readonly u: FloatArray;
+  readonly v: FloatArray;
+  readonly solid: Uint8Array;
+  readonly time: number;
+  readonly control: ControlState;
+}
+
 export class StableFluidsSolver implements FlowSolver {
   public readonly info: SolverInfo = {id: "stable-fluids", displayName: "Stable Fluids (MAC)", dimensions: [2], supportsMovingBoundary: true, acceleration: "typed-arrays"};
   public reynolds = 1;
@@ -90,8 +98,40 @@ export class StableFluidsSolver implements FlowSolver {
     const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const before = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let advected = this.transportMode === "semi-lagrangian" ? this.semiLagrangian(before, dt) : this.transportMode === "skew-rk2" ? this.skewRk2(before, dt) : this.maccormack(before, dt); advected = this.diffuse(advected, dt); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); ({u: this.u, v: this.v} = cellToFaces(advected, nx, ny, scenario.precision, periodicX, periodicY)); this.updateSolid(control); this.enforceSolidFaces(control); if (!periodicX) { const inlet = scenario.freestream[0] ?? 0; for (let y = 0; y < ny; y += 1) this.u[y * (nx + 1)] = inlet; } project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
   }
 
+  private projectedSubstep(control: ControlState, dt: number): void {
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain);
+    const diffused = this.diffuse(cellVelocity(this.u, this.v, nx, ny, scenario.precision), dt); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
+    ({u: this.u, v: this.v} = cellToFaces(diffused, nx, ny, scenario.precision, periodicX, periodicY)); this.updateSolid(control); this.enforceSolidFaces(control);
+    if (!periodicX) { const inlet = scenario.freestream[0] ?? 0; for (let y = 0; y < ny; y += 1) this.u[y * (nx + 1)] = inlet; }
+    project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
+  }
+
+  public checkpoint(): StableCheckpoint { return {u: this.u.slice(), v: this.v.slice(), solid: this.solid.slice(), time: this.time, control: this.control}; }
+  public restore(checkpoint: StableCheckpoint): void { this.u = checkpoint.u.slice(); this.v = checkpoint.v.slice(); this.solid = checkpoint.solid.slice(); this.time = checkpoint.time; this.control = checkpoint.control; }
+
+  public importFaces(u: FloatArray, v: FloatArray, time: number, control: ControlState): ImportOutcome {
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain);
+    if (u.length !== ny * (nx + 1) || v.length !== (ny + 1) * nx) return {status: "rejected", reason: "incompatible_domain", discardedState: [], warnings: []};
+    if (!u.every(Number.isFinite) || !v.every(Number.isFinite) || !Number.isFinite(time) || time < 0) return {status: "rejected", reason: "nonfinite_state", discardedState: [], warnings: []};
+    const saved = this.checkpoint(); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
+    try {
+      this.u = allocate(scenario.precision, u.length); this.u.set(u); this.v = allocate(scenario.precision, v.length); this.v.set(v); this.solid = new Uint8Array(nx * ny); this.time = time; this.control = control;
+      this.updateSolid(control); this.enforceSolidFaces(control); project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
+      if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) { this.restore(saved); return {status: "rejected", reason: "projection_failure", discardedState: [], warnings: []}; }
+    } catch (error) { this.restore(saved); throw error; }
+    return {status: "accepted", reason: "none", discardedState: ["pressure history"], warnings: []};
+  }
+
+  public advanceProjected(control: ControlState, targetDt: number): StepReport {
+    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); const saved = this.checkpoint();
+    try { this.projectedSubstep(control, targetDt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "projected grid step produced non-finite velocity"); }
+    catch (error) { this.restore(saved); throw error; }
+    this.time += targetDt; this.control = {...control, time: this.time}; const velocity = this.exportState().velocity; let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0));
+    return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed, warnings: []};
+  }
+
   public advance(control: ControlState, targetDt: number): StepReport {
-    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7; const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl; const substeps = Math.max(1, Math.ceil(targetDt * Math.max(maxSpeed, 1e-6) / (cfl * Math.min(dx, dy)))); const dt = targetDt / substeps; const savedU = this.u.slice(); const savedV = this.v.slice(); const savedSolid = this.solid.slice(); try { for (let step = 0; step < substeps; step += 1) this.substep(control, dt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity"); } catch (error) { this.u = savedU; this.v = savedV; this.solid = savedSolid; throw error; } this.time += targetDt; this.control = {...control, time: this.time}; return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, warnings: []};
+    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7; const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl; const substeps = Math.max(1, Math.ceil(targetDt * Math.max(maxSpeed, 1e-6) / (cfl * Math.min(dx, dy)))); const dt = targetDt / substeps; const saved = this.checkpoint(); try { for (let step = 0; step < substeps; step += 1) { const fraction = (step + 1) / substeps; this.substep({time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * (control.angleDegrees - this.control.angleDegrees), angularVelocityDegrees: control.angularVelocityDegrees}, dt); } if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity"); } catch (error) { this.restore(saved); throw error; } this.time += targetDt; this.control = {...control, time: this.time}; const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision); maxSpeed = 0; for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0)); return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, warnings: []};
   }
 
   public sampleVelocity(points: FloatArray): FloatArray { const scenario = this.requireScenario(); if (points.length % 2 !== 0) throw new RangeError("points must contain x/y pairs"); const velocity = cellVelocity(this.u, this.v, dimensions(scenario.domain).nx, dimensions(scenario.domain).ny, scenario.precision); const output = allocate(scenario.precision, points.length); for (let index = 0; index < points.length; index += 2) { const sampled = sampleCell(velocity, scenario.domain, points[index] ?? 0, points[index + 1] ?? 0); output[index] = sampled[0]; output[index + 1] = sampled[1]; } return output; }

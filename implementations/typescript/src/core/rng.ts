@@ -26,6 +26,13 @@ export class Pcg32 {
     return Math.fround(Math.fround(this.nextUint32()) * Math.fround(2 ** -32));
   }
 
+  public checkpoint(): bigint { return this.state; }
+
+  public restore(checkpoint: bigint): void {
+    if (checkpoint < 0n || checkpoint > MASK64) throw new RangeError("PCG32 checkpoint must be uint64");
+    this.state = checkpoint;
+  }
+
   public fill(target: Float32Array): void {
     for (let index = 0; index < target.length; index += 1) target[index] = this.nextFloat32();
   }
