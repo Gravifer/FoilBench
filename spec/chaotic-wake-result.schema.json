@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/chaotic-wake-result.schema.json",
+  "title": "FoilBench chaotic-wake experiment result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "experiment", "language", "solver", "scenario", "parameters", "metrics", "wall_seconds"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "contract_id": {"const": "foilbench-phase2-v1"},
+    "experiment": {"enum": ["chaotic-wake-sweep", "chaotic-wake-sensitivity"]},
+    "language": {"enum": ["python", "julia", "typescript"]},
+    "solver": {"const": "stable-fluids"},
+    "scenario": {"type": "string", "minLength": 1},
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reynolds", "angle_degrees", "resolution", "duration"],
+      "properties": {
+        "reynolds": {"type": "number", "exclusiveMinimum": 0},
+        "angle_degrees": {"type": "number"},
+        "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"type": "integer", "minimum": 8}, {"type": "integer", "minimum": 8}], "items": false},
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "burn_in": {"type": "number", "minimum": 0},
+        "epsilon": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "probe_rms": {"$ref": "#/$defs/finite"},
+        "spectral_entropy": {"$ref": "#/$defs/finite"},
+        "dominant_power_fraction": {"$ref": "#/$defs/finite"},
+        "broadband_power_fraction": {"$ref": "#/$defs/finite"},
+        "decorrelation_time": {"$ref": "#/$defs/finite"},
+        "enstrophy_mean": {"$ref": "#/$defs/finite"},
+        "enstrophy_coefficient_of_variation": {"$ref": "#/$defs/finite"},
+        "maximum_speed": {"$ref": "#/$defs/finite"},
+        "vorticity_small_scale_fraction": {"$ref": "#/$defs/finite"},
+        "initial_wake_rms_difference": {"$ref": "#/$defs/finite"},
+        "final_wake_rms_difference": {"$ref": "#/$defs/finite"},
+        "maximum_wake_rms_difference": {"$ref": "#/$defs/finite"},
+        "amplification": {"$ref": "#/$defs/finite"},
+        "finite_time_exponent": {"$ref": "#/$defs/finite"},
+        "exponential_fit_r_squared": {"$ref": "#/$defs/finite"},
+        "exponential_fit_samples": {"type": "integer", "minimum": 0}
+      }
+    },
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["times", "wake_rms_differences"],
+      "properties": {
+        "times": {"type": "array", "items": {"$ref": "#/$defs/finite"}},
+        "wake_rms_differences": {"type": "array", "items": {"$ref": "#/$defs/finite"}}
+      }
+    },
+    "wall_seconds": {"type": "number", "minimum": 0}
+  },
+  "$defs": {"finite": {"type": "number"}},
+  "allOf": [
+    {
+      "if": {"properties": {"experiment": {"const": "chaotic-wake-sweep"}}},
+      "then": {
+        "properties": {
+          "parameters": {"type": "object", "properties": {"burn_in": true}, "required": ["burn_in"]},
+          "metrics": {"type": "object", "properties": {"probe_rms": true, "spectral_entropy": true, "dominant_power_fraction": true, "broadband_power_fraction": true, "decorrelation_time": true, "enstrophy_mean": true, "enstrophy_coefficient_of_variation": true, "maximum_speed": true, "vorticity_small_scale_fraction": true}, "required": ["probe_rms", "spectral_entropy", "dominant_power_fraction", "broadband_power_fraction", "decorrelation_time", "enstrophy_mean", "enstrophy_coefficient_of_variation", "maximum_speed", "vorticity_small_scale_fraction"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}},
+      "then": {
+        "properties": {
+          "parameters": {"type": "object", "properties": {"epsilon": true}, "required": ["epsilon"]},
+          "metrics": {"type": "object", "properties": {"initial_wake_rms_difference": true, "final_wake_rms_difference": true, "maximum_wake_rms_difference": true, "amplification": true, "finite_time_exponent": true, "exponential_fit_r_squared": true, "exponential_fit_samples": true}, "required": ["initial_wake_rms_difference", "final_wake_rms_difference", "maximum_wake_rms_difference", "amplification", "finite_time_exponent", "exponential_fit_r_squared", "exponential_fit_samples"]}
+        }
+      }
+    }
+  ]
+}

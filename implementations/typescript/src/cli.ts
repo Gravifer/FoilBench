@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-import {readFile} from "node:fs/promises";
+import {readFile, writeFile} from "node:fs/promises";
 import {dirname, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createServer} from "vite";
 import {compareResults, runBrowserMatrix} from "./benchmark/runner.js";
 import type {SolverId} from "./core/contracts.js";
 import {parseScenario} from "./core/scenario.js";
+import {validateDocument} from "./core/scenario.js";
+import {runChaoticWakeCase, runChaosSensitivity} from "./experiments/chaoticWake.js";
+import type {ExperimentEnvelope, WakeCase} from "./experiments/chaoticWake.js";
 
 const solvers = [
   {id: "stable-fluids", display_name: "Stable Fluids (MAC)", dimensions: [2]},
@@ -44,6 +47,25 @@ async function main(args: readonly string[]): Promise<void> {
   }
   if (command === "compare") {
     console.log(await compareResults(args[1] ?? "results/typescript"));
+    return;
+  }
+  if (command === "chaos-sweep" || command === "chaos-paired") {
+    const casesDocument = JSON.parse(await readFile(join(repositoryRoot, "spec/conformance/chaotic-wake-cases.json"), "utf8")) as {
+      scenario: string;
+      sweep: {duration: number; burn_in: number; cases: readonly {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}[]};
+      sensitivity: {duration: number; epsilon: number; case: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}};
+    };
+    const scenarioPath = resolve(repositoryRoot, args[1] ?? casesDocument.scenario);
+    const scenario = parseScenario(JSON.parse(await readFile(scenarioPath, "utf8")) as unknown, JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object);
+    const selected = (value: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}): WakeCase => ({reynolds: value.reynolds, angleDegrees: value.angle_degrees, resolution: value.resolution});
+    const results: readonly ExperimentEnvelope[] = command === "chaos-sweep"
+      ? casesDocument.sweep.cases.map((value) => runChaoticWakeCase(scenario, selected(value), casesDocument.sweep.duration, casesDocument.sweep.burn_in))
+      : [runChaosSensitivity(scenario, selected(casesDocument.sensitivity.case), casesDocument.sensitivity.duration, casesDocument.sensitivity.epsilon)];
+    const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/chaotic-wake-result.schema.json"), "utf8")) as object;
+    for (const result of results) validateDocument(result, resultSchema);
+    const text = JSON.stringify(command === "chaos-sweep" ? results : results[0], null, 2);
+    if (args[2] !== undefined) await writeFile(resolve(repositoryRoot, args[2]), text, "utf8");
+    console.log(text);
     return;
   }
   throw new Error(`command ${command} is not implemented yet`);

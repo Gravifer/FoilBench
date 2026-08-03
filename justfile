@@ -116,4 +116,12 @@ jl-chaos-sweep:
 
 # Run Julia's paired chaotic-wake trajectory experiment.
 jl-chaos-paired:
-    julia --project=implementations/julia implementations/julia/experiments/paired_trajectory.jl
+    julia --project=implementations/julia implementations/julia/experiments/chaos_sensitivity.jl
+
+# Run TypeScript's deterministic chaotic-wake parameter sweep.
+ts-chaos-sweep:
+    npm --prefix implementations/typescript run chaos:sweep
+
+# Run TypeScript's paired chaotic-wake trajectory experiment.
+ts-chaos-paired:
+    npm --prefix implementations/typescript run chaos:paired

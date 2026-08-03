@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from chaotic_wake_sweep import SweepCase, _scenario
-
+from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.geometry import NacaFoil, cell_centers
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver
@@ -17,21 +17,21 @@ from foilbench_py.solvers.factory import create_solver
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", type=float, default=12.0)
-    parser.add_argument("--epsilon", type=float, default=1.0e-5)
+    parser.add_argument("--epsilon", type=float, default=1.0e-4)
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--scenario",
         type=Path,
-        default=Path("scenarios/airfoil/reference.json"),
+        default=Path("scenarios/airfoil/chaotic-experimental.json"),
     )
     parser.add_argument(
         "--single",
         nargs=4,
         type=float,
-        default=(10_000.0, 35.0, 256.0, 128.0),
+        default=(10_000.0, 35.0, 160.0, 96.0),
         metavar=("RE", "ANGLE", "NX", "NY"),
     )
-    parser.add_argument("--scheme", choices=("maccormack", "skew-rk2"), default="maccormack")
+    parser.add_argument("--scheme", choices=("maccormack", "skew-rk2"), default="skew-rk2")
     return parser
 
 
@@ -147,18 +147,54 @@ def main() -> None:
         "times": times,
         "wake_rms_differences": differences,
     }
+    envelope: dict[str, object] = {
+        "schema_version": 1,
+        "contract_id": "foilbench-phase2-v1",
+        "experiment": "chaotic-wake-sensitivity",
+        "language": "python",
+        "solver": "stable-fluids",
+        "scenario": scenario.id,
+        "parameters": {
+            "reynolds": case.reynolds,
+            "angle_degrees": case.angle_degrees,
+            "resolution": list(case.resolution),
+            "duration": arguments.duration,
+            "epsilon": arguments.epsilon,
+        },
+        "metrics": {
+            key: result[key]
+            for key in (
+                "initial_wake_rms_difference",
+                "final_wake_rms_difference",
+                "maximum_wake_rms_difference",
+                "amplification",
+                "finite_time_exponent",
+                "exponential_fit_r_squared",
+                "exponential_fit_samples",
+            )
+        },
+        "series": {
+            "times": times,
+            "wake_rms_differences": differences,
+        },
+        "wall_seconds": wall_seconds,
+    }
+    result_schema = json.loads(
+        (root / "spec" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+    )
+    validate_json(envelope, result_schema)
     print(
         json.dumps(
             {
                 key: value
-                for key, value in result.items()
-                if key not in ("times", "wake_rms_differences")
+                for key, value in envelope.items()
+                if key != "series"
             }
         )
     )
     if arguments.output is not None:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        arguments.output.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

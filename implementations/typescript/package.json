@@ -19,7 +19,9 @@
     "describe": "tsx src/cli.ts describe",
     "bench": "tsx src/cli.ts bench",
     "gate:preview": "tsx src/benchmark/previewGate.ts",
-    "compare": "tsx src/cli.ts compare"
+    "compare": "tsx src/cli.ts compare",
+    "chaos:sweep": "tsx src/cli.ts chaos-sweep",
+    "chaos:paired": "tsx src/cli.ts chaos-paired"
   },
   "dependencies": {
     "ajv": "^8.17.1",

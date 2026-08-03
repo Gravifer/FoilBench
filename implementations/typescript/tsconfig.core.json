@@ -15,6 +15,7 @@
     "src/viewer/model.ts",
     "src/viewer/protocol.ts",
     "src/viewer/tracers.ts",
-    "src/benchmark/types.ts"
+    "src/benchmark/types.ts",
+    "src/experiments/chaoticWake.ts"
   ]
 }
