@@ -21,7 +21,7 @@ and adds online Reynolds control, diagnostic cropping, rapid-motion recovery,
 and fail-fast pressure-solver safety.
 
 The completed 2026-08-02 shared viewer-contract reconciliation and
-maintenance pass raise the Python suite to 132 tests and align timestamped
+maintenance pass raise the Python suite to 133 tests and align timestamped
 drag controls, transactional switching, typed and bounded recovery, tracer
 continuity, presentation state, ordered commands, snapshot semantics, and
 interactive performance accounting with Julia.
@@ -71,7 +71,7 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 574 passing checks. On the development
+The automated Julia suite contains 577 passing checks. On the development
 machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
 and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
 it reads shared specifications and writes shared artifacts but never loads
