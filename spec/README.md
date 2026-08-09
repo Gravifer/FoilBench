@@ -4,6 +4,14 @@ The machine-readable manifest [contract-version.json](contract-version.json)
 names the normative documents and schemas for the current contract revision.
 This page is the human routing guide; it does not duplicate their requirements.
 
+The words **must**, **should**, and **may** have their usual normative force
+throughout the suite: **must** is required for conformance, **should** may be
+deviated from only with a recorded justification and equivalent observable
+behavior, and **may** denotes permitted variation. A document marked
+`proposed` defines the candidate next contract but does not establish current
+implementation conformance until the manifest's activation requirements are
+met.
+
 ## Authority by subject
 
 | Subject | Authoritative document |
@@ -38,6 +46,9 @@ contract amendment should:
 4. run conformance in every implemented language; and
 5. record implementation deviations explicitly until they are reconciled.
 
-The Phase 2 revision-2 documents intentionally precede their implementation
-reconciliation. The contract review occurs first; language changes and new
-fixtures follow only after that review is accepted.
+Phase 2 revision 2 is currently proposed and intentionally precedes its
+implementation reconciliation. Activation requires the language-neutral
+fixtures, schemas, and three existing implementations to identify and satisfy
+the revision. Until then, revision 1 remains the implemented baseline and no
+implementation may claim revision-2 conformance merely because the prose has
+been committed.

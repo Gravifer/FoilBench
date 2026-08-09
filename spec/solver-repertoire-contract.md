@@ -1,6 +1,6 @@
 # Solver repertoire contract
 
-Status: normative component of `foilbench-phase2-v1`, revision 2.
+Status: proposed normative component of `foilbench-phase2-v1`, revision 2.
 
 This contract defines the minimum numerical content represented by the three
 Phase 2 solver identifiers. It prevents an implementation from satisfying the
@@ -21,9 +21,9 @@ Every complete Phase 2 language implementation provides these independent
 
 | Identifier | Family | Required precision modes |
 | --- | --- | --- |
-| `stable-fluids` | Projected staggered-grid flow | Float32 preview/throughput and Float64 validation where supported |
-| `lbm-d2q9` | D2Q9 two-relaxation-time lattice Boltzmann | Float32 preview/throughput and Float64 validation where supported |
-| `pic-flip` | Blended particle-in-cell/fluid-implicit-particle | Float32 preview/throughput and Float64 validation where supported |
+| `stable-fluids` | Projected staggered-grid flow | Float32 preview/throughput and Float64 validation |
+| `lbm-d2q9` | D2Q9 two-relaxation-time lattice Boltzmann | Float32 preview/throughput and Float64 validation |
+| `pic-flip` | Blended particle-in-cell/fluid-implicit-particle | Float32 preview/throughput and Float64 validation |
 
 The implementation advertises only 2D support and rejects thin-3D scenarios
 through the capability mechanism. D3Q19 shallow-periodic flow belongs to a
@@ -65,7 +65,7 @@ The `lbm-d2q9` identifier requires:
   relaxation;
 - collide/stream evolution of solver-private populations;
 - physical-to-lattice scaling derived from requested Reynolds number and the
-  declared lattice Mach limit;
+  shared lattice Mach limit;
 - interpolated moving-wall bounce-back covering both interpolation branches;
 - prescribed-velocity inlet, declared transverse freestream or channel-wall
   treatment, convective outlet, and the scenario-configured sponge treatment;
@@ -95,9 +95,15 @@ The `pic-flip` identifier requires:
 - a default blend of 95 percent FLIP and 5 percent PIC with live/scenario
   adjustment;
 - deterministic population maintenance, reseeding, and SDF collision
-  handling; and
+  handling, including wall-relative collision response consistent with the
+  MAC grid's moving no-slip boundary; and
 - canonical import through deterministic solver-particle reseeding followed
-  by a PIC-dominant settling operation.
+  by a PIC-dominant first validation step.
+
+Canonical import and particle reseeding are zero-time reconstruction. They do
+not silently advance physical time. The transaction's subsequent validation
+advance uses the PIC-dominant blend and consumes exactly its requested
+physical interval once.
 
 Transfer reduction order, particle storage structure, threading strategy, and
 empty-face implementation are language-native choices provided deterministic
@@ -108,8 +114,8 @@ grid velocity field do not constitute this solver family.
 
 Visible tracers are deliberately outside the physical solver repertoire.
 They consume `sample_velocity` and cannot alter a solver or its benchmark
-result. Their shared explicit-midpoint RK2 integration, lifecycle, modes, and
-path continuity are normative in
+result. Their shared frozen-field explicit-midpoint integration, lifecycle,
+modes, and path continuity are normative in
 [the interactive viewer contract](interactive-viewer-contract.md).
 
 This separation means all languages have the same solver repertoire while

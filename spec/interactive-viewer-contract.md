@@ -1,6 +1,6 @@
 # Interactive viewer contract
 
-Status: normative component of `foilbench-phase2-v1`, revision 2. Drag-resolution
+Status: proposed normative component of `foilbench-phase2-v1`, revision 2. Drag-resolution
 constants remain user-gated; the other former Phase 2 open decisions are now
 settled below.
 
@@ -66,9 +66,11 @@ Only the canonical portion crosses solver families.
 
 ### Control state
 
-Control state contains the physical time, visible foil angle, solver-facing
-foil angular velocity, requested Reynolds number, playback rate, and whether
-the scenario's future angle schedule is still active.
+Solver-facing `ControlState` contains the requested completion time, visible
+foil angle, and authoritative foil angular velocity. Requested Reynolds
+number is configured through the solver's atomic Reynolds operation.
+Playback rate, pointer-gesture state, and whether future scenario angle events
+remain active belong to viewer-session state and never enter `ControlState`.
 
 The visible foil angle and solver-facing angular velocity are deliberately
 separate. A viewer may continue to display the pointer-selected pose while
@@ -193,6 +195,13 @@ consecutive motion-driven failure may activate `motion=pose-only`:
 - the current pose is still enforced in the fresh solver geometry;
 - the overlay clearly reports the degraded mode.
 
+Pose-only is deliberately not a physically resolved moving-boundary mode:
+geometry changes while prescribed wall angular velocity is zero. It is a
+quasi-static interactive reconstruction that keeps the visible pose
+responsive after repeated failure. Snapshots and telemetry label it
+with `motion=pose-only` and `degraded_motion=true`; its steps are excluded from
+benchmark, fidelity, and moving-wall conformance evidence.
+
 Pose-only mode must not stick after motion becomes resolvable. Mouse release
 followed by a successful stationary step releases it. While the mouse remains
 held, sustained gentle motion below a documented hysteresis threshold may
@@ -219,9 +228,16 @@ viewer may subsequently apply its separately specified fresh-fallback policy,
 but that fallback is not an accepted warm import.
 
 The transaction preserves physical time, visible foil pose, requested
-Reynolds number, presentation state, visible tracers, and valid path history.
-It does not preserve solver-private state that is absent from the canonical
-format.
+Reynolds number, presentation state, tracer identities, and valid path
+history. It does not preserve solver-private state that is absent from the
+canonical format.
+
+The accepted destination validation step advances physical time. After it
+commits, visible tracers advance exactly once through that same interval using
+the completed destination field; their positions, ages, and history therefore
+change normally without being reseeded. A rejected transaction leaves every
+tracer field unchanged. A later successful fresh fallback preserves time but
+performs the separately required full reseed.
 
 Normal lossy reconstruction is not itself a failure. Examples include:
 
@@ -237,18 +253,15 @@ conversion transient.
 
 User-induced warm-import rejection is an expected interactive outcome. It may
 occur repeatedly during vigorous play and must not use exceptions as routine
-control flow. Import should return a typed result equivalent to:
+control flow. Import returns a typed result using the reason, stage, and
+evidence vocabulary owned by the
+[flow solver contract](solver-contract.md), equivalent to:
 
 ```text
 status: accepted | rejected
-reason: none
-      | excessive_velocity
-      | nonfinite_state
-      | incompatible_geometry
-      | incompatible_domain
-      | projection_failure
-      | invalid_density
-      | unsupported_conversion
+reason: none | FailureReason
+stage: FailureStage | none
+evidence: typed numeric/boolean fields
 warnings: [loss_of_non_equilibrium, particles_reseeded, ...]
 ```
 
@@ -301,7 +314,8 @@ Reynolds failure counter.
 
 A permitted fresh recovery has these baseline semantics:
 
-- create a new instance of the requested solver at the current physical time;
+- use the solver contract's `restart` operation to create a new instance at
+  the current physical time;
 - preserve the visible foil angle and requested Reynolds number unless the
   Reynolds circuit breaker explicitly resets it;
 - initialize with zero solver-facing angular velocity;
@@ -316,11 +330,14 @@ A permitted fresh recovery has these baseline semantics:
 The exact policy deciding when a rejected warm import may fall back to fresh
 state is:
 
-- `excessive_velocity`, `nonfinite_state`, `projection_failure`, and
-  `invalid_density` permit exactly one fresh-destination attempt for the
-  initiating switch command;
-- `incompatible_geometry`, `incompatible_domain`, and
-  `unsupported_conversion` retain the source without a fresh attempt;
+- `excessive_velocity`, `stability_limit`, `nonfinite_state`,
+  `convergence_failure`, `projection_failure`, `invalid_density`,
+  `invalid_population`, `transfer_failure`, and `postcondition_failure`
+  permit exactly one fresh-destination attempt for the initiating switch
+  command;
+- `invalid_relaxation`, `time_contract_failure`, `incompatible_geometry`,
+  `incompatible_domain`, and `unsupported_conversion` retain the source
+  without a fresh attempt;
 - a successful fresh destination becomes active, preserves time, visible
   pose, requested Reynolds number, and presentation settings, cancels the
   angle schedule, fully reseeds tracers, increments the recovery epoch, and
@@ -349,9 +366,9 @@ new recovery cycle.
 
 Visible tracers are presentation state, never solver-private particles. Solver
 switching therefore does not inherently reseed them. Their trajectories are
-nevertheless numerical solutions of the passive-advection equation
-`dx/dt = u(x,t)`: integration order affects trajectory error, invariant drift,
-solid encounters, and long-time residence, not merely appearance.
+nevertheless mathematical numerical trajectories: integration order affects
+trajectory error, invariant drift, solid encounters, and long-time residence,
+not merely appearance.
 
 Two exact contract-level mode identifiers are shared:
 
@@ -366,21 +383,48 @@ implementation-local name such as `flow` is not a third mode.
 
 ### Passive-advection integration
 
-Ordinary visible-tracer motion must use explicit-midpoint RK2 over each
-completed physical tracer interval. Given a sampled field `u`, the update is
+Ordinary visible-tracer motion uses **frozen-field explicit midpoint** over
+each completed physical tracer interval. Let `u_bar_(n+1)(x)` be the active
+solver's public velocity sampler after the solver has completed and committed
+the interval. The viewer approximates the autonomous path equation
+`dx/dt = u_bar_(n+1)(x)` by
 
 ```text
-k1 = u(x_n)
-k2 = u(x_n + 0.5 * dt * k1)
+k1 = u_bar_(n+1)(x_n)
+k2 = u_bar_(n+1)(x_n + 0.5 * dt * k1)
 x_(n+1) = x_n + dt * k2
 ```
 
 Both samples come through the active solver's public velocity-sampling
 operation. The `dt` is simulated physical time, not render-frame or wall time.
-If display mode intentionally applies a documented presentation speed factor,
-that factor must be applied consistently to both RK2 stages; material mode
-uses a factor of one. Collision and lifecycle handling occur after the RK2
-candidate position is formed.
+Playback-rate changes alter the physical interval requested from both solver
+and tracers; there is no additional tracer-only velocity multiplier.
+Collision and lifecycle handling occur after the midpoint candidate position
+is formed.
+
+This is second order for the frozen autonomous field. It is not claimed to be
+second-order temporal integration of the evolving equation `dx/dt = u(x,t)`,
+because the Phase 2 solver protocol exposes only the newly completed field.
+That limitation is shared and testable rather than hidden behind the name
+RK2.
+
+Other reasonable tracer integrators are deliberately outside the Phase 2
+baseline:
+
+- forward Euler uses one sample but has first-order trajectory error and
+  excessive radial or invariant drift in curved flow;
+- Heun's explicit trapezoid is a different two-sample, second-order method for
+  a frozen field;
+- classical RK4 gives higher frozen-field accuracy at four samples per step;
+- time-centered midpoint using previous/current field interpolation can be
+  second order for an evolving field but requires temporal sampling semantics;
+- solver-substep path integration is more tightly coupled and can follow
+  evolving fields, but exposes solver-private timing; and
+- adaptive embedded RK methods control local error but introduce variable
+  sampling cost and cross-implementation tolerance policy.
+
+Future revisions may select one after extending the solver protocol. Revision
+2 requires the frozen-field midpoint formula above.
 
 This requirement applies only to viewer-owned passive tracers. The numerical
 motion of solver-private PIC/FLIP particles belongs to the
@@ -388,28 +432,45 @@ motion of solver-private PIC/FLIP particles belongs to the
 
 ### Lifecycle and placement
 
-Display-tracer renewal must be deterministic from the scenario seed and must
-be staggered so that a large synchronized cohort does not disappear in one
-step. Finite randomized lifetimes are the shared Phase 2 mechanism; their
-exact bounded distribution may remain implementation-specific until a shared
-fixture fixes it. Initial ages must also be staggered across that distribution
-instead of starting every tracer at age zero.
+Display-tracer renewal must be deterministic within each language
+implementation for the same version, scenario seed, explicit tracer count,
+and command transcript. Cross-language tests require the same lifecycle
+semantics and statistically comparable coverage, not bit-identical RNG draws,
+positions, or paths. Languages may use different PCG32 streams and draw order.
+
+Renewal must be staggered so that a large synchronized cohort does not
+disappear in one step. Finite randomized lifetimes are the shared Phase 2
+mechanism; their exact bounded distribution may remain implementation-specific.
+Initial ages must also be staggered across that distribution instead of
+starting every tracer at age zero. Ordinary viewers choose approximately
+`256 * domain_area / chord^2` tracers, rounded to an integer and clamped to
+2,048 through 8,192; conformance fixtures inject an explicit count.
+
+Every initial placement, inlet respawn, full-domain respawn, scenario reset,
+and recovery reseed must produce a finite point inside the domain and outside
+the foil at the authoritative current pose. Rejection sampling has a finite
+attempt bound and a deterministic valid fallback. A recovery must never test
+placement against a hard-coded zero-degree foil.
 
 Discontinuous relocation has a classified reason and placement rule:
 
-| Reason | Display mode | Material mode |
+| Counter identifier | Display mode | Material mode |
 | --- | --- | --- |
-| Nonperiodic domain exit | Inlet respawn | Inlet respawn |
-| Ordinary lifetime expiry | Full-domain respawn | Not applicable |
-| Deep or invalid foil collision | Full-domain respawn | Inlet respawn |
-| Forced fresh recovery | Full-domain reseed of all tracers | Full-domain reseed of all tracers |
-| Periodic boundary crossing | Periodic wrap | Periodic wrap |
+| `boundary_exit` | Inlet respawn | Inlet respawn |
+| `lifetime_expiry` | Full-domain respawn | Not applicable |
+| `invalid_collision` | Full-domain respawn | Inlet respawn |
+| `forced_recovery` | Full-domain reseed of all tracers | Full-domain reseed of all tracers |
+| `scenario_reset` | Full-domain reseed of all tracers | Full-domain reseed of all tracers |
+| `periodic_wrap` | Periodic wrap | Periodic wrap |
 
-Implementations should expose diagnostic counters for these reasons. The
+Implementations must expose diagnostic counters for these reasons. The
 counters are conformance and developer observability, not mandatory content
 for the ordinary student overlay. Tracer relocation must not mutate solver
 state, physical time, recovery epochs, Reynolds failure evidence, or solver
 failure classification.
+
+Counters count relocated tracers, not batches or render frames. They are
+monotonic over the viewer session and scenario reset does not reuse them.
 
 Display mode must maintain useful long-time coverage in a controlled uniform
 open-flow conformance case. This does **not** require uniform tracer density in
@@ -418,6 +479,13 @@ frame would conceal meaningful residence and wake structure. Coverage is
 measured on the full solver domain, independent of presentation cropping, and
 the conformance fixture owns the coarse partition, burn-in, duration, and
 acceptance threshold.
+
+At most one discontinuous relocation is committed per tracer interval. When
+causes overlap, primary-reason precedence is nonperiodic exit, deep or invalid
+collision, lifetime expiry, then periodic wrap. Only the committed reason
+increments its counter and continuity generation. Shallow projection is
+continuous and does not increment either. This ordering makes recycle
+telemetry comparable without requiring identical random positions.
 
 Normal boundary exits and ordinary display-tracer turnover may respawn a
 single tracer. A forced recovery must use a deterministic full-domain reseed
@@ -441,17 +509,21 @@ new position.
 Switching from display to material mode preserves current positions, ages,
 generations, and valid history, then disables future lifetime expiry.
 Switching from material to display mode preserves positions, generations, and
-history while deterministically staggering the newly active display
-lifetimes; it must not immediately teleport the population. Ordinary accepted
-solver switching preserves all visible-tracer state. Only a classified fresh
-recovery applies the all-tracer reseed rule.
+history while assigning deterministic future expiry deadlines relative to the
+switch time; it must not immediately teleport or expire the population.
+Explicit scenario reset performs a deterministic full-domain reseed at the
+scenario's initial pose, resets lifetime clocks and path history, and preserves
+the session-lifetime recovery epoch. Ordinary accepted solver switching
+preserves tracer identity and advances the population once as specified
+above. Ordinary recycling, reset, and recovery preserve the configured tracer
+count. Only a classified fresh recovery applies the recovery reseed rule.
 
 For foil collision, shallow penetration should project the tracer to the
 surface along a valid SDF normal. Respawn only when penetration exceeds a
 cell-scaled threshold, the normal is non-finite or degenerate, or projection
 fails. The exact threshold may scale with the implementation's grid spacing.
 
-### Julia selective-redistribution archive
+### Julia selective-redistribution archive (informative)
 
 The original Phase 2A Julia viewer had a deterministic, coverage-aware
 selective redistribution algorithm. It was an interesting implementation
@@ -526,6 +598,21 @@ make it unavailable to another reader. A reader may wait for a revision or a
 command sequence, but ordinary rendering can always retrieve the current
 snapshot.
 
+Four identities remain distinct:
+
+- command sequence orders accepted user and lifecycle commands;
+- solver epoch changes whenever the active solver instance is replaced;
+- solver-state revision changes only after that instance commits numerical
+  state; and
+- snapshot revision changes whenever newly published numerical, control, or
+  presentation state becomes observable.
+
+Recovery epoch independently counts fresh recoveries. Snapshots carry the
+latest applicable identities, and solver reports and diagnostics identify the
+`(solver_epoch, solver_state_revision)` pair they describe. A presentation-only
+command may advance snapshot revision without pretending that a solver step
+completed.
+
 Published arrays must be detached from mutable solver and tracer storage.
 They may be immutable views over stable storage, copied arrays, or ownership-
 transferred buffers, provided later solver mutation cannot change a snapshot
@@ -538,9 +625,12 @@ native channels/conditions may be used; the contract does not prescribe one.
 
 Small control-plane events such as failure, recovery, pause, and shutdown
 must remain publishable when a bulk render frame is waiting for a consumer.
-Bulk ownership acknowledgements are revision-specific: stale or duplicate
-acknowledgements must not release a newer frame. A failed ownership transfer
-must restore the producer's ability to publish.
+Transports that transfer exclusive ownership of bulk storage require
+revision-specific acknowledgements: stale or duplicate acknowledgements must
+not release a newer frame, and failed transfer must restore the producer's
+ability to publish. Immutable shared snapshots and copied native buffers need
+no ownership acknowledgement, but still require bounded latest-only
+publication and independent control-plane progress.
 
 Browser implementations continue simulation while hidden, subject to browser
 timer throttling, but suppress unnecessary bulk publication. They publish the
@@ -565,7 +655,8 @@ and back and fresh recovery, while scenario reset restores scenario defaults.
 Headless viewer tests should cover:
 
 - non-consuming snapshot reads by multiple consumers;
-- monotonically increasing revisions and command acknowledgements;
+- distinct monotonic command sequences, solver epochs/state revisions,
+  snapshot revisions, and recovery epochs;
 - event-driven pause, resume, reset, and shutdown;
 - coalescing of rapid pose samples without dropping discrete commands;
 - ordering barriers around pose, release, reset, pause, switch, and shutdown;
@@ -579,17 +670,19 @@ Headless viewer tests should cover:
 - pose-only entry and release;
 - full tracer reseeding, generation discontinuities, and shallow collision
   projection;
-- explicit-midpoint RK2 passive trajectories against analytic uniform and
-  curved reference fields;
-- deterministic staggered display lifetimes, classified recycle counters,
-  and long-run display coverage in the shared open-flow fixture;
-- preservation of positions and history across tracer-mode and accepted
-  solver switches;
+- frozen-field explicit-midpoint passive trajectories against analytic
+  uniform and curved reference fields;
+- per-language deterministic staggered display lifetimes, classified recycle
+  counters, authoritative-pose placement, and statistically comparable
+  long-run display coverage in the shared open-flow fixture;
+- mode-switch preservation and exactly-once tracer advancement after accepted
+  warm-switch validation;
 - periodic wrapping without inlet respawn or seam-crossing path segments;
 - isolation of tracer and diagnostic failures from solver recovery;
 - hidden-vorticity work suppression and immediate invalidation events;
 - cadenced and every-step diagnostic modes;
-- revision-specific bulk acknowledgements and independent status events;
+- revision-specific bulk acknowledgements for ownership-transfer transports
+  and independent status events for every transport;
 - hidden-browser publication suppression without catch-up;
 - cleared metrics and warming state after reset, switch, and recovery;
 - unsupported thin-3D capability rejection.
@@ -597,7 +690,7 @@ Headless viewer tests should cover:
 Timing-sensitive tests should use injected clocks or deterministic event
 timestamps rather than depending on render-frame timing.
 
-## Phase 2A reconciliation record
+## Phase 2A reconciliation record (informative)
 
 Commits `95a6387` and `778654c` introduced the initial shared design intent. A
 two-round blind review then identified violations in both implementations. The
@@ -611,7 +704,7 @@ from observable tests rather than from the existence of particular commits.
 | Schedules | Manual drag and forced recovery cancel future angle events; solver and Reynolds changes preserve them; reset restores them. |
 | Recovery | Physical time and visible pose are preserved, recovery epochs are reported, metrics return to warming, and solver-private state is declared discarded. |
 | Recovery tracers | Both languages perform deterministic full reseeding with explicit continuity generations. |
-| Warm-import failure | Both languages return a structured accepted/rejected outcome and retain the source on rejection while fallback remains open. |
+| Warm-import failure | Both languages return a structured accepted/rejected outcome and retain the source on rejection; revision 2 later settled the bounded fallback policy above. |
 | Tracer collision | Shallow penetration projects along a valid SDF normal; deep or invalid cases respawn. |
 | Diagnostics | Typed presentation state owns visibility and crop state; hidden vorticity stops field refresh; ordinary cadence targets `0.1 s`. |
 | Performance display | Python retains its EMA, Julia retains latest-step values with fixed-width volatile fields, and both show warming placeholders. |

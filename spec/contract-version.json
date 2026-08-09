@@ -1,6 +1,14 @@
 {
   "contract_id": "foilbench-phase2-v1",
   "revision": 2,
+  "status": "proposed",
+  "implemented_baseline_revision": 1,
+  "activation_requirements": [
+    "commit revision-2 tracer and solver-validity conformance fixtures",
+    "carry contract ID and revision in comparable result and transcript artifacts",
+    "reconcile Python, Julia, and TypeScript implementations",
+    "pass combined cross-language verification"
+  ],
   "compatibility": {
     "breaking_changes_require_new_revision": true,
     "backward_compatible_optional_capabilities_allowed": true

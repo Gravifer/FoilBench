@@ -21,6 +21,11 @@ viewer and solver-validity contracts; fixture values will be committed with
 the implementation conformance pass after contract review. Until then,
 implementations must not invent permanent language-local thresholds.
 
+Tracer fixtures assert per-language deterministic replay, exact lifecycle
+semantics, analytic integration tolerances, and statistically comparable
+coverage. They do not require cross-language bit-identical tracer RNG draws,
+positions, or paths.
+
 PCG32 uses unsigned 64-bit state, multiplier `6364136223846793005`, and an
 odd increment `(stream << 1) | 1`. Initialization starts at state zero,
 advances once, adds the unsigned seed modulo `2^64`, and advances again.
