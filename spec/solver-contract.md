@@ -1,7 +1,18 @@
 # Flow solver contract
 
+Status: normative component of `foilbench-phase2-v1`, revision 2.
+
 This contract defines the language-neutral behavior of a FoilBench solver.
 Implementations are independent and may use native layouts and algorithms.
+
+Its scope is the solver protocol, identifiers, capabilities, report surface,
+and shared import/failure vocabulary. The numerical ingredients behind each
+identifier are defined by the
+[solver repertoire contract](solver-repertoire-contract.md), while successful
+step and import admissibility are defined by the
+[solver validity contract](solver-validity-contract.md). Interactive fallback
+and presentation behavior belong to the
+[interactive viewer contract](interactive-viewer-contract.md).
 
 ## Solver identifiers and capabilities
 
@@ -42,9 +53,12 @@ than identifying concrete solver classes. Phase 2 Stable Fluids exposes its
 transport selection, PIC/FLIP exposes its blend, and LBM exposes no tuning.
 
 `advance` returns requested and advanced time, internal substeps, maximum
-speed, and warnings. A successful step advances by the requested interval
-within floating-point tolerance and publishes only finite state. A failed
-step must not partially advance physical time or publish partial state.
+speed, and warnings, together with or linked to the accepted-step evidence
+required by the solver validity contract. A successful step advances by the
+requested interval within floating-point tolerance and satisfies that
+contract; finite state alone is not sufficient. A failed step must atomically
+restore physical time and all mutable public and private state rather than
+publish a partial operation.
 
 ## Import and failure semantics
 

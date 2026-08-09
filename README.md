@@ -107,5 +107,11 @@ See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-accep
 [benchmark methodology](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
+The language-neutral specifications are indexed by the
+[FoilBench contract suite](spec/README.md). Its manifest distinguishes the
+solver protocol, solver repertoire, accepted-step validity, interactive
+viewer behavior, artifacts, and benchmark methodology so later languages do
+not infer policy from one reference implementation.
+
 The accepted opt-in investigation of deterministic 2D chaotic wakes is
 documented in [the Phase 1 chaotic-wake extension](docs/chaotic-wake-experiment.md).

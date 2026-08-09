@@ -1,12 +1,14 @@
 {
   "contract_id": "foilbench-phase2-v1",
-  "revision": 1,
+  "revision": 2,
   "compatibility": {
     "breaking_changes_require_new_revision": true,
     "backward_compatible_optional_capabilities_allowed": true
   },
   "normative_documents": [
     "spec/solver-contract.md",
+    "spec/solver-repertoire-contract.md",
+    "spec/solver-validity-contract.md",
     "spec/interactive-viewer-contract.md",
     "spec/canonical-state.md",
     "docs/benchmark-methodology.md"

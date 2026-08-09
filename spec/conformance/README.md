@@ -15,6 +15,12 @@ implementation must reproduce before solver comparisons are meaningful.
   transcript. All language harnesses consume the same monotonic input and
   compare semantic state rather than renderer text or frame counts.
 
+Revision 2 additionally requires shared tracer-lifecycle and solver-validity
+fixtures. Their normative behavior is already defined by the interactive
+viewer and solver-validity contracts; fixture values will be committed with
+the implementation conformance pass after contract review. Until then,
+implementations must not invent permanent language-local thresholds.
+
 PCG32 uses unsigned 64-bit state, multiplier `6364136223846793005`, and an
 odd increment `(stream << 1) | 1`. Initialization starts at state zero,
 advances once, adds the unsigned seed modulo `2^64`, and advances again.

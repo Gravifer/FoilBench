@@ -1,6 +1,6 @@
 # Interactive viewer contract
 
-Status: normative component of `foilbench-phase2-v1`. Drag-resolution
+Status: normative component of `foilbench-phase2-v1`, revision 2. Drag-resolution
 constants remain user-gated; the other former Phase 2 open decisions are now
 settled below.
 
@@ -14,6 +14,26 @@ The words **must**, **should**, and **may** distinguish required behavior,
 recommended behavior, and permitted variation. Items in [Open decisions](#open-decisions)
 are not yet requirements.
 
+## Contract-suite scope
+
+This document remains the authority for interactive ownership, commands,
+recovery behavior, snapshots, presentation state, visible tracers, and what a
+viewer reports to a person. The companion contracts deliberately own adjacent
+questions:
+
+- [Flow solver contract](solver-contract.md) defines the language-neutral
+  protocol, identifiers, capabilities, and import/failure vocabulary.
+- [Solver repertoire contract](solver-repertoire-contract.md) defines the
+  numerical ingredients required to claim one of the Phase 2 solver names.
+- [Solver validity contract](solver-validity-contract.md) defines when a
+  numerical operation is admissible as a successful step or import.
+
+[Canonical state](canonical-state.md) owns serialized field meaning and
+[benchmark methodology](../docs/benchmark-methodology.md) owns timed-run and
+fidelity measurement. If a subject appears in more than one document, the
+document whose scope names it above is authoritative; cross-references in the
+other documents are explanatory rather than competing definitions.
+
 ## Scope and non-goals
 
 The contract covers:
@@ -24,11 +44,13 @@ The contract covers:
 - visible tracers and path continuity;
 - asynchronous simulation, snapshots, diagnostics, and overlays.
 
-It does not define solver discretizations, GPU APIs, window-system details,
-keyboard layouts, or benchmark fidelity thresholds. It also does not promise
-that an arbitrary, discontinuous foil motion has a physically resolved fluid
-solution. The viewer must remain responsive and honest when the selected
-solver cannot resolve such a motion.
+It does not define solver-family discretizations, accepted-step numerical
+criteria, GPU APIs, window-system details, keyboard layouts, or benchmark
+fidelity thresholds. It does define the integration and lifecycle of visible
+passive tracers because those are viewer-owned numerical presentation state.
+It also does not promise that an arbitrary, discontinuous foil motion has a
+physically resolved fluid solution. The viewer must remain responsive and
+honest when the selected solver cannot resolve such a motion.
 
 ## State domains
 
@@ -258,10 +280,12 @@ density bounds may additionally reject them as `invalid_density`.
 
 ## Numerical failure and fresh recovery
 
-Interactive solver advances must either complete with a finite report or
-produce a classified failure promptly. Iterative methods must have finite
-input checks and bounded iteration; a frontend must not appear frozen for
-tens of seconds before an overflow finally surfaces.
+Interactive solver advances must satisfy the accepted-step requirements in
+the [solver validity contract](solver-validity-contract.md) or produce a
+classified failure promptly. A finite report is necessary but is not, by
+itself, evidence that a step is numerically admissible. Iterative methods must
+have finite input checks and bounded iteration; a frontend must not appear
+frozen for tens of seconds before an overflow finally surfaces.
 
 Physical time and scheduled pose are committed only after a solver advance
 completes successfully. A failed or rejected tentative step must leave them at
@@ -324,14 +348,76 @@ new recovery cycle.
 ## Visible tracers and path history
 
 Visible tracers are presentation state, never solver-private particles. Solver
-switching therefore does not inherently reseed them.
+switching therefore does not inherently reseed them. Their trajectories are
+nevertheless numerical solutions of the passive-advection equation
+`dx/dt = u(x,t)`: integration order affects trajectory error, invariant drift,
+solid encounters, and long-time residence, not merely appearance.
 
-Two modes are shared:
+Two exact contract-level mode identifiers are shared:
 
 - **display tracers** use deterministic finite lifetimes and redistribution
   or respawn policies that maintain visually useful coverage;
 - **material tracers** preserve residence and depletion behavior and normally
   re-enter only through the inlet.
+
+An implementation may localize the user-facing labels, but serialized viewer
+state and conformance transcripts use `display` and `material`. A legacy or
+implementation-local name such as `flow` is not a third mode.
+
+### Passive-advection integration
+
+Ordinary visible-tracer motion must use explicit-midpoint RK2 over each
+completed physical tracer interval. Given a sampled field `u`, the update is
+
+```text
+k1 = u(x_n)
+k2 = u(x_n + 0.5 * dt * k1)
+x_(n+1) = x_n + dt * k2
+```
+
+Both samples come through the active solver's public velocity-sampling
+operation. The `dt` is simulated physical time, not render-frame or wall time.
+If display mode intentionally applies a documented presentation speed factor,
+that factor must be applied consistently to both RK2 stages; material mode
+uses a factor of one. Collision and lifecycle handling occur after the RK2
+candidate position is formed.
+
+This requirement applies only to viewer-owned passive tracers. The numerical
+motion of solver-private PIC/FLIP particles belongs to the
+[solver repertoire contract](solver-repertoire-contract.md).
+
+### Lifecycle and placement
+
+Display-tracer renewal must be deterministic from the scenario seed and must
+be staggered so that a large synchronized cohort does not disappear in one
+step. Finite randomized lifetimes are the shared Phase 2 mechanism; their
+exact bounded distribution may remain implementation-specific until a shared
+fixture fixes it. Initial ages must also be staggered across that distribution
+instead of starting every tracer at age zero.
+
+Discontinuous relocation has a classified reason and placement rule:
+
+| Reason | Display mode | Material mode |
+| --- | --- | --- |
+| Nonperiodic domain exit | Inlet respawn | Inlet respawn |
+| Ordinary lifetime expiry | Full-domain respawn | Not applicable |
+| Deep or invalid foil collision | Full-domain respawn | Inlet respawn |
+| Forced fresh recovery | Full-domain reseed of all tracers | Full-domain reseed of all tracers |
+| Periodic boundary crossing | Periodic wrap | Periodic wrap |
+
+Implementations should expose diagnostic counters for these reasons. The
+counters are conformance and developer observability, not mandatory content
+for the ordinary student overlay. Tracer relocation must not mutate solver
+state, physical time, recovery epochs, Reynolds failure evidence, or solver
+failure classification.
+
+Display mode must maintain useful long-time coverage in a controlled uniform
+open-flow conformance case. This does **not** require uniform tracer density in
+an arbitrary separated or recirculating flow: actively homogenizing every
+frame would conceal meaningful residence and wake structure. Coverage is
+measured on the full solver domain, independent of presentation cropping, and
+the conformance fixture owns the coarse partition, burn-in, duration, and
+acceptance threshold.
 
 Normal boundary exits and ordinary display-tracer turnover may respawn a
 single tracer. A forced recovery must use a deterministic full-domain reseed
@@ -348,7 +434,17 @@ can have overlapping lengths.
 On a periodic axis, a tracer wraps rather than receiving inlet semantics or a
 new material lifetime. Because its displayed coordinate teleports across the
 viewport seam, the wrap still increments its continuity generation and no
-domain-spanning segment is rendered.
+domain-spanning segment is rendered. Every other respawn, reseed, or
+discontinuous relocation likewise resets that tracer's path history at the
+new position.
+
+Switching from display to material mode preserves current positions, ages,
+generations, and valid history, then disables future lifetime expiry.
+Switching from material to display mode preserves positions, generations, and
+history while deterministically staggering the newly active display
+lifetimes; it must not immediately teleport the population. Ordinary accepted
+solver switching preserves all visible-tracer state. Only a classified fresh
+recovery applies the all-tracer reseed rule.
 
 For foil collision, shallow penetration should project the tracer to the
 surface along a valid SDF normal. Respawn only when penetration exceeds a
@@ -483,6 +579,12 @@ Headless viewer tests should cover:
 - pose-only entry and release;
 - full tracer reseeding, generation discontinuities, and shallow collision
   projection;
+- explicit-midpoint RK2 passive trajectories against analytic uniform and
+  curved reference fields;
+- deterministic staggered display lifetimes, classified recycle counters,
+  and long-run display coverage in the shared open-flow fixture;
+- preservation of positions and history across tracer-mode and accepted
+  solver switches;
 - periodic wrapping without inlet respawn or seam-crossing path segments;
 - isolation of tracer and diagnostic failures from solver recovery;
 - hidden-vorticity work suppression and immediate invalidation events;
@@ -541,7 +643,8 @@ recorded in the
 ### Drag resolution parameters
 
 The nondimensional angular-velocity cap, smoothing-window length, and
-hysteresis thresholds need matched experiments across Python and Julia. The
+hysteresis thresholds need matched experiments across Python, Julia, and
+TypeScript. The
 observable requirements above apply now; numeric constants should not be
 frozen from either implementation's current event-loop accident.
 
