@@ -27,7 +27,7 @@ export interface ViewerStatusEvent {
 export interface ViewerSnapshot {
   readonly kind: "snapshot"; readonly revision: number; readonly appliedCommand: number;
   readonly solverId: SolverId; readonly time: number; readonly angleDegrees: number; readonly reynolds: number; readonly playbackRate: number;
-  readonly paused: boolean; readonly vorticityVisible: boolean; readonly cropEnabled: boolean; readonly tracerMode: "display" | "flow";
+  readonly paused: boolean; readonly vorticityVisible: boolean; readonly cropEnabled: boolean; readonly tracerMode: "display" | "material";
   readonly stepRate: number | null; readonly simulatedPerWall: number | null; readonly substeps: number;
   readonly maxSpeed: number; readonly diagnostics: Readonly<Record<string, number>>; readonly status: string;
   readonly recoveryEpoch: number; readonly recoveryReason: string | null; readonly recoveryStage: string | null;

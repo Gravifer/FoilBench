@@ -52,6 +52,7 @@ describe("interactive recovery semantics", () => {
     expect(recovered.stepRate).toBeNull();
     expect(Object.keys(recovered.diagnostics)).toHaveLength(0);
     expect([...model.tracers.positions]).not.toEqual([...before]);
+    expect(model.tracers.recycleCounters.forced_recovery).toBe(model.tracers.count);
     model.releaseAngle(); model.step();
     expect(model.time).toBeCloseTo(completedTime + model.scenario.outputDt, 12);
   });

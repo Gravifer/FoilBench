@@ -148,7 +148,7 @@ self.onmessage = (event: MessageEvent<ViewerCommand | SnapshotConsumed>): void =
     else if (command.kind === "toggle-crop") model.toggleCrop();
     else if (command.kind === "toggle-diagnostics") model.toggleDiagnostics();
     else if (command.kind === "visibility") { visible = command.visible; if (visible) publishPending = true; }
-    else model.tracers.mode = model.tracers.mode === "display" ? "flow" : "display";
+    else model.toggleTracers();
   } catch (error) {
     model.paused = true;
     model.status = `command failure: ${error instanceof Error ? error.name : "unknown"}; paused`;

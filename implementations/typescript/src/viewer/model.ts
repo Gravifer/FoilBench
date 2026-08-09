@@ -125,6 +125,7 @@ export class ViewerModel {
 
   public toggleVorticity(): void { this.vorticityVisible = !this.vorticityVisible; }
   public toggleCrop(): void { if ((this.scenario.solverOptions.viewerCropCells ?? 0) > 0) this.cropEnabled = !this.cropEnabled; }
+  public toggleTracers(): void { this.tracers.toggleMode(); }
   public toggleDiagnostics(): void {
     this.presentation.diagnosticMode = this.presentation.diagnosticMode === "cadenced" ? "every-step" : "cadenced";
     this.nextDiagnosticsTime = this.time;
@@ -173,7 +174,7 @@ export class ViewerModel {
     this.presentation.recoveryStage = null;
     this.playbackRate = 1;
     this.failureTimes = [];
-    this.tracers.reseed();
+    this.tracers.reseed(this.scenario.controls[0]?.angleDegrees ?? 0, "scenario_reset");
     this.status = "warming";
     this.clearMeasurements();
   }
@@ -203,6 +204,8 @@ export class ViewerModel {
     this.time += report.advancedDt;
     this.lastReport = report;
     this.status = `switched; discarded ${outcome.discardedState.join(", ")}`;
+    try { this.tracers.advance(incoming, report.advancedDt); }
+    catch (error) { this.status = `switched; presentation failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
     this.clearMeasurements();
     this.diagnosticsReady = true;
     return true;
@@ -234,7 +237,7 @@ export class ViewerModel {
     this.presentation.recoveryEpoch += 1;
     this.presentation.recoveryReason = reason;
     this.presentation.recoveryStage = "warm-import-fallback";
-    this.tracers.reseed();
+    this.tracers.reseed(angle, "forced_recovery");
     this.status = `fresh destination reason=${reason}; stage=warm-import-fallback; private-state-discarded`;
     this.clearMeasurements();
     return true;
@@ -259,7 +262,7 @@ export class ViewerModel {
       this.status = "motion resolved; running";
     } else this.status = "running";
     try {
-      this.tracers.advance(this.solver, dt, 1);
+      this.tracers.advance(this.solver, report.advancedDt);
     } catch (error) {
       this.status = `presentation failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
     }
@@ -310,7 +313,7 @@ export class ViewerModel {
       this.presentation.recoveryEpoch += 1;
       this.presentation.recoveryReason = error.reason;
       this.presentation.recoveryStage = "ordinary-step";
-      this.tracers.reseed();
+      this.tracers.reseed(angle, "forced_recovery");
       this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=ordinary-step discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
       this.clearMeasurements();
     } catch (recoveryError) {
