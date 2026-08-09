@@ -1,11 +1,7 @@
 import type {CanonicalFlowState, ImportOutcome, Scenario} from "./contracts.js";
+import {rejectedImport} from "./outcomes.js";
 
-const rejected = (reason: ImportOutcome["reason"]): ImportOutcome => ({
-  status: "rejected",
-  reason,
-  discardedState: [],
-  warnings: [],
-});
+const rejected = (reason: Exclude<ImportOutcome["reason"], "none">): ImportOutcome => rejectedImport(reason, "canonical-import");
 
 function sameNumbers(left: readonly number[], right: readonly number[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);

@@ -62,9 +62,21 @@ export function divergence(u: FloatArray, v: FloatArray, nx: number, ny: number,
   return output;
 }
 
-export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: number, ny: number, dx: number, dy: number, precision: Precision, iterations: number, tolerance: number, periodicX = false, periodicY = false): void {
+export interface ProjectionReport {
+  readonly criterion: "pressure-change-linf";
+  readonly tolerance: number;
+  readonly iterations: number;
+  readonly finalResidual: number;
+  readonly relativeResidual: number;
+  readonly divergenceLinf: number;
+  readonly converged: boolean;
+}
+
+export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: number, ny: number, dx: number, dy: number, precision: Precision, iterations: number, tolerance: number, periodicX = false, periodicY = false): ProjectionReport {
   const rhs = divergence(u, v, nx, ny, dx, dy, precision); const pressure = allocate(precision, nx * ny); const next = allocate(precision, nx * ny);
   const invDx2 = 1 / (dx * dx); const invDy2 = 1 / (dy * dy);
+  let fluidCount = 0; let rhsMean = 0; for (let index = 0; index < rhs.length; index += 1) if (solid[index] === 0) { rhsMean += rhs[index] ?? 0; fluidCount += 1; } rhsMean /= Math.max(1, fluidCount); for (let index = 0; index < rhs.length; index += 1) if (solid[index] === 0) rhs[index] = (rhs[index] ?? 0) - rhsMean;
+  let performed = 0; let finalChange = Number.POSITIVE_INFINITY; let converged = false;
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     let maxChange = 0;
     for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
@@ -80,10 +92,19 @@ export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: num
       const value = weight > 0 ? (sum - (rhs[index] ?? 0)) / weight : 0;
       maxChange = Math.max(maxChange, Math.abs(value - (pressure[index] ?? 0))); next[index] = value;
     }
-    pressure.set(next); if (maxChange < tolerance) break;
+    pressure.set(next); performed = iteration + 1; finalChange = maxChange; if (maxChange < tolerance) { converged = true; break; }
   }
   for (let y = 0; y < ny; y += 1) for (let x = 1; x < nx; x += 1) if (solid[y * nx + x - 1] === 0 && solid[y * nx + x] === 0) u[y * (nx + 1) + x] = (u[y * (nx + 1) + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[y * nx + x - 1] ?? 0)) / dx;
   for (let y = 1; y < ny; y += 1) for (let x = 0; x < nx; x += 1) if (solid[(y - 1) * nx + x] === 0 && solid[y * nx + x] === 0) v[y * nx + x] = (v[y * nx + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[(y - 1) * nx + x] ?? 0)) / dy;
   if (periodicX) for (let y = 0; y < ny; y += 1) { const left = y * nx + nx - 1; const right = y * nx; if (solid[left] === 0 && solid[right] === 0) { const value = (u[y * (nx + 1)] ?? 0) - ((pressure[right] ?? 0) - (pressure[left] ?? 0)) / dx; u[y * (nx + 1)] = value; u[y * (nx + 1) + nx] = value; } }
   if (periodicY) for (let x = 0; x < nx; x += 1) { const bottom = (ny - 1) * nx + x; const top = x; if (solid[bottom] === 0 && solid[top] === 0) { const value = (v[x] ?? 0) - ((pressure[top] ?? 0) - (pressure[bottom] ?? 0)) / dy; v[x] = value; v[ny * nx + x] = value; } }
+  let residualSquared = 0; let rhsSquared = 0;
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+    const index = y * nx + x; if (solid[index] !== 0) continue; let sum = 0; let weight = 0;
+    const left = x > 0 ? index - 1 : periodicX ? index + nx - 1 : -1; const right = x + 1 < nx ? index + 1 : periodicX ? index - nx + 1 : -1; const bottom = y > 0 ? index - nx : periodicY ? index + nx * (ny - 1) : -1; const top = y + 1 < ny ? index + nx : periodicY ? index - nx * (ny - 1) : -1;
+    if (left >= 0 && solid[left] === 0) { sum += (pressure[left] ?? 0) * invDx2; weight += invDx2; } if (right >= 0 && solid[right] === 0) { sum += (pressure[right] ?? 0) * invDx2; weight += invDx2; } if (bottom >= 0 && solid[bottom] === 0) { sum += (pressure[bottom] ?? 0) * invDy2; weight += invDy2; } if (top >= 0 && solid[top] === 0) { sum += (pressure[top] ?? 0) * invDy2; weight += invDy2; }
+    const residual = sum - weight * (pressure[index] ?? 0) - (rhs[index] ?? 0); residualSquared += residual * residual; rhsSquared += (rhs[index] ?? 0) ** 2;
+  }
+  const projectedDivergence = divergence(u, v, nx, ny, dx, dy, precision); let divergenceLinf = 0; for (let index = 0; index < projectedDivergence.length; index += 1) if (solid[index] === 0) divergenceLinf = Math.max(divergenceLinf, Math.abs(projectedDivergence[index] ?? 0)); const finalResidual = Math.sqrt(residualSquared); const epsilon = precision === "float32" ? 1e-7 : 1e-15;
+  return {criterion: "pressure-change-linf", tolerance, iterations: performed, finalResidual, relativeResidual: finalResidual / Math.max(Math.sqrt(rhsSquared), epsilon), divergenceLinf, converged: converged && Number.isFinite(finalChange)};
 }

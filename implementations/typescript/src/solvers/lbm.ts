@@ -1,8 +1,9 @@
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, RestartState, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, RestartState, ReynoldsOutcome, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, dimensions, sampleCell} from "../core/grid.js";
 import {fieldDiagnostics} from "../core/metrics.js";
+import {acceptedImport, rejectedImport} from "../core/outcomes.js";
 import {validateCanonicalState} from "../core/stateValidation.js";
 
 const CX = [0, 1, 0, -1, 0, 1, -1, -1, 1] as const;
@@ -19,8 +20,10 @@ export class LbmSolver implements FlowSolver {
   public reynolds = 1;
   private effectiveReynolds = 1; private scenario: Scenario | null = null; private foil: NacaFoil | null = null;
   private populations: FloatArray = new Float32Array(); private scratch: FloatArray = new Float32Array(); private solid = new Uint8Array(); private time = 0; private control: ControlState = {time: 0, angleDegrees: 0, angularVelocityDegrees: 0};
-  private previousSolid = new Uint8Array(); private rollbackPopulations: FloatArray = new Float32Array(); private rollbackSolid = new Uint8Array();
+  private previousSolid = new Uint8Array(); private rollbackPopulations: FloatArray = new Float32Array(); private rollbackScratch: FloatArray = new Float32Array(); private rollbackSolid = new Uint8Array(); private rollbackPreviousSolid = new Uint8Array();
   private latticeSpeed = 0.05; private omegaPlus = 1; private omegaMinus = 1; private referenceSpeed = 1;
+  private revision = 0;
+  public get stateRevision(): number { return this.revision; }
 
   private requireScenario(): Scenario { if (this.scenario === null) throw new Error("solver is not initialized"); return this.scenario; }
   private equilibrium(direction: number, density: number, ux: number, uy: number): number { const cu = (CX[direction] ?? 0) * ux + (CY[direction] ?? 0) * uy; return (W[direction] ?? 0) * density * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * (ux * ux + uy * uy)); }
@@ -35,17 +38,18 @@ export class LbmSolver implements FlowSolver {
     this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = start.reynolds; this.time = start.time; this.control = {time: start.time, angleDegrees: start.angleDegrees, angularVelocityDegrees: 0};
     const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; this.populations = new Float32Array(); this.scratch = new Float32Array();
     this.referenceSpeed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), scenario.solverOptions.initialCondition === "freestream" ? 1e-6 : 1);
-    this.configureTemporalScaling(scenario.outputDt); this.populations = allocate(scenario.precision, 9 * count); this.scratch = allocate(scenario.precision, 9 * count); this.solid = new Uint8Array(count); this.previousSolid = new Uint8Array(count); this.rollbackPopulations = allocate(scenario.precision, 9 * count); this.rollbackSolid = new Uint8Array(count); this.updateSolid(this.control);
+    this.configureTemporalScaling(scenario.outputDt); this.populations = allocate(scenario.precision, 9 * count); this.scratch = allocate(scenario.precision, 9 * count); this.solid = new Uint8Array(count); this.previousSolid = new Uint8Array(count); this.rollbackPopulations = allocate(scenario.precision, 9 * count); this.rollbackScratch = allocate(scenario.precision, 9 * count); this.rollbackSolid = new Uint8Array(count); this.rollbackPreviousSolid = new Uint8Array(count); this.updateSolid(this.control);
     const velocity = this.initialVelocity();
     for (let cell = 0; cell < count; cell += 1) for (let q = 0; q < 9; q += 1) this.populations[q * count + cell] = this.equilibrium(q, 1, (velocity[2 * cell] ?? 0) * this.latticeSpeed / this.referenceSpeed, (velocity[2 * cell + 1] ?? 0) * this.latticeSpeed / this.referenceSpeed);
+    this.revision = 0;
   }
 
-  private configureRelaxation(): void { const scenario = this.requireScenario(); const {dx} = dimensions(scenario.domain); const chordCells = scenario.foil.chord / dx; const requestedNu = this.latticeSpeed * chordCells / this.reynolds; const minimumNu = (0.52 - 0.5) / 3; const nu = Math.max(requestedNu, minimumNu); const tauPlus = 0.5 + 3 * nu; const tauMinus = 0.5 + (3 / 16) / Math.max(tauPlus - 0.5, 1e-6); this.omegaPlus = 1 / tauPlus; this.omegaMinus = 1 / tauMinus; this.effectiveReynolds = this.latticeSpeed * chordCells / nu; }
+  private configureRelaxation(): void { const scenario = this.requireScenario(); const {dx} = dimensions(scenario.domain); const chordCells = scenario.foil.chord / dx; const requestedNu = this.latticeSpeed * chordCells / this.reynolds; const minimumNu = (0.52 - 0.5) / 3; const nu = Math.max(requestedNu, minimumNu); const tauPlus = 0.5 + 3 * nu; const tauMinus = 0.5 + (3 / 16) / Math.max(tauPlus - 0.5, 1e-6); this.omegaPlus = 1 / tauPlus; this.omegaMinus = 1 / tauMinus; this.effectiveReynolds = this.latticeSpeed * chordCells / nu; if (!(this.omegaPlus > 0 && this.omegaPlus < 2 && this.omegaMinus > 0 && this.omegaMinus < 2)) throw new NumericalFailure("invalid_relaxation", "TRT relaxation frequency left (0, 2)", "collision", {omega_plus: this.omegaPlus, omega_minus: this.omegaMinus}); }
 
   private configureTemporalScaling(targetDt: number, maximumPhysicalSpeed = this.referenceSpeed): number {
     const scenario = this.requireScenario(); const {dx} = dimensions(scenario.domain);
     const substeps = Math.max(1, Math.ceil(targetDt * Math.max(maximumPhysicalSpeed, this.referenceSpeed) / (MAXIMUM_LATTICE_SPEED * dx) - 1e-12));
-    if (substeps > MAXIMUM_SUBSTEPS) throw new NumericalFailure("excessive_velocity", `LBM requires ${String(substeps)} substeps to respect its Mach limit`);
+    if (substeps > MAXIMUM_SUBSTEPS) throw new NumericalFailure("excessive_velocity", `LBM requires ${String(substeps)} substeps to respect its Mach limit`, "time-mapping", {required_substeps: substeps, maximum_substeps: MAXIMUM_SUBSTEPS, maximum_physical_speed: maximumPhysicalSpeed});
     const selectedSpeed = this.referenceSpeed * targetDt / (substeps * dx);
     if (this.populations.length > 0 && Math.abs(selectedSpeed - this.latticeSpeed) > 1e-12) this.rescalePopulations(selectedSpeed);
     this.latticeSpeed = selectedSpeed; this.configureRelaxation();
@@ -65,7 +69,7 @@ export class LbmSolver implements FlowSolver {
     }
     this.populations = rescaled; this.scratch = allocate(scenario.precision, rescaled.length);
   }
-  public setReynolds(reynolds: number): void { if (!(reynolds > 0) || !Number.isFinite(reynolds)) throw new RangeError("Reynolds must be finite and positive"); this.reynolds = reynolds; if (this.scenario !== null) this.configureRelaxation(); }
+  public setReynolds(reynolds: number): ReynoldsOutcome { if (!(reynolds > 0) || !Number.isFinite(reynolds)) throw new RangeError("Reynolds must be finite and positive"); const savedRequested = this.reynolds; const savedEffective = this.effectiveReynolds; const savedPlus = this.omegaPlus; const savedMinus = this.omegaMinus; try { this.reynolds = reynolds; if (this.scenario !== null) this.configureRelaxation(); } catch (error) { this.reynolds = savedRequested; this.effectiveReynolds = savedEffective; this.omegaPlus = savedPlus; this.omegaMinus = savedMinus; throw error; } if (reynolds !== savedRequested) this.revision += 1; const warnings = this.effectiveReynolds < reynolds ? ["effective Reynolds clamped to " + String(this.effectiveReynolds)] : []; return {requested: reynolds, effective: this.effectiveReynolds, warnings}; }
 
   private initialVelocity(): FloatArray { const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); const output = allocate(scenario.precision, nx * ny * 2); for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const cell = y * nx + x; const px = bx[0] + (x + 0.5) * dx; const py = by[0] + (y + 0.5) * dy; if (scenario.solverOptions.initialCondition === "taylor-green") { output[2 * cell] = Math.sin(px) * Math.cos(py); output[2 * cell + 1] = -Math.cos(px) * Math.sin(py); } else if (scenario.solverOptions.initialCondition === "poiseuille") { const center = (by[0] + by[1]) / 2; const radius = (by[1] - by[0]) / 2; output[2 * cell] = 1.5 * (1 - ((py - center) / radius) ** 2); } else { output[2 * cell] = scenario.freestream[0] ?? 0; output[2 * cell + 1] = scenario.freestream[1] ?? 0; } } return output; }
   private updateSolid(control: ControlState): void { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny, dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) this.solid[y * nx + x] = foil.signedDistance(bx[0] + (x + 0.5) * dx, by[0] + (y + 0.5) * dy, control.angleDegrees) <= 0 ? 1 : 0; }
@@ -85,50 +89,57 @@ export class LbmSolver implements FlowSolver {
 
   public advance(control: ControlState, targetDt: number): StepReport {
     if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive");
+    const scenario = this.requireScenario(); const expectedTime = this.time + targetDt; const timeTolerance = scenario.precision === "float32" ? 1e-6 : 1e-12;
+    if (!Number.isFinite(control.time) || Math.abs(control.time - expectedTime) > timeTolerance * Math.max(1, Math.abs(expectedTime))) throw new NumericalFailure("time_contract_failure", "control completion time disagrees with target interval", "time-mapping", {expected_time: expectedTime, control_time: control.time, target_dt: targetDt});
     if (this.rollbackPopulations.length !== this.populations.length) this.rollbackPopulations = allocate(this.requireScenario().precision, this.populations.length);
+    if (this.rollbackScratch.length !== this.scratch.length) this.rollbackScratch = allocate(this.requireScenario().precision, this.scratch.length);
     if (this.rollbackSolid.length !== this.solid.length) this.rollbackSolid = new Uint8Array(this.solid.length);
-    this.rollbackPopulations.set(this.populations); this.rollbackSolid.set(this.solid);
+    if (this.rollbackPreviousSolid.length !== this.previousSolid.length) this.rollbackPreviousSolid = new Uint8Array(this.previousSolid.length);
+    this.rollbackPopulations.set(this.populations); this.rollbackScratch.set(this.scratch); this.rollbackSolid.set(this.solid); this.rollbackPreviousSolid.set(this.previousSolid);
     const savedSpeed = this.latticeSpeed; const savedOmegaPlus = this.omegaPlus; const savedOmegaMinus = this.omegaMinus; const savedEffectiveReynolds = this.effectiveReynolds;
     let substeps = 0; let maxSpeed = 0;
     try {
-      const current = this.physicalVelocity(); let maximumPhysicalSpeed = this.referenceSpeed; for (let index = 0; index < current.length; index += 2) maximumPhysicalSpeed = Math.max(maximumPhysicalSpeed, Math.hypot(current[index] ?? 0, current[index + 1] ?? 0));
-      substeps = this.configureTemporalScaling(targetDt, maximumPhysicalSpeed);
+      const current = this.physicalVelocity(); let maximumPhysicalSpeed = this.referenceSpeed; for (let index = 0; index < current.length; index += 2) maximumPhysicalSpeed = Math.max(maximumPhysicalSpeed, Math.hypot(current[index] ?? 0, current[index + 1] ?? 0)); const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; const sweepSpeed = scenario.foil.chord * Math.abs(control.angleDegrees - this.control.angleDegrees) * Math.PI / (180 * targetDt); maximumPhysicalSpeed = Math.max(maximumPhysicalSpeed, wallSpeed, sweepSpeed);
+      substeps = this.configureTemporalScaling(targetDt, 1.25 * maximumPhysicalSpeed);
       for (let step = 0; step < substeps; step += 1) {
         const fraction = (step + 1) / substeps;
         const subControl: ControlState = {time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * (control.angleDegrees - this.control.angleDegrees), angularVelocityDegrees: control.angularVelocityDegrees};
         this.latticeStep(subControl);
       }
-      if (!this.populations.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "LBM populations became non-finite");
-      if (!this.latticeFields().density.every((value) => Number.isFinite(value) && value > 0)) throw new NumericalFailure("invalid_density", "LBM density became non-positive or non-finite");
+      let minimumPopulation = Number.POSITIVE_INFINITY; for (const population of this.populations) { if (!Number.isFinite(population)) throw new NumericalFailure("invalid_population", "LBM populations became non-finite", "postcondition"); minimumPopulation = Math.min(minimumPopulation, population); } if (minimumPopulation < -1e-6) throw new NumericalFailure("invalid_population", "LBM population left the admissible nonnegative envelope", "postcondition", {minimum_population: minimumPopulation, minimum_allowed_population: -1e-6});
+      const density = this.latticeFields().density; let densityExcursion = 0; for (const value of density) { if (!Number.isFinite(value) || value <= 0) throw new NumericalFailure("invalid_density", "LBM density became non-positive or non-finite", "postcondition", {density: value}); densityExcursion = Math.max(densityExcursion, Math.abs(value - 1)); } if (densityExcursion > 0.75) throw new NumericalFailure("invalid_density", "LBM density excursion exceeded the interactive admissibility envelope", "postcondition", {density_excursion: densityExcursion, maximum_density_excursion: 0.75});
       const physical = this.physicalVelocity(); for (let i = 0; i < physical.length; i += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(physical[i] ?? 0, physical[i + 1] ?? 0));
-      if (!Number.isFinite(maxSpeed)) throw new NumericalFailure("nonfinite_state", "LBM produced a non-finite step report");
+      if (!Number.isFinite(maxSpeed)) throw new NumericalFailure("nonfinite_state", "LBM produced a non-finite step report", "postcondition"); const postWallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; const postSweepSpeed = scenario.foil.chord * Math.abs(control.angleDegrees - this.control.angleDegrees) * Math.PI / (180 * targetDt); const postMach = Math.max(maxSpeed, this.referenceSpeed, postWallSpeed, postSweepSpeed) * this.latticeSpeed / (this.referenceSpeed * LATTICE_SOUND_SPEED); if (postMach > MAXIMUM_MACH * (1 + 1e-6)) throw new NumericalFailure("excessive_velocity", "post-step LBM Mach exceeded the admissible limit", "postcondition", {maximum_lattice_mach: postMach, maximum_lattice_mach_limit: MAXIMUM_MACH});
     } catch (error) {
-      this.populations.set(this.rollbackPopulations); this.solid.set(this.rollbackSolid); this.latticeSpeed = savedSpeed; this.omegaPlus = savedOmegaPlus; this.omegaMinus = savedOmegaMinus; this.effectiveReynolds = savedEffectiveReynolds; throw error;
+      this.populations.set(this.rollbackPopulations); this.scratch.set(this.rollbackScratch); this.solid.set(this.rollbackSolid); this.previousSolid.set(this.rollbackPreviousSolid); this.latticeSpeed = savedSpeed; this.omegaPlus = savedOmegaPlus; this.omegaMinus = savedOmegaMinus; this.effectiveReynolds = savedEffectiveReynolds; throw error;
     }
-    this.time += targetDt; this.control = {...control, time: this.time};
-    return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, warnings: this.effectiveReynolds < this.reynolds ? ["effective Reynolds clamped to " + String(this.effectiveReynolds)] : []};
+    const maximumWallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; const maximumSweepSpeed = scenario.foil.chord * Math.abs(control.angleDegrees - this.control.angleDegrees) * Math.PI / (180 * targetDt); const maximumPhysicalSpeed = Math.max(maxSpeed, this.referenceSpeed, maximumWallSpeed, maximumSweepSpeed); const maximumMach = maximumPhysicalSpeed * this.latticeSpeed / (this.referenceSpeed * LATTICE_SOUND_SPEED); const tauPlus = 1 / this.omegaPlus; const tauMinus = 1 / this.omegaMinus; const density = this.latticeFields().density; let densityExcursion = 0; for (const value of density) densityExcursion = Math.max(densityExcursion, Math.abs(value - 1)); let minimumPopulation = Number.POSITIVE_INFINITY; for (const population of this.populations) minimumPopulation = Math.min(minimumPopulation, population); const degradedMotion = maximumWallSpeed === 0 && Math.abs(control.angleDegrees - this.control.angleDegrees) > 1e-9;
+    this.time += targetDt; this.control = {...control, time: this.time}; this.revision += 1;
+    return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, stateRevision: this.revision, evidence: {maximum_wall_speed: maximumWallSpeed, maximum_geometry_sweep_speed: maximumSweepSpeed, maximum_lattice_mach: maximumMach, density_excursion: densityExcursion, minimum_population: minimumPopulation, omega_plus: this.omegaPlus, omega_minus: this.omegaMinus, trt_magic: (tauPlus - 0.5) * (tauMinus - 0.5), requested_reynolds: this.reynolds, effective_reynolds: this.effectiveReynolds, degraded_motion: degradedMotion}, warnings: this.effectiveReynolds < this.reynolds ? ["effective Reynolds clamped to " + String(this.effectiveReynolds)] : []};
   }
   private physicalVelocity(): FloatArray { const scenario = this.requireScenario(); const lattice = this.latticeFields().velocity; const output = allocate(scenario.precision, lattice.length); const scale = this.referenceSpeed / this.latticeSpeed; for (let cell = 0; cell < this.solid.length; cell += 1) { if (this.solid[cell] !== 0) continue; output[2 * cell] = (lattice[2 * cell] ?? 0) * scale; output[2 * cell + 1] = (lattice[2 * cell + 1] ?? 0) * scale; } return output; }
   public sampleVelocity(points: FloatArray): FloatArray { const scenario = this.requireScenario(); const velocity = this.physicalVelocity(); const output = allocate(scenario.precision, points.length); for (let i = 0; i < points.length; i += 2) { const value = sampleCell(velocity, scenario.domain, points[i] ?? 0, points[i + 1] ?? 0); output[i] = value[0]; output[i + 1] = value[1]; } return output; }
   public exportState(): CanonicalFlowState { const scenario = this.requireScenario(); return {schemaVersion: 1, dimension: 2, bounds: scenario.domain.bounds, resolution: scenario.domain.resolution, periodicAxes: scenario.domain.periodicAxes, time: this.time, precision: scenario.precision, angleDegrees: this.control.angleDegrees, angularVelocityDegrees: this.control.angularVelocityDegrees, sourceLanguage: "typescript", sourceSolver: this.info.id, velocity: this.physicalVelocity(), density: this.latticeFields().density}; }
   public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
     const scenario = this.requireScenario(); const invalid = validateCanonicalState(state, scenario); if (invalid !== null) return invalid;
+    const timeTolerance = scenario.precision === "float32" ? 1e-6 : 1e-12; if (Math.abs(state.time - control.time) > timeTolerance * Math.max(1, Math.abs(state.time))) return rejectedImport("time_contract_failure", "canonical-import", {state_time: state.time, control_time: control.time});
     const {nx, ny} = dimensions(scenario.domain);
-    if (state.density !== null && state.density.some((value) => value <= 0)) return {status: "rejected", reason: "invalid_density", discardedState: [], warnings: []};
+    if (state.density !== null && state.density.some((value) => value <= 0 || Math.abs(value - 1) > 0.75)) return rejectedImport("invalid_density", "canonical-import");
     let maximum = 0; for (let cell = 0; cell < nx * ny; cell += 1) maximum = Math.max(maximum, Math.hypot(state.velocity[2 * cell] ?? 0, state.velocity[2 * cell + 1] ?? 0));
     const saved = this.populations; const savedScratch = this.scratch; const savedSolid = this.solid; const savedTime = this.time; const savedControl = this.control; const savedSpeed = this.latticeSpeed; const savedOmegaPlus = this.omegaPlus; const savedOmegaMinus = this.omegaMinus; const savedEffectiveReynolds = this.effectiveReynolds;
     try {
-      this.configureTemporalScaling(scenario.outputDt, maximum);
-      if (maximum * this.latticeSpeed / (this.referenceSpeed * LATTICE_SOUND_SPEED) > MAXIMUM_MACH + 1e-12) throw new NumericalFailure("excessive_velocity", "LBM import exceeds its Mach limit");
+      const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; this.configureTemporalScaling(scenario.outputDt, Math.max(maximum, wallSpeed));
+      if (Math.max(maximum, wallSpeed) * this.latticeSpeed / (this.referenceSpeed * LATTICE_SOUND_SPEED) > MAXIMUM_MACH + 1e-12) throw new NumericalFailure("excessive_velocity", "LBM import exceeds its Mach limit", "canonical-import", {maximum_fluid_speed: maximum, maximum_wall_speed: wallSpeed, maximum_mach: MAXIMUM_MACH});
       const count = nx * ny; const density = state.density; this.populations = allocate(scenario.precision, 9 * count);
       for (let cell = 0; cell < count; cell += 1) for (let q = 0; q < 9; q += 1) this.populations[q * count + cell] = this.equilibrium(q, density?.[cell] ?? 1, (state.velocity[2 * cell] ?? 0) * this.latticeSpeed / this.referenceSpeed, (state.velocity[2 * cell + 1] ?? 0) * this.latticeSpeed / this.referenceSpeed);
       this.solid = new Uint8Array(count); this.time = state.time; this.control = control; this.updateSolid(control);
     } catch (error) {
       this.populations = saved; this.scratch = savedScratch; this.solid = savedSolid; this.time = savedTime; this.control = savedControl; this.latticeSpeed = savedSpeed; this.omegaPlus = savedOmegaPlus; this.omegaMinus = savedOmegaMinus; this.effectiveReynolds = savedEffectiveReynolds;
-      if (error instanceof NumericalFailure) return {status: "rejected", reason: error.reason, discardedState: [], warnings: []};
+      if (error instanceof NumericalFailure) return rejectedImport(error.reason, error.stage, error.evidence);
       throw error;
     }
-    return {status: "accepted", reason: "none", discardedState: ["non-equilibrium populations"], warnings: []};
+    this.revision += 1;
+    return acceptedImport(["non-equilibrium populations"]);
   }
-  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const fields = this.latticeFields(); const velocity = this.physicalVelocity(); let densityDrift = 0; for (let cell = 0; cell < fields.density.length; cell += 1) densityDrift = Math.max(densityDrift, Math.abs((fields.density[cell] ?? 1) - 1)); return {values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), density_drift_linf: densityDrift, effective_reynolds: this.effectiveReynolds}, warnings: []}; }
+  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const fields = this.latticeFields(); const velocity = this.physicalVelocity(); let densityDrift = 0; for (let cell = 0; cell < fields.density.length; cell += 1) densityDrift = Math.max(densityDrift, Math.abs((fields.density[cell] ?? 1) - 1)); return {stateRevision: this.revision, values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), density_drift_linf: densityDrift, effective_reynolds: this.effectiveReynolds}, warnings: []}; }
 }

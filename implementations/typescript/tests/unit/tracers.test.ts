@@ -7,6 +7,7 @@ import type {
   FloatArray,
   ImportOutcome,
   RestartState,
+  ReynoldsOutcome,
   Scenario,
   SolverInfo,
   StepReport,
@@ -34,12 +35,13 @@ type Velocity = (x: number, y: number) => readonly [number, number];
 class SampleSolver implements FlowSolver {
   public readonly info: SolverInfo = {id: "stable-fluids", displayName: "sample", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "test"};
   public readonly reynolds = 1000;
+  public readonly stateRevision = 0;
 
   public constructor(private readonly velocity: Velocity, private readonly angleDegrees = 0) {}
   public initialize(scenarioValue: Scenario, seed: number): void { void scenarioValue; void seed; }
   public restart(scenarioValue: Scenario, seed: number, start: RestartState): void { void scenarioValue; void seed; void start; }
-  public setReynolds(reynolds: number): void { void reynolds; }
-  public advance(_control: ControlState, targetDt: number): StepReport { return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed: 0, warnings: []}; }
+  public setReynolds(reynolds: number): ReynoldsOutcome { return {requested: reynolds, effective: reynolds, warnings: []}; }
+  public advance(_control: ControlState, targetDt: number): StepReport { return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed: 0, stateRevision: 0, evidence: {}, warnings: []}; }
   public sampleVelocity(points: FloatArray): FloatArray {
     const sampled = points instanceof Float32Array ? new Float32Array(points.length) : new Float64Array(points.length);
     for (let index = 0; index < points.length; index += 2) {
@@ -51,8 +53,8 @@ class SampleSolver implements FlowSolver {
   public exportState(): CanonicalFlowState {
     return {schemaVersion: 1, dimension: 2, bounds: scenario.domain.bounds, resolution: scenario.domain.resolution, periodicAxes: [], time: 0, precision: "float32", angleDegrees: this.angleDegrees, angularVelocityDegrees: 0, sourceLanguage: "test", sourceSolver: "sample", velocity: new Float32Array(32 * 16 * 2), density: null};
   }
-  public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { void state; void control; return {status: "accepted", reason: "none", discardedState: [], warnings: []}; }
-  public diagnostics(): Diagnostics { return {values: {}, warnings: []}; }
+  public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { void state; void control; return {status: "accepted", reason: "none", stage: null, evidence: {}, discardedState: [], warnings: []}; }
+  public diagnostics(): Diagnostics { return {stateRevision: 0, values: {}, warnings: []}; }
 }
 
 describe("visible tracer contract", () => {

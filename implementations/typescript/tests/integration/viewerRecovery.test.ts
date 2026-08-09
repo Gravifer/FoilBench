@@ -1,7 +1,7 @@
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, ImportReason, RestartState, Scenario, SolverId, SolverInfo, StepReport} from "../../src/core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, ImportReason, RestartState, ReynoldsOutcome, Scenario, SolverId, SolverInfo, StepReport} from "../../src/core/contracts.js";
 import {NumericalFailure} from "../../src/core/contracts.js";
 import {parseScenario} from "../../src/core/scenario.js";
 import {createSolver} from "../../src/solvers/factory.js";
@@ -11,9 +11,10 @@ class FailingSolver implements FlowSolver {
   public constructor(protected readonly inner: FlowSolver, private readonly error: Error) {}
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
+  public get stateRevision(): number { return this.inner.stateRevision; }
   public initialize(scenario: Scenario, seed: number): void { this.inner.initialize(scenario, seed); }
   public restart(scenario: Scenario, seed: number, start: RestartState): void { this.inner.restart(scenario, seed, start); }
-  public setReynolds(reynolds: number): void { this.inner.setReynolds(reynolds); }
+  public setReynolds(reynolds: number): ReynoldsOutcome { return this.inner.setReynolds(reynolds); }
   public advance(control: ControlState, targetDt: number): StepReport { void control; void targetDt; throw this.error; }
   public sampleVelocity(points: FloatArray): FloatArray { return this.inner.sampleVelocity(points); }
   public exportState(): CanonicalFlowState { return this.inner.exportState(); }
@@ -26,7 +27,7 @@ class RejectingImportSolver extends FailingSolver {
   public override advance(control: ControlState, targetDt: number): StepReport { return this.inner.advance(control, targetDt); }
   public override importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
     void state; void control;
-    return {status: "rejected", reason: this.reason, discardedState: [], warnings: []};
+    return {status: "rejected", reason: this.reason, stage: "canonical-import", evidence: {}, discardedState: [], warnings: []};
   }
 }
 
@@ -74,6 +75,21 @@ describe("interactive recovery semantics", () => {
     expect(model.snapshot().poseOnly).toBe(true);
     model.releaseAngle(); model.step();
     expect(model.snapshot().poseOnly).toBe(false);
+  });
+
+  it("resets stale drag timing and guards the first resolved-motion trial", async () => {
+    const model = new ViewerModel(await scenario(), "stable-fluids");
+    model.setAngle(0, 0); model.setAngle(20, 10);
+    expect(Math.abs(model.control(model.time).angularVelocityDegrees)).toBeGreaterThan(0);
+    model.setAngle(20, 1000);
+    expect(model.control(model.time).angularVelocityDegrees).toBe(0);
+
+    model.setAngle(0, 1010); model.setAngle(20, 1020); model.solver = new FailingSolver(model.solver, numericalFailure()); model.step();
+    model.setAngle(22, 1030); model.setAngle(25, 1040); model.solver = new FailingSolver(model.solver, numericalFailure()); model.step();
+    expect(model.snapshot().poseOnly).toBe(true);
+    model.releaseAngle(); model.solver = new FailingSolver(model.solver, numericalFailure()); model.step();
+    expect(model.paused).toBe(true);
+    expect(model.status).toContain("resolved-motion trial");
   });
 
   it("resets an unstable online Reynolds selection before pausing at baseline", async () => {

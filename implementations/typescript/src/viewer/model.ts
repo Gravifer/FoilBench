@@ -45,14 +45,16 @@ export class ViewerModel {
   public paused = false;
   public appliedCommand = 0;
   public revision = 0;
+  public solverEpoch = 0;
   public playbackRate = 1;
   private manualAngle: number | null = null;
   private angularVelocity = 0;
   private dragging = false;
   private poseSamples: {time: number; angle: number}[] = [];
+  private resolvedMotionTrial = false;
   private stepRate: number | null = null;
   private simulatedPerWall: number | null = null;
-  private lastReport: StepReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, warnings: []};
+  private lastReport: StepReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, stateRevision: 0, evidence: {}, warnings: []};
   private failureTimes: number[] = [];
   private diagnosticsReady = false;
   private diagnosticsCache: Readonly<Record<string, number>> = {};
@@ -96,6 +98,7 @@ export class ViewerModel {
   public setAngle(angle: number, timestamp: number): void {
     const selected = Math.max(-30, Math.min(30, angle));
     this.dragging = true;
+    const previous = this.poseSamples.at(-1); if (previous !== undefined && timestamp - previous.time > 80) { this.poseSamples = []; this.angularVelocity = 0; }
     this.poseSamples.push({time: timestamp, angle: selected});
     const cutoff = timestamp - 80;
     while (this.poseSamples.length > 2 && (this.poseSamples[1]?.time ?? timestamp) < cutoff) this.poseSamples.shift();
@@ -105,6 +108,7 @@ export class ViewerModel {
       const maximum = 8 * reference / this.scenario.foil.chord * 180 / Math.PI;
       this.angularVelocity = Math.max(-maximum, Math.min(maximum, (selected - first.angle) / ((timestamp - first.time) / 1000)));
     }
+    if (this.presentation.poseOnly && Math.abs(this.angularVelocity) <= 30) { this.presentation.poseOnly = false; this.resolvedMotionTrial = true; }
     this.manualAngle = selected;
     this.status = "manual control";
   }
@@ -113,6 +117,7 @@ export class ViewerModel {
     this.dragging = false;
     this.angularVelocity = 0;
     this.poseSamples = [];
+    if (this.presentation.poseOnly) { this.presentation.poseOnly = false; this.resolvedMotionTrial = true; }
   }
 
   public setReynolds(reynolds: number): void {
@@ -136,6 +141,7 @@ export class ViewerModel {
     const tuning = this.solver.adjustInteractiveTuning(amount);
     this.tuningValues.set(this.solver.info.id, tuning.value);
     this.status = `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
+    this.clearMeasurements();
   }
 
   private rememberTuning(solver: FlowSolver): void {
@@ -162,6 +168,7 @@ export class ViewerModel {
     const id = this.solver.info.id;
     this.solver = this.solverFactory(id);
     this.solver.initialize(this.scenario, this.scenario.seed);
+    this.solverEpoch += 1;
     this.tuningValues.clear();
     this.rememberTuning(this.solver);
     this.time = 0;
@@ -170,6 +177,7 @@ export class ViewerModel {
     this.dragging = false;
     this.poseSamples = [];
     this.presentation.poseOnly = false;
+    this.resolvedMotionTrial = false;
     this.presentation.recoveryReason = null;
     this.presentation.recoveryStage = null;
     this.playbackRate = 1;
@@ -201,6 +209,7 @@ export class ViewerModel {
       throw error;
     }
     this.solver = incoming;
+    this.solverEpoch += 1;
     this.time += report.advancedDt;
     this.lastReport = report;
     this.status = `switched; discarded ${outcome.discardedState.join(", ")}`;
@@ -212,7 +221,7 @@ export class ViewerModel {
   }
 
   private rejectOrFallback(id: SolverId, reason: Exclude<ImportReason, "none">): boolean {
-    const transient = reason === "excessive_velocity" || reason === "nonfinite_state" || reason === "projection_failure" || reason === "invalid_density";
+    const transient = reason === "excessive_velocity" || reason === "stability_limit" || reason === "nonfinite_state" || reason === "convergence_failure" || reason === "projection_failure" || reason === "invalid_density" || reason === "invalid_population" || reason === "transfer_failure" || reason === "postcondition_failure";
     if (!transient) { this.status = `warm import rejected (${reason}); source retained`; return false; }
     const angle = this.control(this.time).angleDegrees;
     const incoming = this.solverFactory(id);
@@ -227,6 +236,7 @@ export class ViewerModel {
       return false;
     }
     this.solver = incoming;
+    this.solverEpoch += 1;
     this.manualAngle = angle;
     this.angularVelocity = 0;
     this.poseSamples = [];
@@ -253,10 +263,8 @@ export class ViewerModel {
     this.lastReport = report;
     this.time += report.advancedDt;
     this.diagnosticsReady = true;
-    if (this.presentation.poseOnly && !this.dragging) {
-      this.presentation.poseOnly = false;
-      this.status = "motion resolved; running";
-    } else this.status = "running";
+    if (this.resolvedMotionTrial) { this.resolvedMotionTrial = false; this.status = "motion resolved; running"; }
+    else this.status = "running";
     try {
       this.tracers.advance(this.solver, report.advancedDt);
     } catch (error) {
@@ -277,10 +285,11 @@ export class ViewerModel {
 
   private recover(error: NumericalFailure): void {
     const now = performance.now();
+    if (this.resolvedMotionTrial) { this.resolvedMotionTrial = false; this.paused = true; this.status = `failed resolved-motion trial (${error.reason}); paused`; return; }
     this.failureTimes = this.failureTimes.filter((value) => value >= now - 3000);
     this.failureTimes.push(now);
     const movingRapidly = this.dragging && Math.abs(this.angularVelocity) > 30;
-    if (movingRapidly && this.failureTimes.length >= 2) this.presentation.poseOnly = true;
+    if (movingRapidly && this.failureTimes.length >= 2) { this.presentation.poseOnly = true; this.resolvedMotionTrial = false; }
     let resetReynolds = false;
     if (this.failureTimes.length >= 3) {
       if (Math.abs(this.solver.reynolds - this.scenario.reynolds) > 1e-9) resetReynolds = true;
@@ -299,6 +308,7 @@ export class ViewerModel {
       const fresh = replacement.exportState();
       if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh recovery restart disagrees with requested time or pose");
       this.solver = replacement;
+      this.solverEpoch += 1;
       if (resetReynolds) this.playbackRate = 1;
       this.manualAngle = angle;
       this.angularVelocity = 0;
@@ -321,7 +331,7 @@ export class ViewerModel {
     this.diagnosticsReady = false;
     this.diagnosticsCache = {};
     this.nextDiagnosticsTime = this.time;
-    this.lastReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, warnings: []};
+    this.lastReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, stateRevision: this.solver.stateRevision, evidence: {}, warnings: []};
     this.invalidateVorticity();
   }
 
@@ -347,7 +357,7 @@ export class ViewerModel {
     if (!this.diagnosticsReady) return {};
     if (this.presentation.diagnosticMode === "cadenced" && Object.keys(this.diagnosticsCache).length > 0 && this.time < this.nextDiagnosticsTime) return this.diagnosticsCache;
     try {
-      this.diagnosticsCache = this.solver.diagnostics().values;
+      const report = this.solver.diagnostics(); if (report.stateRevision !== this.solver.stateRevision) throw new Error("stale solver diagnostics revision"); this.diagnosticsCache = report.values;
       this.nextDiagnosticsTime = this.time + 0.1;
     } catch (error) {
       this.status = `diagnostic failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
@@ -396,6 +406,7 @@ export class ViewerModel {
     this.revision += 1;
     return {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
+      solverEpoch: this.solverEpoch, solverStateRevision: this.solver.stateRevision,
       solverId: this.solver.info.id, time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds, playbackRate: this.playbackRate,
       paused: this.paused, vorticityVisible: this.vorticityVisible, cropEnabled: this.cropEnabled, tracerMode: this.tracers.mode,
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,

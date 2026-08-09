@@ -1,8 +1,10 @@
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, RestartState, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, RestartState, ReynoldsOutcome, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
-import {allocate, bounds2d, cellToFaces, cellVelocity, dimensions, project, sampleCell} from "../core/grid.js";
+import {allocate, bounds2d, cellToFaces, cellVelocity, dimensions, divergence, project, sampleCell} from "../core/grid.js";
+import type {ProjectionReport} from "../core/grid.js";
 import {fieldDiagnostics} from "../core/metrics.js";
+import {acceptedImport, rejectedImport} from "../core/outcomes.js";
 import {validateCanonicalState} from "../core/stateValidation.js";
 
 type TransportMode = "maccormack" | "semi-lagrangian" | "skew-rk2";
@@ -13,7 +15,15 @@ export interface StableCheckpoint {
   readonly solid: Uint8Array;
   readonly time: number;
   readonly control: ControlState;
+  readonly stateRevision: number;
+  readonly projection: ProjectionReport;
+  readonly viscosity: IterativeReport;
 }
+
+interface IterativeReport {readonly criterion: "update-linf"; readonly tolerance: number; readonly iterations: number; readonly finalResidual: number; readonly converged: boolean}
+
+const emptyProjection = (): ProjectionReport => ({criterion: "pressure-change-linf", tolerance: 0, iterations: 0, finalResidual: 0, relativeResidual: 0, divergenceLinf: 0, converged: true});
+const emptyIteration = (): IterativeReport => ({criterion: "update-linf", tolerance: 0, iterations: 0, finalResidual: 0, converged: true});
 
 export class StableFluidsSolver implements FlowSolver {
   public readonly info: SolverInfo = {id: "stable-fluids", displayName: "Stable Fluids (MAC)", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "typed-arrays"};
@@ -26,7 +36,11 @@ export class StableFluidsSolver implements FlowSolver {
   private solid = new Uint8Array();
   private rollback: StableCheckpoint | null = null;
   private time = 0;
+  private revision = 0;
+  private lastProjection: ProjectionReport = emptyProjection();
+  private lastViscosity: IterativeReport = emptyIteration();
   private control: ControlState = {time: 0, angleDegrees: 0, angularVelocityDegrees: 0};
+  public get stateRevision(): number { return this.revision; }
 
   public initialize(scenario: Scenario, seed: number): void {
     this.restart(scenario, seed, {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, reynolds: scenario.reynolds});
@@ -50,21 +64,22 @@ export class StableFluidsSolver implements FlowSolver {
     const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
     ({u: this.u, v: this.v} = cellToFaces(velocity, nx, ny, scenario.precision, periodicX, periodicY));
     this.solid = new Uint8Array(nx * ny); this.updateSolid(this.control); this.enforceSolidFaces(this.control);
-    project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY);
+    this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection);
+    this.revision = 0;
   }
 
-  public setReynolds(reynolds: number): void { if (!(reynolds > 0) || !Number.isFinite(reynolds)) throw new RangeError("Reynolds must be finite and positive"); this.reynolds = reynolds; }
-  public setTransportMode(mode: TransportMode): void { this.transportMode = mode; }
+  public setReynolds(reynolds: number): ReynoldsOutcome { if (!(reynolds > 0) || !Number.isFinite(reynolds)) throw new RangeError("Reynolds must be finite and positive"); if (reynolds !== this.reynolds) { this.reynolds = reynolds; this.revision += 1; } return {requested: reynolds, effective: this.reynolds, warnings: []}; }
+  public setTransportMode(mode: TransportMode): void { if (mode !== this.transportMode) { this.transportMode = mode; this.revision += 1; } }
   public interactiveTuning(): InteractiveTuning {
     return {id: "stable-advection", label: "adv", value: this.transportMode, canDecrease: this.transportMode !== "maccormack", canIncrease: this.transportMode !== "skew-rk2"};
   }
   public adjustInteractiveTuning(direction: -1 | 1): InteractiveTuning {
-    this.transportMode = direction < 0 ? "maccormack" : "skew-rk2";
+    this.setTransportMode(direction < 0 ? "maccormack" : "skew-rk2");
     return this.interactiveTuning();
   }
   public applyInteractiveTuning(value: InteractiveTuningValue): InteractiveTuning {
     if (value !== "maccormack" && value !== "semi-lagrangian" && value !== "skew-rk2") throw new RangeError("invalid stable-advection tuning");
-    this.transportMode = value;
+    this.setTransportMode(value);
     return this.interactiveTuning();
   }
   private requireScenario(): Scenario { if (this.scenario === null) throw new Error("solver is not initialized"); return this.scenario; }
@@ -108,13 +123,19 @@ export class StableFluidsSolver implements FlowSolver {
   }
 
   private diffuse(velocity: FloatArray, dt: number): FloatArray {
-    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const speed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), 1); const viscosity = speed * scenario.foil.chord / this.reynolds; const ax = viscosity * dt / (dx * dx); const ay = viscosity * dt / (dy * dy); if (ax + ay < 1e-8) return velocity; const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); let current: FloatArray = allocate(scenario.precision, velocity.length); current.set(velocity); let next: FloatArray = allocate(scenario.precision, velocity.length); const sample = (field: FloatArray, x: number, y: number, component: number): number => { const sx = periodicX ? (x + nx) % nx : Math.max(0, Math.min(nx - 1, x)); const sy = periodicY ? (y + ny) % ny : Math.max(0, Math.min(ny - 1, y)); return field[2 * (sy * nx + sx) + component] ?? 0; };
-    for (let iteration = 0; iteration < 12; iteration += 1) { for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) for (let component = 0; component < 2; component += 1) { const index = 2 * (y * nx + x) + component; next[index] = ((velocity[index] ?? 0) + ax * (sample(current, x - 1, y, component) + sample(current, x + 1, y, component)) + ay * (sample(current, x, y - 1, component) + sample(current, x, y + 1, component))) / (1 + 2 * ax + 2 * ay); } const swap = current; current = next; next = swap; }
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const speed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), 1); const viscosity = speed * scenario.foil.chord / this.reynolds; const ax = viscosity * dt / (dx * dx); const ay = viscosity * dt / (dy * dy); if (ax + ay < 1e-8) { this.lastViscosity = emptyIteration(); return velocity; } const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); let current: FloatArray = allocate(scenario.precision, velocity.length); current.set(velocity); let next: FloatArray = allocate(scenario.precision, velocity.length); const sample = (field: FloatArray, x: number, y: number, component: number): number => { const sx = periodicX ? (x + nx) % nx : Math.max(0, Math.min(nx - 1, x)); const sy = periodicY ? (y + ny) % ny : Math.max(0, Math.min(ny - 1, y)); return field[2 * (sy * nx + sx) + component] ?? 0; };
+    const tolerance = scenario.solverOptions.pressureTolerance ?? 1e-5; let converged = false; let performed = 0; let finalResidual = Number.POSITIVE_INFINITY;
+    for (let iteration = 0; iteration < 80; iteration += 1) { let maxChange = 0; for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) for (let component = 0; component < 2; component += 1) { const index = 2 * (y * nx + x) + component; const value = ((velocity[index] ?? 0) + ax * (sample(current, x - 1, y, component) + sample(current, x + 1, y, component)) + ay * (sample(current, x, y - 1, component) + sample(current, x, y + 1, component))) / (1 + 2 * ax + 2 * ay); maxChange = Math.max(maxChange, Math.abs(value - (current[index] ?? 0))); next[index] = value; } const swap = current; current = next; next = swap; performed = iteration + 1; finalResidual = maxChange; if (maxChange < tolerance) { converged = true; break; } }
+    this.lastViscosity = {criterion: "update-linf", tolerance, iterations: performed, finalResidual, converged}; if (!converged) throw new NumericalFailure("convergence_failure", "implicit viscosity solve did not converge", "viscosity", {iterations: performed, tolerance, final_residual: finalResidual});
     return current;
   }
 
+  private requireProjection(report: ProjectionReport): void { if (!report.converged) throw new NumericalFailure("projection_failure", "pressure projection did not meet its convergence criterion", "projection", {iterations: report.iterations, tolerance: report.tolerance, final_residual: report.finalResidual, relative_residual: report.relativeResidual, divergence_linf: report.divergenceLinf}); }
+
+  private refreshFinalDivergence(): void { const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const field = divergence(this.u, this.v, nx, ny, dx, dy, scenario.precision); let maximum = 0; for (let index = 0; index < field.length; index += 1) if (this.solid[index] === 0) maximum = Math.max(maximum, Math.abs(field[index] ?? 0)); this.lastProjection = {...this.lastProjection, divergenceLinf: maximum}; }
+
   private substep(control: ControlState, dt: number): void {
-    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const before = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let advected = this.transportMode === "semi-lagrangian" ? this.semiLagrangian(before, dt) : this.transportMode === "skew-rk2" ? this.skewRk2(before, dt) : this.maccormack(before, dt); advected = this.diffuse(advected, dt); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); ({u: this.u, v: this.v} = cellToFaces(advected, nx, ny, scenario.precision, periodicX, periodicY)); this.updateSolid(control); this.enforceSolidFaces(control); if (!periodicX) { const inlet = scenario.freestream[0] ?? 0; for (let y = 0; y < ny; y += 1) this.u[y * (nx + 1)] = inlet; } project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const before = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let advected = this.transportMode === "semi-lagrangian" ? this.semiLagrangian(before, dt) : this.transportMode === "skew-rk2" ? this.skewRk2(before, dt) : this.maccormack(before, dt); advected = this.diffuse(advected, dt); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); ({u: this.u, v: this.v} = cellToFaces(advected, nx, ny, scenario.precision, periodicX, periodicY)); this.updateSolid(control); this.enforceSolidFaces(control); if (!periodicX) { const inlet = scenario.freestream[0] ?? 0; for (let y = 0; y < ny; y += 1) this.u[y * (nx + 1)] = inlet; } this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection); this.enforceSolidFaces(control); this.refreshFinalDivergence();
   }
 
   private projectedSubstep(control: ControlState, dt: number): void {
@@ -122,7 +143,7 @@ export class StableFluidsSolver implements FlowSolver {
     const diffused = this.diffuse(cellVelocity(this.u, this.v, nx, ny, scenario.precision), dt); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
     ({u: this.u, v: this.v} = cellToFaces(diffused, nx, ny, scenario.precision, periodicX, periodicY)); this.updateSolid(control); this.enforceSolidFaces(control);
     if (!periodicX) { const inlet = scenario.freestream[0] ?? 0; for (let y = 0; y < ny; y += 1) this.u[y * (nx + 1)] = inlet; }
-    project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
+    this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection); this.enforceSolidFaces(control); this.refreshFinalDivergence();
   }
 
   public checkpoint(destination?: StableCheckpoint): StableCheckpoint {
@@ -130,39 +151,51 @@ export class StableFluidsSolver implements FlowSolver {
     const v = destination?.v.length === this.v.length ? destination.v : this.v.slice();
     const solid = destination?.solid.length === this.solid.length ? destination.solid : this.solid.slice();
     if (destination !== undefined) { u.set(this.u); v.set(this.v); solid.set(this.solid); }
-    return {u, v, solid, time: this.time, control: this.control};
+    return {u, v, solid, time: this.time, control: this.control, stateRevision: this.revision, projection: this.lastProjection, viscosity: this.lastViscosity};
   }
   public restore(checkpoint: StableCheckpoint): void {
     if (this.u.length === checkpoint.u.length) this.u.set(checkpoint.u); else this.u = checkpoint.u.slice();
     if (this.v.length === checkpoint.v.length) this.v.set(checkpoint.v); else this.v = checkpoint.v.slice();
     if (this.solid.length === checkpoint.solid.length) this.solid.set(checkpoint.solid); else this.solid = checkpoint.solid.slice();
-    this.time = checkpoint.time; this.control = checkpoint.control;
+    this.time = checkpoint.time; this.control = checkpoint.control; this.revision = checkpoint.stateRevision; this.lastProjection = checkpoint.projection; this.lastViscosity = checkpoint.viscosity;
   }
   private transactionCheckpoint(): StableCheckpoint { const saved = this.checkpoint(this.rollback ?? undefined); this.rollback = saved; return saved; }
 
   public importFaces(u: FloatArray, v: FloatArray, time: number, control: ControlState): ImportOutcome {
     const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain);
-    if (u.length !== ny * (nx + 1) || v.length !== (ny + 1) * nx) return {status: "rejected", reason: "incompatible_domain", discardedState: [], warnings: []};
-    if (!u.every(Number.isFinite) || !v.every(Number.isFinite) || !Number.isFinite(time) || time < 0) return {status: "rejected", reason: "nonfinite_state", discardedState: [], warnings: []};
+    if (u.length !== ny * (nx + 1) || v.length !== (ny + 1) * nx) return rejectedImport("incompatible_domain", "particle-transfer");
+    if (!u.every(Number.isFinite) || !v.every(Number.isFinite) || !Number.isFinite(time) || time < 0) return rejectedImport("nonfinite_state", "particle-transfer");
     const saved = this.transactionCheckpoint(); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
     try {
       this.u = allocate(scenario.precision, u.length); this.u.set(u); this.v = allocate(scenario.precision, v.length); this.v.set(v); this.solid = new Uint8Array(nx * ny); this.time = time; this.control = control;
-      this.updateSolid(control); this.enforceSolidFaces(control); project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.enforceSolidFaces(control);
-      if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) { this.restore(saved); return {status: "rejected", reason: "projection_failure", discardedState: [], warnings: []}; }
-    } catch (error) { this.restore(saved); throw error; }
-    return {status: "accepted", reason: "none", discardedState: ["pressure history"], warnings: []};
+      this.updateSolid(control); this.enforceSolidFaces(control); this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection); this.enforceSolidFaces(control); this.refreshFinalDivergence();
+      if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) { this.restore(saved); return rejectedImport("projection_failure", "projection"); }
+    } catch (error) { this.restore(saved); if (error instanceof NumericalFailure) return rejectedImport(error.reason, error.stage, error.evidence); throw error; }
+    this.revision += 1;
+    return acceptedImport(["pressure history"]);
   }
 
   public advanceProjected(control: ControlState, targetDt: number): StepReport {
-    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); const saved = this.transactionCheckpoint();
+    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); this.requireCompletionTime(control, targetDt); const saved = this.transactionCheckpoint();
     try { this.projectedSubstep(control, targetDt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "projected grid step produced non-finite velocity"); }
     catch (error) { this.restore(saved); throw error; }
-    this.time += targetDt; this.control = {...control, time: this.time}; const velocity = this.exportState().velocity; let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0));
-    return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed, warnings: []};
+    const velocity = cellVelocity(this.u, this.v, dimensions(this.requireScenario().domain).nx, dimensions(this.requireScenario().domain).ny, this.requireScenario().precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const evidence = this.motionEvidence(maxSpeed, targetDt, control, control.angleDegrees - saved.control.angleDegrees);
+    this.time += targetDt; this.control = {...control, time: this.time}; this.revision += 1;
+    return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed, stateRevision: this.revision, evidence, warnings: []};
+  }
+
+  private requireCompletionTime(control: ControlState, targetDt: number): void {
+    const expected = this.time + targetDt; const tolerance = this.requireScenario().precision === "float32" ? 1e-6 : 1e-12;
+    if (!Number.isFinite(control.time) || Math.abs(control.time - expected) > tolerance * Math.max(1, Math.abs(expected))) throw new NumericalFailure("time_contract_failure", "control completion time disagrees with target interval", "time-mapping", {expected_time: expected, control_time: control.time, target_dt: targetDt});
+  }
+
+  private motionEvidence(maxSpeed: number, substepDt: number, control: ControlState, angleDeltaDegrees: number): Readonly<Record<string, number | boolean>> {
+    const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const omega = Math.abs(control.angularVelocityDegrees) * Math.PI / 180; const maximumWallSpeed = omega * scenario.foil.chord; const fluidCfl = substepDt * maxSpeed * (1 / dx + 1 / dy); const displacement = substepDt * maxSpeed / Math.min(dx, dy); const boundarySweep = scenario.foil.chord * Math.abs(angleDeltaDegrees) * Math.PI / (180 * Math.min(dx, dy));
+    return {maximum_wall_speed: maximumWallSpeed, maximum_cfl: fluidCfl, maximum_characteristic_displacement: displacement, maximum_boundary_sweep: boundarySweep, pressure_converged: this.lastProjection.converged, pressure_iterations: this.lastProjection.iterations, pressure_relative_residual: this.lastProjection.relativeResidual, divergence_linf: this.lastProjection.divergenceLinf, solid_leakage: 0, viscosity_converged: this.lastViscosity.converged, viscosity_iterations: this.lastViscosity.iterations, viscosity_final_residual: this.lastViscosity.finalResidual, requested_reynolds: this.reynolds, effective_reynolds: this.reynolds, degraded_motion: maximumWallSpeed === 0 && Math.abs(angleDeltaDegrees) > 1e-9};
   }
 
   public advance(control: ControlState, targetDt: number): StepReport {
-    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7; const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl; const substeps = Math.max(1, Math.ceil(targetDt * Math.max(maxSpeed, 1e-6) / (cfl * Math.min(dx, dy)))); const dt = targetDt / substeps; const saved = this.transactionCheckpoint(); try { for (let step = 0; step < substeps; step += 1) { const fraction = (step + 1) / substeps; this.substep({time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * (control.angleDegrees - this.control.angleDegrees), angularVelocityDegrees: control.angularVelocityDegrees}, dt); } if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity"); } catch (error) { this.restore(saved); throw error; } this.time += targetDt; this.control = {...control, time: this.time}; const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision); maxSpeed = 0; for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0)); return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, warnings: []};
+    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); this.requireCompletionTime(control, targetDt); const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7; const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl; const angleDelta = control.angleDegrees - this.control.angleDegrees; const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; const sweepCells = scenario.foil.chord * Math.abs(angleDelta) * Math.PI / (180 * Math.min(dx, dy)); const fluidRate = this.transportMode === "skew-rk2" ? maxSpeed * (1 / dx + 1 / dy) : maxSpeed / Math.min(dx, dy); const required = Math.max(targetDt * fluidRate / cfl, targetDt * wallSpeed / (cfl * Math.min(dx, dy)), sweepCells / cfl); const substeps = Math.max(1, Math.ceil(required)); if (substeps > 512) throw new NumericalFailure("stability_limit", "stable-fluids motion requires too many internal substeps", this.transportMode === "skew-rk2" ? "advection" : "boundary", {required_substeps: substeps, maximum_substeps: 512, maximum_fluid_speed: maxSpeed, maximum_wall_speed: wallSpeed, boundary_sweep_cells: sweepCells}); const dt = targetDt / substeps; const saved = this.transactionCheckpoint(); try { for (let step = 0; step < substeps; step += 1) { const fraction = (step + 1) / substeps; this.substep({time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * angleDelta, angularVelocityDegrees: control.angularVelocityDegrees}, dt); } if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity", "postcondition"); const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision); maxSpeed = 0; for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0)); const acceptedMeasure = this.transportMode === "skew-rk2" ? dt * maxSpeed * (1 / dx + 1 / dy) : dt * maxSpeed / Math.min(dx, dy); if (acceptedMeasure > cfl * (1 + 1e-6)) throw new NumericalFailure("stability_limit", "post-step transport measure exceeded the selected substep envelope", "advection", {accepted_measure: acceptedMeasure, maximum_measure: cfl, substeps}); } catch (error) { this.restore(saved); throw error; } const evidence = this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps); this.time += targetDt; this.control = {...control, time: this.time}; this.revision += 1; return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, stateRevision: this.revision, evidence, warnings: []};
   }
 
   public sampleVelocity(points: FloatArray): FloatArray { const scenario = this.requireScenario(); if (points.length % 2 !== 0) throw new RangeError("points must contain x/y pairs"); const velocity = cellVelocity(this.u, this.v, dimensions(scenario.domain).nx, dimensions(scenario.domain).ny, scenario.precision); const output = allocate(scenario.precision, points.length); for (let index = 0; index < points.length; index += 2) { const sampled = sampleCell(velocity, scenario.domain, points[index] ?? 0, points[index + 1] ?? 0); output[index] = sampled[0]; output[index + 1] = sampled[1]; } return output; }
@@ -171,23 +204,26 @@ export class StableFluidsSolver implements FlowSolver {
     const scenario = this.requireScenario();
     const invalid = validateCanonicalState(state, scenario);
     if (invalid !== null) return invalid;
-    const savedU = this.u; const savedV = this.v; const savedSolid = this.solid; const savedTime = this.time; const savedControl = this.control;
+    if (Math.abs(state.time - control.time) > (scenario.precision === "float32" ? 1e-6 : 1e-12) * Math.max(1, Math.abs(state.time))) return rejectedImport("time_contract_failure", "canonical-import", {state_time: state.time, control_time: control.time});
+    const saved = this.transactionCheckpoint();
     const {nx, ny, dx, dy} = dimensions(scenario.domain); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
     try {
       ({u: this.u, v: this.v} = cellToFaces(state.velocity, nx, ny, scenario.precision, periodicX, periodicY));
       this.solid = new Uint8Array(nx * ny); this.time = state.time; this.control = control;
       this.updateSolid(control); this.enforceSolidFaces(control);
-      project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY);
-      this.enforceSolidFaces(control);
+      this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection);
+      this.enforceSolidFaces(control); this.refreshFinalDivergence();
       if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) {
-        this.u = savedU; this.v = savedV; this.solid = savedSolid; this.time = savedTime; this.control = savedControl;
-        return {status: "rejected", reason: "projection_failure", discardedState: [], warnings: []};
+        this.restore(saved);
+        return rejectedImport("projection_failure", "projection");
       }
     } catch (error) {
-      this.u = savedU; this.v = savedV; this.solid = savedSolid; this.time = savedTime; this.control = savedControl;
+      this.restore(saved);
+      if (error instanceof NumericalFailure) return rejectedImport(error.reason, error.stage, error.evidence);
       throw error;
     }
-    return {status: "accepted", reason: "none", discardedState: ["pressure history"], warnings: []};
+    this.revision += 1;
+    return acceptedImport(["pressure history"]);
   }
-  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); return {values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), effective_reynolds: this.reynolds}, warnings: []}; }
+  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); return {stateRevision: this.revision, values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), effective_reynolds: this.reynolds}, warnings: []}; }
 }

@@ -32,6 +32,8 @@ function publishStatus(force = false): void {
     kind: "status",
     revision: model.revision,
     appliedCommand: model.appliedCommand,
+    solverEpoch: model.solverEpoch,
+    solverStateRevision: model.solver.stateRevision,
     phase: session.phase,
     status: model.status,
     recoveryEpoch: session.recoveryEpoch,

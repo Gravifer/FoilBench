@@ -57,15 +57,21 @@ export interface SolverInfo {
   readonly acceleration: string;
 }
 
+export type FailureStage = "canonical-import" | "advection" | "viscosity" | "projection" | "boundary" | "collision" | "streaming" | "particle-transfer" | "particle-advection" | "population-maintenance" | "time-mapping" | "postcondition";
+export type FailureEvidenceValue = string | number | boolean;
+export type FailureEvidence = Readonly<Record<string, FailureEvidenceValue>>;
+
 export interface StepReport {
   readonly requestedDt: number;
   readonly advancedDt: number;
   readonly substeps: number;
   readonly maxSpeed: number;
+  readonly stateRevision: number;
+  readonly evidence: FailureEvidence;
   readonly warnings: readonly string[];
 }
 
-export interface Diagnostics {readonly values: Readonly<Record<string, number>>; readonly warnings: readonly string[]}
+export interface Diagnostics {readonly stateRevision: number; readonly values: Readonly<Record<string, number>>; readonly warnings: readonly string[]}
 export type InteractiveTuningValue = string | number;
 export interface InteractiveTuning {
   readonly id: string;
@@ -76,7 +82,8 @@ export interface InteractiveTuning {
 }
 export type FailureReason = "excessive_velocity" | "stability_limit" | "nonfinite_state" | "convergence_failure" | "projection_failure" | "invalid_density" | "invalid_population" | "invalid_relaxation" | "transfer_failure" | "postcondition_failure" | "time_contract_failure" | "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion";
 export type ImportReason = "none" | FailureReason;
-export interface ImportOutcome {readonly status: "accepted" | "rejected"; readonly reason: ImportReason; readonly discardedState: readonly string[]; readonly warnings: readonly string[]}
+export interface ImportOutcome {readonly status: "accepted" | "rejected"; readonly reason: ImportReason; readonly stage: FailureStage | null; readonly evidence: FailureEvidence; readonly discardedState: readonly string[]; readonly warnings: readonly string[]}
+export interface ReynoldsOutcome {readonly requested: number; readonly effective: number; readonly warnings: readonly string[]}
 
 export interface CanonicalFlowState {
   readonly schemaVersion: 1;
@@ -97,9 +104,10 @@ export interface CanonicalFlowState {
 export interface FlowSolver {
   readonly info: SolverInfo;
   readonly reynolds: number;
+  readonly stateRevision: number;
   initialize(scenario: Scenario, seed: number): void;
   restart(scenario: Scenario, seed: number, start: RestartState): void;
-  setReynolds(reynolds: number): void;
+  setReynolds(reynolds: number): ReynoldsOutcome;
   advance(control: ControlState, targetDt: number): StepReport;
   sampleVelocity(points: FloatArray): FloatArray;
   exportState(): CanonicalFlowState;
@@ -111,7 +119,12 @@ export interface FlowSolver {
 }
 
 export class NumericalFailure extends Error {
-  public constructor(public readonly reason: Exclude<FailureReason, "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion">, detail: string) {
+  public constructor(
+    public readonly reason: Exclude<FailureReason, "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion">,
+    detail: string,
+    public readonly stage: FailureStage = "postcondition",
+    public readonly evidence: FailureEvidence = {},
+  ) {
     super(detail);
     this.name = "NumericalFailure";
   }
