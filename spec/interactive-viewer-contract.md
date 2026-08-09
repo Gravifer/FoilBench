@@ -408,23 +408,11 @@ because the Phase 2 solver protocol exposes only the newly completed field.
 That limitation is shared and testable rather than hidden behind the name
 RK2.
 
-Other reasonable tracer integrators are deliberately outside the Phase 2
-baseline:
-
-- forward Euler uses one sample but has first-order trajectory error and
-  excessive radial or invariant drift in curved flow;
-- Heun's explicit trapezoid is a different two-sample, second-order method for
-  a frozen field;
-- classical RK4 gives higher frozen-field accuracy at four samples per step;
-- time-centered midpoint using previous/current field interpolation can be
-  second order for an evolving field but requires temporal sampling semantics;
-- solver-substep path integration is more tightly coupled and can follow
-  evolving fields, but exposes solver-private timing; and
-- adaptive embedded RK methods control local error but introduce variable
-  sampling cost and cross-implementation tolerance policy.
-
-Future revisions may select one after extending the solver protocol. Revision
-2 requires the frozen-field midpoint formula above.
+Revision 2 selects this method because it removes forward Euler's first-order
+curved-trajectory drift with only two public velocity samples, remains
+independent of solver-private substeps, and already matches the Python and
+Julia reference behavior. A future time-dependent integrator would first
+require explicit temporal sampling semantics in the solver protocol.
 
 This requirement applies only to viewer-owned passive tracers. The numerical
 motion of solver-private PIC/FLIP particles belongs to the
