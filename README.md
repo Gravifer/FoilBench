@@ -75,7 +75,7 @@ npm --prefix implementations/typescript run setup:browser
 npm --prefix implementations/typescript run check
 npm --prefix implementations/typescript test
 npm --prefix implementations/typescript run describe
-npm --prefix implementations/typescript run view -- scenarios/airfoil/default.json --solver stable-fluids
+npm --prefix implementations/typescript run view -- scenarios/airfoil/default.json stable-fluids
 npm --prefix implementations/typescript run bench -- benchmark-matrices/smoke.json
 npm --prefix implementations/typescript run gate:preview
 ```

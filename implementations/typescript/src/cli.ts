@@ -35,7 +35,7 @@ async function main(args: readonly string[]): Promise<void> {
   if (command === "view") {
     const scenarioPath = resolve(repositoryRoot, args[1] ?? "scenarios/airfoil/default.json");
     const solverFlag = args.indexOf("--solver");
-    const solverId = (solverFlag >= 0 ? args[solverFlag + 1] : "stable-fluids") as SolverId;
+    const solverId = (solverFlag >= 0 ? args[solverFlag + 1] : args[2] ?? "stable-fluids") as SolverId;
     if (!solvers.some((solver) => solver.id === solverId)) throw new RangeError(`unknown solver: ${solverId}`);
     const server = await createServer({root: join(repositoryRoot, "implementations/typescript"), server: {host: "127.0.0.1", port: 4173, strictPort: true}});
     await server.listen();
