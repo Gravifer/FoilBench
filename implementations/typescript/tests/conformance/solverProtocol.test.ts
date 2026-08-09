@@ -44,6 +44,17 @@ describe("shared solver protocol", () => {
     expect(() => createSolver(solverId).initialize(unsupported, 0)).toThrow(/2D/);
   });
 
+  for (const solverId of solverIds) it(`${solverId} restarts directly at an authoritative time, pose, and Reynolds number`, async () => {
+    const scenario = await uniformScenario(); const solver = createSolver(solverId);
+    solver.restart(scenario, 19, {time: 2.5, angleDegrees: 23, reynolds: 750});
+    const state = solver.exportState();
+    expect(state.time).toBe(2.5);
+    expect(state.angleDegrees).toBe(23);
+    expect(state.angularVelocityDegrees).toBe(0);
+    expect(solver.reynolds).toBe(750);
+    expect(state.velocity.every(Number.isFinite)).toBe(true);
+  });
+
   for (const solverId of solverIds) it(`${solverId} rejects incompatible and malformed canonical state`, async () => {
     const scenario = await uniformScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0); const state = solver.exportState(); const control = controlAt(scenario, state.time);
     expect(solver.importState({...state, bounds: [[-2, 2], state.bounds[1] ?? [-1, 1]]}, control).reason).toBe("incompatible_domain");

@@ -1,4 +1,4 @@
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, RestartState, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, dimensions, sampleCell} from "../core/grid.js";
@@ -15,7 +15,7 @@ const MAXIMUM_LATTICE_SPEED = MAXIMUM_MACH * LATTICE_SOUND_SPEED;
 const MAXIMUM_SUBSTEPS = 512;
 
 export class LbmSolver implements FlowSolver {
-  public readonly info: SolverInfo = {id: "lbm-d2q9", displayName: "D2Q9 TRT LBM", dimensions: [2], supportsMovingBoundary: true, acceleration: "typed-arrays"};
+  public readonly info: SolverInfo = {id: "lbm-d2q9", displayName: "D2Q9 TRT LBM", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "typed-arrays"};
   public reynolds = 1;
   private effectiveReynolds = 1; private scenario: Scenario | null = null; private foil: NacaFoil | null = null;
   private populations: FloatArray = new Float32Array(); private scratch: FloatArray = new Float32Array(); private solid = new Uint8Array(); private time = 0; private control: ControlState = {time: 0, angleDegrees: 0, angularVelocityDegrees: 0};
@@ -26,7 +26,13 @@ export class LbmSolver implements FlowSolver {
   private equilibrium(direction: number, density: number, ux: number, uy: number): number { const cu = (CX[direction] ?? 0) * ux + (CY[direction] ?? 0) * uy; return (W[direction] ?? 0) * density * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * (ux * ux + uy * uy)); }
 
   public initialize(scenario: Scenario, seed: number): void {
-    void seed; if (scenario.domain.dimension !== 2) throw new RangeError("lbm-d2q9 supports only 2D"); this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = scenario.reynolds; this.time = 0; this.control = {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, angularVelocityDegrees: 0};
+    this.restart(scenario, seed, {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, reynolds: scenario.reynolds});
+  }
+
+  public restart(scenario: Scenario, seed: number, start: RestartState): void {
+    void seed; if (scenario.domain.dimension !== 2) throw new RangeError("lbm-d2q9 supports only 2D");
+    if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid LBM restart state");
+    this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = start.reynolds; this.time = start.time; this.control = {time: start.time, angleDegrees: start.angleDegrees, angularVelocityDegrees: 0};
     const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; this.populations = new Float32Array(); this.scratch = new Float32Array();
     this.referenceSpeed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), scenario.solverOptions.initialCondition === "freestream" ? 1e-6 : 1);
     this.configureTemporalScaling(scenario.outputDt); this.populations = allocate(scenario.precision, 9 * count); this.scratch = allocate(scenario.precision, 9 * count); this.solid = new Uint8Array(count); this.previousSolid = new Uint8Array(count); this.rollbackPopulations = allocate(scenario.precision, 9 * count); this.rollbackSolid = new Uint8Array(count); this.updateSolid(this.control);

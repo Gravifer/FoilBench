@@ -217,14 +217,10 @@ export class ViewerModel {
     const angle = this.control(this.time).angleDegrees;
     const incoming = this.solverFactory(id);
     try {
-      const freshScenario: Scenario = {...this.scenario, controls: [{time: 0, angleDegrees: angle}]};
-      incoming.initialize(freshScenario, this.scenario.seed);
+      incoming.restart(this.scenario, this.scenario.seed, {time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds});
       this.applySavedTuning(incoming);
-      incoming.setReynolds(this.solver.reynolds);
       const fresh = incoming.exportState();
-      const control = {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0};
-      const outcome = incoming.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, control);
-      if (outcome.status === "rejected") throw new NumericalFailure("projection_failure", `fresh destination rejected: ${outcome.reason}`);
+      if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh destination restart disagrees with requested time or pose");
     } catch (error) {
       const detail = error instanceof NumericalFailure ? error.reason : error instanceof Error ? error.name : "unknown";
       this.status = `warm import rejected (${reason}); fresh destination failed (${detail}); source retained`;
@@ -298,13 +294,10 @@ export class ViewerModel {
     const angle = this.control(this.time).angleDegrees;
     const replacement = this.solverFactory(this.solver.info.id);
     try {
-      const freshScenario: Scenario = {...this.scenario, controls: [{time: 0, angleDegrees: angle}]};
-      replacement.initialize(freshScenario, this.scenario.seed);
+      replacement.restart(this.scenario, this.scenario.seed, {time: this.time, angleDegrees: angle, reynolds: requestedReynolds});
       this.applySavedTuning(replacement);
-      replacement.setReynolds(requestedReynolds);
       const fresh = replacement.exportState();
-      const outcome = replacement.importState({...fresh, time: this.time, angleDegrees: angle, angularVelocityDegrees: 0}, {time: this.time, angleDegrees: angle, angularVelocityDegrees: 0});
-      if (outcome.status === "rejected") throw new NumericalFailure("projection_failure", `fresh state import rejected: ${outcome.reason}`);
+      if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh recovery restart disagrees with requested time or pose");
       this.solver = replacement;
       if (resetReynolds) this.playbackRate = 1;
       this.manualAngle = angle;

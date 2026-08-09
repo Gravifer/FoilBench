@@ -1,4 +1,4 @@
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, RestartState, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, cellToFaces, cellVelocity, dimensions, project, sampleCell} from "../core/grid.js";
@@ -16,7 +16,7 @@ export interface StableCheckpoint {
 }
 
 export class StableFluidsSolver implements FlowSolver {
-  public readonly info: SolverInfo = {id: "stable-fluids", displayName: "Stable Fluids (MAC)", dimensions: [2], supportsMovingBoundary: true, acceleration: "typed-arrays"};
+  public readonly info: SolverInfo = {id: "stable-fluids", displayName: "Stable Fluids (MAC)", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "typed-arrays"};
   public reynolds = 1;
   public transportMode: TransportMode = "maccormack";
   private scenario: Scenario | null = null;
@@ -29,12 +29,17 @@ export class StableFluidsSolver implements FlowSolver {
   private control: ControlState = {time: 0, angleDegrees: 0, angularVelocityDegrees: 0};
 
   public initialize(scenario: Scenario, seed: number): void {
+    this.restart(scenario, seed, {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, reynolds: scenario.reynolds});
+  }
+
+  public restart(scenario: Scenario, seed: number, start: RestartState): void {
     void seed;
     if (scenario.domain.dimension !== 2) throw new RangeError("stable-fluids supports only 2D");
-    this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = scenario.reynolds; this.time = 0;
+    if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid stable-fluids restart state");
+    this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = start.reynolds; this.time = start.time;
     this.rollback = null;
     this.transportMode = scenario.solverOptions.stableAdvection ?? "maccormack";
-    this.control = {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, angularVelocityDegrees: 0};
+    this.control = {time: start.time, angleDegrees: start.angleDegrees, angularVelocityDegrees: 0};
     const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = allocate(scenario.precision, nx * ny * 2); const {x: bx, y: by} = bounds2d(scenario.domain);
     for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
       const index = y * nx + x; const px = bx[0] + (x + 0.5) * dx; const py = by[0] + (y + 0.5) * dy;

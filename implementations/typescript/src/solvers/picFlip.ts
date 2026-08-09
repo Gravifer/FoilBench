@@ -1,4 +1,4 @@
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, InteractiveTuning, InteractiveTuningValue, RestartState, Scenario, SolverInfo, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, dimensions} from "../core/grid.js";
@@ -13,7 +13,7 @@ interface ParticleCheckpoint {
 }
 
 export class PicFlipSolver implements FlowSolver {
-  public readonly info: SolverInfo = {id: "pic-flip", displayName: "Blended PIC/FLIP", dimensions: [2], supportsMovingBoundary: true, acceleration: "typed-arrays"};
+  public readonly info: SolverInfo = {id: "pic-flip", displayName: "Blended PIC/FLIP", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "typed-arrays"};
   public get reynolds(): number { return this.grid.reynolds; }
   private readonly grid = new StableFluidsSolver(); private scenario: Scenario | null = null; private foil: NacaFoil | null = null;
   private x: FloatArray = new Float32Array(); private y: FloatArray = new Float32Array(); private vx: FloatArray = new Float32Array(); private vy: FloatArray = new Float32Array(); private generations: Uint32Array = new Uint32Array();
@@ -24,10 +24,15 @@ export class PicFlipSolver implements FlowSolver {
   private requireFoil(): NacaFoil { if (this.foil === null) throw new Error("foil is missing"); return this.foil; }
 
   public initialize(scenario: Scenario, seed: number): void {
+    this.restart(scenario, seed, {time: 0, angleDegrees: scenario.controls[0]?.angleDegrees ?? 0, reynolds: scenario.reynolds});
+  }
+
+  public restart(scenario: Scenario, seed: number, start: RestartState): void {
     if (scenario.domain.dimension !== 2) throw new RangeError("pic-flip supports only 2D");
+    if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid PIC/FLIP restart state");
     const configuredCfl = scenario.solverOptions.picCfl ?? 0.75; if (!(configuredCfl > 0 && configuredCfl <= 1) || !Number.isFinite(configuredCfl)) throw new RangeError("pic_cfl must be in (0, 1]");
     this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.blend = scenario.solverOptions.picFlipBlend ?? 0.95; this.cfl = configuredCfl; this.rng = new Pcg32(seed, 71); this.advanceCount = 0; this.settlingSteps = 0; this.rollback = null; this.oldFaces = null; this.newFaces = null; this.populationFaces = null;
-    this.grid.initialize(scenario, seed); this.seedParticles(scenario.controls[0]?.angleDegrees ?? 0);
+    this.grid.restart(scenario, seed, start); this.seedParticles(start.angleDegrees);
   }
 
   public setReynolds(reynolds: number): void { this.grid.setReynolds(reynolds); }

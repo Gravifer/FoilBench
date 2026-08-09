@@ -17,6 +17,7 @@ export interface FoilSpec {
 
 export interface ControlKeyframe {readonly time: number; readonly angleDegrees: number}
 export interface ControlState {readonly time: number; readonly angleDegrees: number; readonly angularVelocityDegrees: number}
+export interface RestartState {readonly time: number; readonly angleDegrees: number; readonly reynolds: number}
 
 export interface SolverOptions {
   readonly initialCondition?: "freestream" | "taylor-green" | "poiseuille";
@@ -52,6 +53,7 @@ export interface SolverInfo {
   readonly displayName: string;
   readonly dimensions: readonly number[];
   readonly supportsMovingBoundary: boolean;
+  readonly supportedPrecisions: readonly Precision[];
   readonly acceleration: string;
 }
 
@@ -72,7 +74,8 @@ export interface InteractiveTuning {
   readonly canDecrease: boolean;
   readonly canIncrease: boolean;
 }
-export type ImportReason = "none" | "excessive_velocity" | "nonfinite_state" | "incompatible_geometry" | "incompatible_domain" | "projection_failure" | "invalid_density" | "unsupported_conversion";
+export type FailureReason = "excessive_velocity" | "stability_limit" | "nonfinite_state" | "convergence_failure" | "projection_failure" | "invalid_density" | "invalid_population" | "invalid_relaxation" | "transfer_failure" | "postcondition_failure" | "time_contract_failure" | "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion";
+export type ImportReason = "none" | FailureReason;
 export interface ImportOutcome {readonly status: "accepted" | "rejected"; readonly reason: ImportReason; readonly discardedState: readonly string[]; readonly warnings: readonly string[]}
 
 export interface CanonicalFlowState {
@@ -95,6 +98,7 @@ export interface FlowSolver {
   readonly info: SolverInfo;
   readonly reynolds: number;
   initialize(scenario: Scenario, seed: number): void;
+  restart(scenario: Scenario, seed: number, start: RestartState): void;
   setReynolds(reynolds: number): void;
   advance(control: ControlState, targetDt: number): StepReport;
   sampleVelocity(points: FloatArray): FloatArray;
@@ -107,7 +111,7 @@ export interface FlowSolver {
 }
 
 export class NumericalFailure extends Error {
-  public constructor(public readonly reason: Exclude<ImportReason, "none" | "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion">, detail: string) {
+  public constructor(public readonly reason: Exclude<FailureReason, "incompatible_geometry" | "incompatible_domain" | "unsupported_conversion">, detail: string) {
     super(detail);
     this.name = "NumericalFailure";
   }

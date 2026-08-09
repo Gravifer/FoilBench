@@ -1,7 +1,7 @@
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
-import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, ImportReason, Scenario, SolverId, SolverInfo, StepReport} from "../../src/core/contracts.js";
+import type {CanonicalFlowState, ControlState, Diagnostics, FlowSolver, FloatArray, ImportOutcome, ImportReason, RestartState, Scenario, SolverId, SolverInfo, StepReport} from "../../src/core/contracts.js";
 import {NumericalFailure} from "../../src/core/contracts.js";
 import {parseScenario} from "../../src/core/scenario.js";
 import {createSolver} from "../../src/solvers/factory.js";
@@ -12,6 +12,7 @@ class FailingSolver implements FlowSolver {
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
   public initialize(scenario: Scenario, seed: number): void { this.inner.initialize(scenario, seed); }
+  public restart(scenario: Scenario, seed: number, start: RestartState): void { this.inner.restart(scenario, seed, start); }
   public setReynolds(reynolds: number): void { this.inner.setReynolds(reynolds); }
   public advance(control: ControlState, targetDt: number): StepReport { void control; void targetDt; throw this.error; }
   public sampleVelocity(points: FloatArray): FloatArray { return this.inner.sampleVelocity(points); }

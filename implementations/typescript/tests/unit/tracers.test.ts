@@ -6,6 +6,7 @@ import type {
   FlowSolver,
   FloatArray,
   ImportOutcome,
+  RestartState,
   Scenario,
   SolverInfo,
   StepReport,
@@ -31,11 +32,12 @@ const scenario: Scenario = {
 type Velocity = (x: number, y: number) => readonly [number, number];
 
 class SampleSolver implements FlowSolver {
-  public readonly info: SolverInfo = {id: "stable-fluids", displayName: "sample", dimensions: [2], supportsMovingBoundary: true, acceleration: "test"};
+  public readonly info: SolverInfo = {id: "stable-fluids", displayName: "sample", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "test"};
   public readonly reynolds = 1000;
 
   public constructor(private readonly velocity: Velocity, private readonly angleDegrees = 0) {}
   public initialize(scenarioValue: Scenario, seed: number): void { void scenarioValue; void seed; }
+  public restart(scenarioValue: Scenario, seed: number, start: RestartState): void { void scenarioValue; void seed; void start; }
   public setReynolds(reynolds: number): void { void reynolds; }
   public advance(_control: ControlState, targetDt: number): StepReport { return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed: 0, warnings: []}; }
   public sampleVelocity(points: FloatArray): FloatArray {
