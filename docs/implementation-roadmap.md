@@ -142,9 +142,9 @@ parity.
 
 ## Phase 2B: TypeScript
 
-**Status:** Automated implementation and acceptance revalidated on 2026-08-03
-on `codex/phase2b-typescript`; final interactive-policy acceptance remains
-open.
+**Status:** Automated implementation and acceptance revalidated on 2026-08-03,
+with the TypeScript revision 2 contract reconciliation completed on
+2026-08-09; final interactive-policy acceptance remains open.
 
 Phase 2B begins by formalizing the shared solver, scenario, benchmark-matrix,
 canonical-manifest, result, and PCG32 contracts. It then adds an independent
@@ -194,15 +194,25 @@ resulting corrective sequence is complete:
 - benchmark artifacts now carry a self-contained matched-run identity across
   all three languages (`d304a52`).
 
-The revalidated TypeScript suite contains 72 passing Vitest checks plus the
+The revalidated TypeScript suite contains 100 passing Vitest checks plus the
 live Chromium smoke test. The shared Julia suite contains 577 passing checks
 after adopting the expanded result contract.
 
-The reproducible `preview-gate.json` matrix passed three repetitions for every
-solver at `160 x 96`. Observed median step ranges on the development machine
-were `18.0–20.9 ms` for Stable Fluids, `78.1–85.8 ms` for LBM, and
-`80.9–84.2 ms` for PIC/FLIP after the conventional solver corrections. See
+The reproducible preview-gate matrix passed three repetitions for every solver
+at `160 x 96` after the revision 2 validity instrumentation. Observed median
+step ranges on the development machine were `12.8–18.5 ms` for Stable Fluids,
+`94.8–97.2 ms` for LBM, and `77.1–96.8 ms` for PIC/FLIP. See
 [Phase 2B acceptance](phase2b-acceptance.md) for commands and evidence.
+
+The TypeScript revision 2 reconciliation adds frozen-field midpoint-RK2
+visible tracers with explicit lifecycle semantics and authoritative current
+foil-pose placement; explicit fresh-solver restart semantics; state revisions
+and structured failure evidence; bounded iterative and substep work; exact
+requested-time checks; and solver-family validity evidence for Stable Fluids,
+LBM, and PIC/FLIP. It also includes moving-wall work in stability selection and
+uses the wall-relative response for PIC/FLIP collision handling. Revision 2
+remains proposed repository-wide until shared fixtures and the Python and
+Julia reconciliations are complete.
 
 A coherent alternating vortex street remains sufficient wake behavior. The
 skew-RK2 chaotic-wake sweep and paired-trajectory experiment are optional

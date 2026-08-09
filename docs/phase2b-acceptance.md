@@ -1,7 +1,8 @@
 # Phase 2B acceptance
 
 Phase 2B completed and revalidated its automated engineering acceptance on
-2026-08-03 after an extensive parallel QA and remediation pass. It adds an
+2026-08-03 after an extensive parallel QA and remediation pass. A further
+TypeScript contract-reconciliation pass completed on 2026-08-09. It adds an
 independent strict TypeScript implementation; it does not load Python or Julia
 solvers. Final phase closure remains subject to the user-attention policy gate
 recorded below.
@@ -55,7 +56,7 @@ npm --prefix implementations/typescript run gate:preview
 ## Automated evidence
 
 - Strict TypeScript and ESLint pass.
-- All 72 current Vitest checks pass shared RNG, geometry, scenario,
+- All 100 current Vitest checks pass shared RNG, geometry, scenario,
   canonical-layout, solver protocol, fidelity, recovery, and integration
   checks.
 - All six directed solver conversions pass at both `4°` and `25°`, directly
@@ -73,9 +74,9 @@ npm --prefix implementations/typescript run gate:preview
 
   | Solver | Median step latency | Approximate steps/s |
   | --- | ---: | ---: |
-  | Stable Fluids | `18.0–20.9 ms` | `48–56` |
-  | D2Q9 TRT LBM | `78.1–85.8 ms` | `12–13` |
-  | Blended PIC/FLIP | `80.9–84.2 ms` | `12` |
+  | Stable Fluids | `12.8–18.5 ms` | `54–78` |
+  | D2Q9 TRT LBM | `94.8–97.2 ms` | `10.3–10.5` |
+  | Blended PIC/FLIP | `77.1–96.8 ms` | `10.3–13.0` |
 
 Generated benchmark results remain gitignored; rerun the gate for current
 machine evidence.
@@ -91,6 +92,26 @@ missing matched wake/recovery evidence. The focused correction commits are
 `da7feb8`, `3ba149d`, `09288e8`, `7773965`, `0314c7e`, `a408952`, and
 `d304a52`. The evidence above was regenerated after those corrections; it is
 not inherited from the superseded implementation.
+
+The 2026-08-09 reconciliation then addressed lessons captured by the proposed
+revision 2 contracts:
+
+- visible tracers use frozen-field midpoint RK2, an explicit display/material
+  lifecycle, authoritative current-pose placement, and generation-safe paths;
+- solver recovery uses an explicit restart operation rather than a fabricated
+  time-zero canonical round trip;
+- state revisions and structured failure evidence make import, stepping, and
+  diagnostics transactions observable;
+- all three solvers enforce bounded work and exact requested-time behavior,
+  while Stable Fluids reports iterative convergence, LBM enforces its Mach,
+  density, population, and TRT envelopes, and PIC/FLIP reports transfer and
+  population health; and
+- moving-wall work participates in substep selection, including relative-wall
+  PIC/FLIP collision response and LBM wall/sweep scaling.
+
+These changes reconcile TypeScript with revision 2; the revision remains
+proposed repository-wide until its fixtures and the Python and Julia
+reconciliations are complete.
 
 ## Open user-policy acceptance
 
