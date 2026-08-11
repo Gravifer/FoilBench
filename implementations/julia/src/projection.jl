@@ -182,6 +182,14 @@ function project_faces!(
     for j in 2:ny(domain), i in 1:nx(domain)
         v[i, j] -= timestep * (pressure[i, j] - pressure[i, j - 1]) / dy(domain)
     end
+    if :x in domain.periodic_axes
+        u[1, :] .-= timestep .* (pressure[1, :] .- pressure[end, :]) ./ dx(domain)
+        u[end, :] .= u[1, :]
+    end
+    if :y in domain.periodic_axes
+        v[:, 1] .-= timestep .* (pressure[:, 1] .- pressure[:, end]) ./ dy(domain)
+        v[:, end] .= v[:, 1]
+    end
     apply_domain_boundaries!(u, v, domain, freestream; channel_walls)
     enforce_solid_faces!(u, v, solid, wall_velocity)
     return iterations, converged

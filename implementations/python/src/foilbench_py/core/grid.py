@@ -44,20 +44,18 @@ def apply_domain_boundaries(
     ux = freestream[0]
     uy = freestream[1]
     if "x" in domain.periodic_axes:
-        u[:, 0] = u[:, -2]
-        u[:, -1] = u[:, 1]
-        v[:, 0] = v[:, -2]
-        v[:, -1] = v[:, 1]
+        periodic_u = 0.5 * (u[:, 0] + u[:, -1])
+        u[:, 0] = periodic_u
+        u[:, -1] = periodic_u
     else:
         u[:, 0] = ux
         u[:, -1] = u[:, -2]
         v[:, 0] = uy
         v[:, -1] = v[:, -2]
     if "y" in domain.periodic_axes:
-        v[0, :] = v[-2, :]
-        v[-1, :] = v[1, :]
-        u[0, :] = u[-2, :]
-        u[-1, :] = u[1, :]
+        periodic_v = 0.5 * (v[0, :] + v[-1, :])
+        v[0, :] = periodic_v
+        v[-1, :] = periodic_v
     elif channel_walls:
         v[0, :] = 0.0
         v[-1, :] = 0.0
@@ -115,6 +113,12 @@ def project_faces(
     )
     u[:, 1:-1] -= dt * (pressure[:, 1:] - pressure[:, :-1]) / domain.dx
     v[1:-1, :] -= dt * (pressure[1:, :] - pressure[:-1, :]) / domain.dy
+    if "x" in domain.periodic_axes:
+        u[:, 0] -= dt * (pressure[:, 0] - pressure[:, -1]) / domain.dx
+        u[:, -1] = u[:, 0]
+    if "y" in domain.periodic_axes:
+        v[0, :] -= dt * (pressure[0, :] - pressure[-1, :]) / domain.dy
+        v[-1, :] = v[0, :]
     apply_domain_boundaries(u, v, domain, freestream, channel_walls)
     enforce_solid_faces(u, v, solid, wall_velocity)
     return u, v, info

@@ -303,6 +303,29 @@ end
     @test iterations > 0
     @test after < 0.5 * before
 
+    periodic_domain = DomainSpec(((0.0, 2.0), (0.0, 1.0)), (16, 12), (:x, :y))
+    periodic_u = [0.1 * sin(0.31 * i + 0.17 * j) for i in 1:17, j in 1:12]
+    periodic_v = [0.1 * cos(0.23 * i - 0.19 * j) for i in 1:16, j in 1:13]
+    periodic_solid = falses(16, 12)
+    periodic_wall = zeros(Float64, 16, 12, 2)
+    apply_domain_boundaries!(periodic_u, periodic_v, periodic_domain, freestream)
+    periodic_before = sqrt(sum(abs2, face_divergence(periodic_u, periodic_v, periodic_domain)))
+    _, periodic_converged = project_faces!(
+        periodic_u,
+        periodic_v,
+        periodic_domain,
+        periodic_solid,
+        periodic_wall,
+        freestream,
+        0.01;
+        tolerance = 1.0e-9,
+    )
+    periodic_after = sqrt(sum(abs2, face_divergence(periodic_u, periodic_v, periodic_domain)))
+    @test periodic_converged
+    @test periodic_after < 1.0e-5 * periodic_before
+    @test periodic_u[1, :] ≈ periodic_u[end, :]
+    @test periodic_v[:, 1] ≈ periodic_v[:, end]
+
     impulse = zeros(Float64, 24, 16)
     impulse[12, 8] = 1.0
     diffused, diffusion_iterations, diffusion_converged = implicit_diffuse_scalar(

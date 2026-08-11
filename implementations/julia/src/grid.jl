@@ -41,10 +41,9 @@ function apply_domain_boundaries!(
     channel_walls::Bool = false,
 ) where {T<:AbstractFloat}
     if :x in domain.periodic_axes
-        u[1, :] .= u[end - 1, :]
-        u[end, :] .= u[2, :]
-        v[1, :] .= v[end - 1, :]
-        v[end, :] .= v[2, :]
+        periodic_u = T(0.5) .* (u[1, :] .+ u[end, :])
+        u[1, :] .= periodic_u
+        u[end, :] .= periodic_u
     else
         u[1, :] .= freestream[1]
         u[end, :] .= u[end - 1, :]
@@ -52,10 +51,9 @@ function apply_domain_boundaries!(
         v[end, :] .= v[end - 1, :]
     end
     if :y in domain.periodic_axes
-        v[:, 1] .= v[:, end - 1]
-        v[:, end] .= v[:, 2]
-        u[:, 1] .= u[:, end - 1]
-        u[:, end] .= u[:, 2]
+        periodic_v = T(0.5) .* (v[:, 1] .+ v[:, end])
+        v[:, 1] .= periodic_v
+        v[:, end] .= periodic_v
     elseif channel_walls
         v[:, 1] .= zero(T)
         v[:, end] .= zero(T)

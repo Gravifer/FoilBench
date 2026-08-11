@@ -53,6 +53,34 @@ def test_preconditioned_masked_projection_reduces_fluid_divergence() -> None:
     assert np.linalg.norm(after[~solid]) < 0.25 * np.linalg.norm(before[~solid])
 
 
+def test_periodic_projection_updates_wrapped_normal_faces() -> None:
+    domain = DomainSpec(2, ((0.0, 2.0), (0.0, 1.0)), (16, 12), ("x", "y"))
+    rng = np.random.default_rng(19)
+    u = rng.normal(0.0, 0.1, (domain.ny, domain.nx + 1))
+    v = rng.normal(0.0, 0.1, (domain.ny + 1, domain.nx))
+    solid = np.zeros((domain.ny, domain.nx), dtype=np.bool_)
+    wall = np.zeros((domain.ny, domain.nx, 2), dtype=np.float64)
+    apply_domain_boundaries(u, v, domain, (0.0, 0.0))
+    before = _divergence(u, v, domain)
+
+    projected_u, projected_v, info = project_faces(
+        u,
+        v,
+        domain,
+        solid,
+        wall,
+        (0.0, 0.0),
+        0.01,
+        pressure_tolerance=1.0e-9,
+    )
+    after = _divergence(projected_u, projected_v, domain)
+
+    assert info == 0
+    assert np.linalg.norm(after) < 1.0e-5 * np.linalg.norm(before)
+    np.testing.assert_allclose(projected_u[:, 0], projected_u[:, -1])
+    np.testing.assert_allclose(projected_v[0, :], projected_v[-1, :])
+
+
 def test_masked_projection_rejects_non_finite_rhs_before_cg() -> None:
     rhs = np.zeros((8, 8), dtype=np.float32)
     rhs[3, 4] = np.inf
