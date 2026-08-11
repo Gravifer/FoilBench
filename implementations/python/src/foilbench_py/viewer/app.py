@@ -165,14 +165,15 @@ class ViewerModel:
         manager = SolverManager(create_solver, scenario, geometry, initial_solver)
         domain_area = np.prod([upper - lower for lower, upper in scenario.domain.bounds[:2]])
         tracer_count = int(np.clip(round(float(domain_area) * 256.0), 2_048, 8_192))
+        initial_angle = scenario.control_at(0.0).angle_degrees
         tracers = TracerSystem.create(
             scenario.domain,
             geometry,
             count=tracer_count,
             history_length=12,
             seed=scenario.seed,
+            angle_degrees=initial_angle,
         )
-        initial_angle = scenario.control_at(0.0).angle_degrees
         model = cls(
             scenario,
             geometry,

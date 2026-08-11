@@ -88,6 +88,18 @@ def test_headless_viewer_update_and_switch(
     assert "warm-import transient" in model.status()
 
 
+def test_initial_tracers_respect_the_authoritative_foil_pose(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    model = ViewerModel.create(scenario, "stable-fluids")
+    initial_angle = scenario.control_at(0.0).angle_degrees
+
+    assert not np.any(model.geometry.contains(model.tracers.positions, initial_angle))
+    assert np.all(model.tracers.generations == 0)
+    assert np.all(model.tracers.history_generations == 0)
+
+
 def test_shared_tracer_fixture_uses_frozen_field_midpoint(
     scenario_factory: ScenarioFactory,
 ) -> None:
@@ -115,6 +127,7 @@ def test_shared_tracer_fixture_uses_frozen_field_midpoint(
         count=1,
         history_length=3,
         seed=0,
+        angle_degrees=0.0,
     )
     tracers.positions[0] = initial
     tracers.ages[0] = 0.0

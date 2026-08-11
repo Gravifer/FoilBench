@@ -43,6 +43,7 @@ class TracerSystem:
         count: int,
         history_length: int,
         seed: int,
+        angle_degrees: float,
         mode: TracerMode = "display",
     ) -> "TracerSystem":
         rng = PCG32(seed, stream=97)
@@ -56,7 +57,7 @@ class TracerSystem:
         ages = rng.random((count,)) * lifetimes
         generations = np.zeros((count,), dtype=np.int64)
         history_generations = np.zeros((history_length, count), dtype=np.int64)
-        return cls(
+        tracers = cls(
             domain,
             foil,
             positions,
@@ -69,6 +70,17 @@ class TracerSystem:
             history_generations,
             mode,
         )
+        inside = foil.contains(tracers.positions, angle_degrees)
+        tracers._respawn(
+            inside,
+            throughout_domain=True,
+            angle_degrees=angle_degrees,
+        )
+        # Initial placement is generation zero even when an unlucky sample had
+        # to be moved out of the authoritative foil pose.
+        tracers.generations[:] = 0
+        tracers.history_generations[:] = 0
+        return tracers
 
     def _respawn(
         self,

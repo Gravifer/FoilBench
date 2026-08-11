@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {isSolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
 import type {ViewerCommandInput, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
+import {fuseViewerStatus} from "./statusFusion.js";
 
 const app = document.querySelector<HTMLDivElement>("#app"); if (app === null) throw new Error("viewer root is missing");
 const renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x000000); app.append(renderer.domElement);
@@ -58,9 +59,8 @@ function updateVorticity(snapshot: ViewerSnapshot): void {
 
 function updateOverlay(snapshot: ViewerSnapshot): void {
   const rate = snapshot.stepRate === null ? "warming" : snapshot.stepRate.toFixed(1).padStart(5); const throughput = snapshot.simulatedPerWall === null ? "warming" : snapshot.simulatedPerWall.toFixed(2).padStart(5); const metric = (name: string): string => snapshot.diagnostics[name]?.toFixed(3) ?? "—"; const effective = snapshot.diagnostics["effective_reynolds"]; const effectiveText = effective === undefined ? "" : `  Re_eff=${effective.toFixed(0).padStart(6)}`; const paused = snapshot.paused ? "  PAUSED" : "";
-  const control = latestStatus !== null && latestStatus.revision >= snapshot.revision ? latestStatus : null;
-  const status = control?.status ?? snapshot.status; const phase = control?.phase ?? snapshot.phase; const recovery = control?.recoveryEpoch ?? snapshot.recoveryEpoch;
-  overlay.textContent = `${snapshot.solverId}  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${snapshot.angleDegrees.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(recovery)}  motion=${snapshot.motionMode}  phase=${phase}\n${status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  diag=${snapshot.diagnosticMode}  view=${snapshot.cropEnabled ? "cropped" : "full"}`;
+  const control = fuseViewerStatus(snapshot, latestStatus); const status = control.status; const phase = control.phase; const recovery = control.recoveryEpoch; const pending = control.pendingStatus === null ? "" : `\n${control.pendingStatus}`;
+  overlay.textContent = `${snapshot.solverId}  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${snapshot.angleDegrees.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(recovery)}  motion=${snapshot.motionMode}  phase=${phase}\n${status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  diag=${snapshot.diagnosticMode}  view=${snapshot.cropEnabled ? "cropped" : "full"}${pending}`;
 }
 
 function draw(): void {
