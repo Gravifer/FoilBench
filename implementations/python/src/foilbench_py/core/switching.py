@@ -110,7 +110,7 @@ class SolverManager:
             self._last_validation_report = None
             self._last_validation_elapsed = 0.0
             return ImportOutcome("accepted", "none", report)
-        state = self._solver.export_state()
+        state = state_at_control(self._solver.export_state(), control)
         try:
             candidate = self._factory(destination)
         except KeyError as error:

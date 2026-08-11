@@ -30,6 +30,19 @@ class PCG32:
         rotation = (old >> 59) & 31
         return ((xorshifted >> rotation) | (xorshifted << ((-rotation) & 31))) & 0xFFFFFFFF
 
+    def checkpoint(self) -> tuple[int, int]:
+        """Return the complete portable stream state for transactional rollback."""
+        return self._state, self._increment
+
+    def restore(self, checkpoint: tuple[int, int]) -> None:
+        state, increment = checkpoint
+        if not 0 <= state <= self._MASK_64 or not 0 <= increment <= self._MASK_64:
+            raise ValueError("PCG32 checkpoint words must be unsigned 64-bit integers")
+        if increment & 1 == 0:
+            raise ValueError("PCG32 increment must be odd")
+        self._state = state
+        self._increment = increment
+
     def random(self, shape: Sequence[int]) -> Float32[np.ndarray, "..."]:
         count = int(np.prod(shape, dtype=np.int64))
         values = np.empty(count, dtype=np.float32)

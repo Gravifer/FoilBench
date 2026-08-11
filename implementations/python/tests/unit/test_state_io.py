@@ -125,6 +125,23 @@ def test_canonical_state_reader_honors_fortran_storage_metadata() -> None:
     assert loaded.density is not None
     np.testing.assert_array_equal(loaded.density, density)
 
+    resaved = save_canonical_state(
+        loaded,
+        root / "results" / "test-state-io-fortran-resaved",
+    )
+    resaved_manifest = cast(
+        dict[str, object],
+        json.loads((resaved / "manifest.json").read_text(encoding="utf-8")),
+    )
+    assert cast(dict[str, object], resaved_manifest["velocity"])["order"] == "C"
+    assert cast(dict[str, object], resaved_manifest["density"])["order"] == "C"
+    round_tripped = load_canonical_state(resaved)
+    assert round_tripped.velocity.flags.c_contiguous
+    assert round_tripped.density is not None
+    assert round_tripped.density.flags.c_contiguous
+    np.testing.assert_array_equal(round_tripped.velocity, velocity)
+    np.testing.assert_array_equal(round_tripped.density, density)
+
     cast(dict[str, object], manifest["velocity"])["order"] = "C"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(ValueError, match="dtype/order"):

@@ -312,7 +312,14 @@ def test_pose_only_survives_warm_switch_and_pic_uses_authoritative_wall_speed(
     assert model.pose_only_drag
     control = model.control(scenario.output_dt)
     assert control.angular_velocity_degrees == 0.0
-    model.manager.solver.advance(control, scenario.output_dt)
+    model.manager.solver.advance(
+        ControlState(
+            control.time + scenario.output_dt,
+            control.angle_degrees,
+            control.angular_velocity_degrees,
+        ),
+        scenario.output_dt,
+    )
 
     assert model.manager.solver.export_state().angular_velocity_degrees == 0.0
 

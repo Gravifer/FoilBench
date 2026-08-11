@@ -32,9 +32,16 @@ from foilbench_py.core.models import (
     ImportReport,
     InteractiveTuning,
     NumericalFailure,
+    RestartState,
+    ReynoldsOutcome,
     Scenario,
     SolverInfo,
     StepReport,
+)
+from foilbench_py.core.solver_validation import (
+    validate_advance_request,
+    validate_canonical_import,
+    validate_restart_state,
 )
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, MaskField, PointCloud, VelocityField
 
@@ -74,15 +81,24 @@ class StableFluidsSolver:
         self._face_advection = False
         self._skew_rk2 = False
         self._reynolds = 1.0
+        self._revision = 0
 
     @property
     def reynolds(self) -> float:
         return self._reynolds
 
-    def set_reynolds(self, reynolds: float) -> None:
+    @property
+    def state_revision(self) -> int:
+        return self._revision
+
+    def set_reynolds(self, reynolds: float) -> ReynoldsOutcome:
         if not np.isfinite(reynolds) or reynolds <= 0.0:
             raise ValueError("Reynolds number must be finite and positive")
-        self._reynolds = float(reynolds)
+        selected = float(reynolds)
+        if selected != self._reynolds:
+            self._revision += 1
+        self._reynolds = selected
+        return ReynoldsOutcome(self._reynolds, self._reynolds)
 
     @property
     def transport_mode(self) -> StableTransportMode:
@@ -121,7 +137,8 @@ class StableFluidsSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
-        self.set_reynolds(scenario.reynolds)
+        self._revision = 0
+        self._reynolds = float(scenario.reynolds)
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
@@ -143,6 +160,30 @@ class StableFluidsSolver:
         self.set_transport_mode(advection)
         self._face_advection = bool(scenario.solver_options.get("stable_face_advection", False))
         self._apply_projection(max(scenario.output_dt, 1.0e-4))
+
+    def restart(
+        self,
+        scenario: Scenario,
+        geometry: NacaFoil,
+        seed: int,
+        start: RestartState,
+    ) -> None:
+        validate_restart_state(start)
+        self.initialize(scenario, geometry, seed)
+        self.set_reynolds(start.reynolds)
+        self._time = start.time
+        self._control = ControlState(start.time, start.angle_degrees, 0.0)
+        self._solid = geometry.mask(scenario.domain, start.angle_degrees)
+        velocity = np.empty(
+            (scenario.domain.ny, scenario.domain.nx, 2),
+            dtype=scenario.dtype,
+        )
+        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
+        wall = self._wall_grid(self._control)
+        velocity[self._solid] = wall[self._solid]
+        self._u, self._v = cell_to_faces(velocity)
+        self._apply_projection(max(scenario.output_dt, 1.0e-4))
+        self._revision = 0
 
     def _require(self) -> tuple[Scenario, NacaFoil, FaceVelocityX, FaceVelocityY, MaskField]:
         if (
@@ -182,6 +223,7 @@ class StableFluidsSolver:
             raise NumericalFailure(
                 "nonfinite_state",
                 "Stable Fluids projection received non-finite velocity",
+                "projection",
             )
         face_speed = max(float(np.max(np.abs(u))), float(np.max(np.abs(v))))
         wall_speed = (
@@ -198,6 +240,11 @@ class StableFluidsSolver:
                 "excessive_velocity",
                 f"Stable Fluids projection CFL {projection_cfl:.2f} exceeds "
                 f"{projection_cfl_limit:.2f}",
+                "projection",
+                {
+                    "maximum_cfl": projection_cfl,
+                    "maximum_cfl_limit": projection_cfl_limit,
+                },
             )
         self._u, self._v, info = project_faces(
             u,
@@ -214,18 +261,20 @@ class StableFluidsSolver:
             raise NumericalFailure(
                 "projection_failure",
                 f"Stable Fluids pressure CG did not converge: {info}",
+                "projection",
+                {"solver_info": info},
             )
         if not np.isfinite(self._u).all() or not np.isfinite(self._v).all():
             raise NumericalFailure(
                 "nonfinite_state",
                 "Stable Fluids projection produced non-finite velocity",
+                "projection",
             )
         self._projection_warning = ""
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
-        scenario, geometry, _, _, _ = self._require()
-        if target_dt <= 0.0:
-            raise ValueError("target_dt must be positive")
+        scenario, geometry, current_u, current_v, current_solid = self._require()
+        validate_advance_request(self._time, control, target_dt, scenario.precision)
         cell_velocity = self.cell_velocity()
         max_speed = max(
             float(np.max(np.linalg.norm(cell_velocity, axis=2))),
@@ -238,57 +287,141 @@ class StableFluidsSolver:
         cfl = float(cfl_option)
         if self._skew_rk2:
             cfl = min(cfl, 0.4)
-        stable_dt = cfl * min(scenario.domain.dx, scenario.domain.dy) / max_speed
-        substeps = max(1, int(np.ceil(target_dt / stable_dt)))
+        spacing = min(scenario.domain.dx, scenario.domain.dy)
+        wall_speed = abs(np.deg2rad(control.angular_velocity_degrees)) * geometry.maximum_radius
+        sweep_cells = (
+            abs(np.deg2rad(control.angle_degrees - self._control.angle_degrees))
+            * geometry.maximum_radius
+            / spacing
+        )
+        fluid_measure = (
+            target_dt * max_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+            if self._skew_rk2
+            else target_dt * max_speed / spacing
+        )
+        required = max(
+            fluid_measure / cfl,
+            target_dt * wall_speed / (cfl * spacing),
+            sweep_cells / cfl,
+        )
+        substeps = max(1, int(np.ceil(required)))
+        if substeps > 512:
+            raise NumericalFailure(
+                "stability_limit",
+                "Stable Fluids motion requires too many internal substeps",
+                "advection" if self._skew_rk2 else "boundary",
+                {
+                    "required_substeps": substeps,
+                    "maximum_substeps": 512,
+                    "maximum_fluid_speed": max_speed,
+                    "maximum_wall_speed": wall_speed,
+                    "boundary_sweep_cells": sweep_cells,
+                },
+            )
         dt = target_dt / substeps
         viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
-        for substep in range(substeps):
-            fraction = (substep + 1) / substeps
-            sub_control = ControlState(
-                self._time + fraction * target_dt,
-                self._control.angle_degrees
-                + fraction * (control.angle_degrees - self._control.angle_degrees),
-                control.angular_velocity_degrees,
-            )
-            _, _, current_u, current_v, current_solid = self._require()
-            if self._skew_rk2:
-                self._u, self._v = advect_faces_skew_rk2(
-                    current_u,
-                    current_v,
-                    dt,
-                    scenario.domain,
-                    current_solid,
-                    self._wall_grid(sub_control),
-                    scenario.freestream,
-                )
-                self._u, self._v = implicit_diffuse_faces(
-                    self._u, self._v, viscosity, dt, scenario.domain
-                )
-            elif self._face_advection:
-                advected_u, advected_v = advect_faces(
-                    current_u,
-                    current_v,
-                    dt,
-                    scenario.domain,
-                    self._maccormack,
-                )
-                self._u, self._v = implicit_diffuse_faces(
-                    advected_u, advected_v, viscosity, dt, scenario.domain
-                )
-            else:
-                velocity = faces_to_cell(current_u, current_v)
-                velocity = advect_velocity(velocity, dt, scenario.domain, self._maccormack)
-                velocity = implicit_diffuse(velocity, viscosity, dt, scenario.domain)
-                self._u, self._v = cell_to_faces(velocity)
-            self._control = sub_control
-            self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
-            self._apply_projection(dt)
-        self._time += target_dt
-        self._control = ControlState(
-            self._time, control.angle_degrees, control.angular_velocity_degrees
+        checkpoint = (
+            current_u.copy(),
+            current_v.copy(),
+            current_solid.copy(),
+            self._control,
+            self._time,
+            self._projection_warning,
+            self._revision,
         )
+        start_time = self._time
+        start_angle = self._control.angle_degrees
+        try:
+            for substep in range(substeps):
+                fraction = (substep + 1) / substeps
+                sub_control = ControlState(
+                    start_time + fraction * target_dt,
+                    start_angle + fraction * (control.angle_degrees - start_angle),
+                    control.angular_velocity_degrees,
+                )
+                _, _, step_u, step_v, step_solid = self._require()
+                if self._skew_rk2:
+                    self._u, self._v = advect_faces_skew_rk2(
+                        step_u,
+                        step_v,
+                        dt,
+                        scenario.domain,
+                        step_solid,
+                        self._wall_grid(sub_control),
+                        scenario.freestream,
+                    )
+                    self._u, self._v = implicit_diffuse_faces(
+                        self._u, self._v, viscosity, dt, scenario.domain
+                    )
+                elif self._face_advection:
+                    advected_u, advected_v = advect_faces(
+                        step_u,
+                        step_v,
+                        dt,
+                        scenario.domain,
+                        self._maccormack,
+                    )
+                    self._u, self._v = implicit_diffuse_faces(
+                        advected_u, advected_v, viscosity, dt, scenario.domain
+                    )
+                else:
+                    velocity = faces_to_cell(step_u, step_v)
+                    velocity = advect_velocity(
+                        velocity, dt, scenario.domain, self._maccormack
+                    )
+                    velocity = implicit_diffuse(velocity, viscosity, dt, scenario.domain)
+                    self._u, self._v = cell_to_faces(velocity)
+                self._control = sub_control
+                self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+                self._apply_projection(dt)
+            final_velocity = self.cell_velocity()
+            if not np.isfinite(final_velocity).all():
+                raise NumericalFailure(
+                    "nonfinite_state",
+                    "Stable Fluids produced non-finite velocity",
+                    "postcondition",
+                )
+        except Exception:
+            (
+                self._u,
+                self._v,
+                self._solid,
+                self._control,
+                self._time,
+                self._projection_warning,
+                self._revision,
+            ) = checkpoint
+            raise
+        self._time = start_time + target_dt
+        self._control = ControlState(
+            self._time,
+            control.angle_degrees,
+            control.angular_velocity_degrees,
+        )
+        self._revision += 1
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        return StepReport(target_dt, target_dt, substeps, max_speed, warnings)
+        final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
+        accepted_measure = (
+            dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+            if self._skew_rk2
+            else dt * final_speed / spacing
+        )
+        return StepReport(
+            target_dt,
+            target_dt,
+            substeps,
+            final_speed,
+            warnings,
+            self._revision,
+            {
+                "maximum_fluid_speed": final_speed,
+                "maximum_wall_speed": wall_speed,
+                "maximum_characteristic_displacement": accepted_measure,
+                "maximum_boundary_sweep": sweep_cells / substeps,
+                "requested_reynolds": self._reynolds,
+                "effective_reynolds": self._reynolds,
+            },
+        )
 
     def cell_velocity(self) -> VelocityField:
         _, _, u, v, _ = self._require()
@@ -300,7 +433,11 @@ class StableFluidsSolver:
 
     def export_state(self) -> CanonicalFlowState:
         scenario, _, _, _, _ = self._require()
-        velocity = self.cell_velocity()[None, ...]
+        velocity_2d = self.cell_velocity().copy()
+        _, _, _, _, solid = self._require()
+        wall = self._wall_grid(self._control)
+        velocity_2d[solid] = wall[solid]
+        velocity = velocity_2d[None, ...]
         return CanonicalFlowState(
             schema_version=1,
             dimension=2,
@@ -317,22 +454,55 @@ class StableFluidsSolver:
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
-        scenario, geometry, _, _, _ = self._require()
-        if state.dimension != 2 or state.resolution != scenario.domain.resolution:
-            return ImportOutcome(
-                "rejected",
-                "incompatible_domain",
-                warnings=("warm import requires the same 2D resolution",),
-            )
-        velocity = np.asarray(state.velocity[0], dtype=scenario.dtype)
-        self._u, self._v = cell_to_faces(velocity)
-        self._time = state.time
-        self._control = control
-        self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+        scenario, geometry, u, v, solid = self._require()
+        checkpoint = (
+            u.copy(),
+            v.copy(),
+            solid.copy(),
+            self._control,
+            self._time,
+            self._projection_warning,
+            self._revision,
+        )
         try:
+            validate_canonical_import(state, scenario, control)
+            velocity = np.asarray(state.velocity[0], dtype=scenario.dtype).copy()
+            self._time = state.time
+            self._control = control
+            self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+            wall = self._wall_grid(control)
+            velocity[self._solid] = wall[self._solid]
+            self._u, self._v = cell_to_faces(velocity)
             self._apply_projection(max(scenario.output_dt, 1.0e-4))
         except NumericalFailure as failure:
-            return ImportOutcome("rejected", failure.reason, warnings=(str(failure),))
+            (
+                self._u,
+                self._v,
+                self._solid,
+                self._control,
+                self._time,
+                self._projection_warning,
+                self._revision,
+            ) = checkpoint
+            return ImportOutcome(
+                "rejected",
+                failure.reason,
+                warnings=(str(failure),),
+                stage=failure.stage,
+                evidence=failure.evidence,
+            )
+        except Exception:
+            (
+                self._u,
+                self._v,
+                self._solid,
+                self._control,
+                self._time,
+                self._projection_warning,
+                self._revision,
+            ) = checkpoint
+            raise
+        self._revision += 1
         report = ImportReport(
             state.source_solver,
             self.info.id,
@@ -365,4 +535,4 @@ class StableFluidsSolver:
                 "nonfinite_state",
                 "Stable Fluids produced non-finite diagnostics",
             )
-        return Diagnostics(values, warnings)
+        return Diagnostics(values, warnings, self._revision)

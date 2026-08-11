@@ -22,9 +22,16 @@ from foilbench_py.core.models import (
     ImportReport,
     InteractiveTuning,
     NumericalFailure,
+    RestartState,
+    ReynoldsOutcome,
     Scenario,
     SolverInfo,
     StepReport,
+)
+from foilbench_py.core.solver_validation import (
+    validate_advance_request,
+    validate_canonical_import,
+    validate_restart_state,
 )
 from foilbench_py.solvers._numba_adapter import lbm_trt_collision
 from foilbench_py.types import (
@@ -52,6 +59,11 @@ class LBMSolver:
     )
     _W = np.asarray([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
     _OPPOSITE = np.asarray([0, 3, 4, 1, 2, 7, 8, 5, 6], dtype=np.int64)
+    _LATTICE_SOUND_SPEED = 1.0 / np.sqrt(3.0)
+    _MAXIMUM_MACH = 0.08
+    _MAXIMUM_LATTICE_SPEED = _MAXIMUM_MACH * _LATTICE_SOUND_SPEED
+    _MAXIMUM_SUBSTEPS = 512
+    _MINIMUM_POPULATION = -0.05
 
     def __init__(self) -> None:
         self._scenario: Scenario | None = None
@@ -73,15 +85,52 @@ class LBMSolver:
         self._effective_reynolds = 0.0
         self._viscosity_clamped = False
         self._reynolds = 1.0
+        self._omega_plus = 1.0
+        self._omega_minus = 1.0
+        self._revision = 0
 
     @property
     def reynolds(self) -> float:
         return self._reynolds
 
-    def set_reynolds(self, reynolds: float) -> None:
+    @property
+    def state_revision(self) -> int:
+        return self._revision
+
+    def set_reynolds(self, reynolds: float) -> ReynoldsOutcome:
         if not np.isfinite(reynolds) or reynolds <= 0.0:
             raise ValueError("Reynolds number must be finite and positive")
-        self._reynolds = float(reynolds)
+        previous = (
+            self._reynolds,
+            self._effective_reynolds,
+            self._viscosity_clamped,
+            self._omega_plus,
+            self._omega_minus,
+            self._revision,
+        )
+        requested = float(reynolds)
+        try:
+            self._reynolds = requested
+            if self._scenario is not None:
+                self._configure_relaxation()
+        except Exception:
+            (
+                self._reynolds,
+                self._effective_reynolds,
+                self._viscosity_clamped,
+                self._omega_plus,
+                self._omega_minus,
+                self._revision,
+            ) = previous
+            raise
+        if requested != previous[0]:
+            self._revision += 1
+        warnings = (
+            (f"effective Reynolds clamped to {self._effective_reynolds:.1f}",)
+            if self._viscosity_clamped
+            else ()
+        )
+        return ReynoldsOutcome(requested, self._effective_reynolds, warnings)
 
     def interactive_tuning(self) -> InteractiveTuning | None:
         return None
@@ -112,7 +161,8 @@ class LBMSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
-        self.set_reynolds(scenario.reynolds)
+        self._reynolds = float(scenario.reynolds)
+        self._revision = 0
         self._reference_speed = scenario.reference_speed
         reference_substeps = max(
             1,
@@ -120,21 +170,14 @@ class LBMSolver:
                 np.ceil(
                     scenario.output_dt
                     * self._reference_speed
-                    / (0.08 * scenario.domain.dx)
+                    / (self._MAXIMUM_LATTICE_SPEED * scenario.domain.dx)
+                    - 1.0e-12
                 )
             ),
         )
         self._lattice_dt = scenario.output_dt / reference_substeps
         self._lattice_speed = self._reference_speed * self._lattice_dt / scenario.domain.dx
-        chord_cells = scenario.foil.chord / scenario.domain.dx
-        requested_viscosity = self._lattice_speed * chord_cells / self._reynolds
-        minimum_preview_viscosity = (0.52 - 0.5) / 3.0
-        selected_viscosity = max(
-            requested_viscosity,
-            minimum_preview_viscosity,
-        )
-        self._viscosity_clamped = selected_viscosity > requested_viscosity
-        self._effective_reynolds = self._lattice_speed * chord_cells / selected_viscosity
+        self._configure_relaxation()
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
             self._lattice_speed / self._reference_speed
@@ -196,6 +239,121 @@ class LBMSolver:
             )
             sponge = np.maximum(sponge, strength_outlet[None, :])
         self._sponge = sponge
+
+    def restart(
+        self,
+        scenario: Scenario,
+        geometry: NacaFoil,
+        seed: int,
+        start: RestartState,
+    ) -> None:
+        validate_restart_state(start)
+        self.initialize(scenario, geometry, seed)
+        self.set_reynolds(start.reynolds)
+        self._time = start.time
+        self._control = ControlState(start.time, start.angle_degrees, 0.0)
+        self._update_solid(self._control)
+        self._revision = 0
+
+    def _configure_relaxation(self) -> None:
+        scenario = self._scenario
+        if scenario is None:
+            raise RuntimeError("solver has not been initialized")
+        chord_cells = scenario.foil.chord / scenario.domain.dx
+        requested_viscosity = self._lattice_speed * chord_cells / self._reynolds
+        minimum_preview_viscosity = (0.52 - 0.5) / 3.0
+        selected_viscosity = max(requested_viscosity, minimum_preview_viscosity)
+        self._viscosity_clamped = selected_viscosity > requested_viscosity
+        self._effective_reynolds = (
+            self._lattice_speed * chord_cells / selected_viscosity
+        )
+        tau_plus = 0.5 + 3.0 * selected_viscosity
+        tau_minus = 0.5 + (3.0 / 16.0) / max(tau_plus - 0.5, 1.0e-6)
+        self._omega_plus = 1.0 / tau_plus
+        self._omega_minus = 1.0 / tau_minus
+        if not (
+            0.0 < self._omega_plus < 2.0 and 0.0 < self._omega_minus < 2.0
+        ):
+            raise NumericalFailure(
+                "invalid_relaxation",
+                "TRT relaxation frequency left the interval (0, 2)",
+                "collision",
+                {
+                    "omega_plus": self._omega_plus,
+                    "omega_minus": self._omega_minus,
+                },
+            )
+
+    def _rebuild_boundary_equilibrium(self) -> None:
+        scenario = self._scenario
+        if scenario is None:
+            raise RuntimeError("solver has not been initialized")
+        target_lattice = np.asarray(scenario.freestream[:2], dtype=scenario.dtype) * (
+            self._lattice_speed / self._reference_speed
+        )
+        target_velocity = np.empty(
+            (scenario.domain.ny, scenario.domain.nx, 2),
+            dtype=scenario.dtype,
+        )
+        target_velocity[...] = target_lattice
+        self._boundary_equilibrium = self._equilibrium(
+            np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype),
+            target_velocity,
+        )
+
+    def _rescale_populations(self, selected_speed: float) -> None:
+        scenario, _, populations, _ = self._require()
+        density, old_velocity = self._macroscopic(populations)
+        ratio = selected_speed / self._lattice_speed
+        new_velocity = old_velocity * ratio
+        old_equilibrium = self._equilibrium(density, old_velocity)
+        new_equilibrium = self._equilibrium(density, new_velocity)
+        self._f = np.asarray(
+            new_equilibrium + ratio * (populations - old_equilibrium),
+            dtype=scenario.dtype,
+        )
+        self._outlet = self._f[:, -1:, :].copy()
+
+    def _configure_temporal_scaling(
+        self,
+        target_dt: float,
+        maximum_physical_speed: float,
+    ) -> int:
+        scenario, _, populations, _ = self._require()
+        del populations
+        selected_maximum = max(maximum_physical_speed, self._reference_speed)
+        substeps = max(
+            1,
+            int(
+                np.ceil(
+                    target_dt
+                    * selected_maximum
+                    / (self._MAXIMUM_LATTICE_SPEED * scenario.domain.dx)
+                    - 1.0e-12
+                )
+            ),
+        )
+        if substeps > self._MAXIMUM_SUBSTEPS:
+            raise NumericalFailure(
+                "excessive_velocity",
+                "LBM motion requires too many lattice substeps",
+                "time-mapping",
+                {
+                    "required_substeps": substeps,
+                    "maximum_substeps": self._MAXIMUM_SUBSTEPS,
+                    "maximum_physical_speed": maximum_physical_speed,
+                },
+            )
+        selected_speed = (
+            self._reference_speed * target_dt / (substeps * scenario.domain.dx)
+        )
+        if abs(selected_speed - self._lattice_speed) > 1.0e-12:
+            self._rescale_populations(selected_speed)
+        self._lattice_dt = target_dt / substeps
+        self._lattice_speed = selected_speed
+        self._configure_relaxation()
+        self._rebuild_boundary_equilibrium()
+        return substeps
 
     def _equilibrium(
         self,
@@ -401,23 +559,14 @@ class LBMSolver:
             streamed[:, :, opposite][wall_link] = reflected
         return streamed
 
-    def _step(self, dt: float, control: ControlState) -> None:
+    def _step(self, control: ControlState) -> None:
         scenario, _, populations, _ = self._require()
-        dx = scenario.domain.dx
-        del dt
         u_lattice = self._lattice_speed
-        chord_cells = scenario.foil.chord / dx
-        minimum_preview_viscosity = (0.52 - 0.5) / 3.0
-        requested_viscosity = u_lattice * chord_cells / self._reynolds
-        nu_lattice = max(requested_viscosity, minimum_preview_viscosity)
-        self._viscosity_clamped = nu_lattice > requested_viscosity
-        self._effective_reynolds = u_lattice * chord_cells / nu_lattice
-        tau_plus = 0.5 + 3.0 * nu_lattice
-        tau_minus = 0.5 + (3.0 / 16.0) / max(tau_plus - 0.5, 1.0e-6)
-        omega_plus = 1.0 / tau_plus
-        omega_minus = 1.0 / tau_minus
-
-        density, post = lbm_trt_collision(populations, omega_plus, omega_minus)
+        density, post = lbm_trt_collision(
+            populations,
+            self._omega_plus,
+            self._omega_minus,
+        )
         target = np.asarray(scenario.freestream[:2], dtype=populations.dtype)
         target_lattice = target * (u_lattice / self._reference_speed)
 
@@ -472,55 +621,213 @@ class LBMSolver:
         self._control = control
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
-        _, _, populations, _ = self._require()
-        if target_dt <= 0.0:
-            raise ValueError("target_dt must be positive")
+        scenario, geometry, populations, solid = self._require()
+        validate_advance_request(self._time, control, target_dt, scenario.precision)
         if not np.isfinite(populations).all():
-            raise NumericalFailure("nonfinite_state", "LBM populations are non-finite")
-        substeps = max(1, int(np.ceil(target_dt / self._lattice_dt - 1.0e-12)))
-        dt = target_dt / substeps
-        for substep in range(substeps):
-            fraction = (substep + 1) / substeps
-            sub_control = ControlState(
-                self._time + fraction * target_dt,
-                self._control.angle_degrees
-                + fraction * (control.angle_degrees - self._control.angle_degrees),
-                control.angular_velocity_degrees,
+            raise NumericalFailure(
+                "nonfinite_state",
+                "LBM populations are non-finite",
+                "postcondition",
             )
-            self._update_solid(sub_control)
-            self._step(dt, sub_control)
-            updated_populations = self._f
-            if updated_populations is None or not np.isfinite(updated_populations).all():
-                raise NumericalFailure("nonfinite_state", "LBM produced non-finite populations")
-        updated_populations = self._f
-        if updated_populations is None:
-            raise NumericalFailure("nonfinite_state", "LBM lost its population state")
-        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-            density, _ = self._macroscopic(updated_populations)
-            physical_velocity = self._physical_velocity()
-        if not np.isfinite(density).all() or not np.isfinite(physical_velocity).all():
-            raise NumericalFailure("nonfinite_state", "LBM produced non-finite macroscopic state")
-        max_speed = float(np.max(np.linalg.norm(physical_velocity, axis=2)))
-        if not np.isfinite(max_speed):
-            raise NumericalFailure("nonfinite_state", "LBM produced a non-finite step report")
-        self._time += target_dt
-        self._control = ControlState(
-            self._time, control.angle_degrees, control.angular_velocity_degrees
+        checkpoint = (
+            populations.copy(),
+            None if self._outlet is None else self._outlet.copy(),
+            solid.copy(),
+            None if self._signed_distance is None else self._signed_distance.copy(),
+            self._solid_angle,
+            self._control,
+            self._time,
+            self._lattice_speed,
+            self._lattice_dt,
+            self._effective_reynolds,
+            self._viscosity_clamped,
+            self._omega_plus,
+            self._omega_minus,
+            None
+            if self._boundary_equilibrium is None
+            else self._boundary_equilibrium.copy(),
+            self._revision,
         )
+        start_time = self._time
+        start_angle = self._control.angle_degrees
+        current_velocity = self._physical_velocity()
+        current_maximum = float(np.max(np.linalg.norm(current_velocity, axis=2)))
+        wall_speed = (
+            abs(np.deg2rad(control.angular_velocity_degrees)) * geometry.maximum_radius
+        )
+        sweep_speed = (
+            abs(np.deg2rad(control.angle_degrees - start_angle))
+            * geometry.maximum_radius
+            / target_dt
+        )
+        maximum_physical_speed = max(
+            current_maximum,
+            self._reference_speed,
+            wall_speed,
+            sweep_speed,
+        )
+        substeps = 0
+        max_speed = 0.0
+        density_excursion = 0.0
+        minimum_population = 0.0
+        maximum_mach = 0.0
+        try:
+            substeps = self._configure_temporal_scaling(
+                target_dt,
+                1.25 * maximum_physical_speed,
+            )
+            for substep in range(substeps):
+                fraction = (substep + 1) / substeps
+                sub_control = ControlState(
+                    start_time + fraction * target_dt,
+                    start_angle + fraction * (control.angle_degrees - start_angle),
+                    control.angular_velocity_degrees,
+                )
+                self._update_solid(sub_control)
+                self._step(sub_control)
+            updated_populations = self._f
+            if updated_populations is None:
+                raise NumericalFailure(
+                    "nonfinite_state",
+                    "LBM lost its population state",
+                    "postcondition",
+                )
+            if not np.isfinite(updated_populations).all():
+                raise NumericalFailure(
+                    "invalid_population",
+                    "LBM produced non-finite populations",
+                    "postcondition",
+                )
+            minimum_population = float(np.min(updated_populations))
+            if minimum_population < self._MINIMUM_POPULATION:
+                raise NumericalFailure(
+                    "invalid_population",
+                    "LBM population left the admissible nonnegative envelope",
+                    "postcondition",
+                    {
+                        "minimum_population": minimum_population,
+                        "minimum_allowed_population": self._MINIMUM_POPULATION,
+                    },
+                )
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                density, _ = self._macroscopic(updated_populations)
+                physical_velocity = self._physical_velocity()
+            final_solid = self._solid
+            if final_solid is None:
+                raise RuntimeError("LBM solid mask is unavailable")
+            fluid_density = density[~final_solid]
+            if not np.isfinite(fluid_density).all() or np.any(fluid_density <= 0.0):
+                raise NumericalFailure(
+                    "invalid_density",
+                    "LBM density became non-positive or non-finite",
+                    "postcondition",
+                )
+            density_excursion = float(np.max(np.abs(fluid_density - 1.0)))
+            if density_excursion > 0.75:
+                raise NumericalFailure(
+                    "invalid_density",
+                    "LBM density excursion exceeded the interactive envelope",
+                    "postcondition",
+                    {
+                        "density_excursion": density_excursion,
+                        "maximum_density_excursion": 0.75,
+                    },
+                )
+            if not np.isfinite(physical_velocity).all():
+                raise NumericalFailure(
+                    "nonfinite_state",
+                    "LBM produced non-finite macroscopic velocity",
+                    "postcondition",
+                )
+            max_speed = float(np.max(np.linalg.norm(physical_velocity, axis=2)))
+            maximum_mach = (
+                max(max_speed, self._reference_speed, wall_speed, sweep_speed)
+                * self._lattice_speed
+                / (self._reference_speed * self._LATTICE_SOUND_SPEED)
+            )
+            if maximum_mach > self._MAXIMUM_MACH * (1.0 + 1.0e-6):
+                raise NumericalFailure(
+                    "excessive_velocity",
+                    "LBM lattice Mach exceeded the admissible limit",
+                    "postcondition",
+                    {
+                        "maximum_lattice_mach": maximum_mach,
+                        "maximum_lattice_mach_limit": self._MAXIMUM_MACH,
+                    },
+                )
+        except Exception:
+            (
+                self._f,
+                self._outlet,
+                self._solid,
+                self._signed_distance,
+                self._solid_angle,
+                self._control,
+                self._time,
+                self._lattice_speed,
+                self._lattice_dt,
+                self._effective_reynolds,
+                self._viscosity_clamped,
+                self._omega_plus,
+                self._omega_minus,
+                self._boundary_equilibrium,
+                self._revision,
+            ) = checkpoint
+            raise
+        self._time = start_time + target_dt
+        self._control = ControlState(
+            self._time,
+            control.angle_degrees,
+            control.angular_velocity_degrees,
+        )
+        self._revision += 1
         warnings = (
             (f"LBM relaxation clamp active: effective Re={self._effective_reynolds:.1f}",)
             if self._viscosity_clamped
             else ()
         )
-        return StepReport(target_dt, target_dt, substeps, max_speed, warnings)
+        tau_plus = 1.0 / self._omega_plus
+        tau_minus = 1.0 / self._omega_minus
+        return StepReport(
+            target_dt,
+            target_dt,
+            substeps,
+            max_speed,
+            warnings,
+            self._revision,
+            {
+                "maximum_wall_speed": wall_speed,
+                "maximum_geometry_sweep_speed": sweep_speed,
+                "maximum_lattice_mach": maximum_mach,
+                "density_excursion": density_excursion,
+                "minimum_population": minimum_population,
+                "omega_plus": self._omega_plus,
+                "omega_minus": self._omega_minus,
+                "trt_magic": (tau_plus - 0.5) * (tau_minus - 0.5),
+                "requested_reynolds": self._reynolds,
+                "effective_reynolds": self._effective_reynolds,
+                "degraded_motion": wall_speed == 0.0
+                and abs(control.angle_degrees - start_angle) > 1.0e-9,
+            },
+        )
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _ = self._require()
         return sample_vector(self._physical_velocity(), points, scenario.domain)
 
     def export_state(self) -> CanonicalFlowState:
-        scenario, _, populations, _ = self._require()
+        scenario, geometry, populations, solid = self._require()
         density, _ = self._macroscopic(populations)
+        velocity = self._physical_velocity().copy()
+        if self._centers is None:
+            raise RuntimeError("LBM geometry cache has not been initialized")
+        wall = geometry.wall_velocity(
+            self._centers.reshape(-1, 2),
+            self._control,
+        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+        velocity[solid] = wall[solid]
+        density = np.asarray(density, dtype=scenario.dtype).copy()
+        density[solid] = 1.0
         return CanonicalFlowState(
             schema_version=1,
             dimension=2,
@@ -533,43 +840,137 @@ class LBMSolver:
             angular_velocity_degrees=self._control.angular_velocity_degrees,
             source_language="python",
             source_solver=self.info.id,
-            velocity=self._physical_velocity()[None, ...],
-            density=np.asarray(density, dtype=scenario.dtype)[None, ...],
+            velocity=velocity[None, ...],
+            density=density[None, ...],
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
-        scenario, geometry, _, _ = self._require()
-        if state.dimension != 2 or state.resolution != scenario.domain.resolution:
-            return ImportOutcome(
-                "rejected",
-                "incompatible_domain",
-                warnings=("warm import requires the same 2D resolution",),
-            )
-        physical = np.asarray(state.velocity[0], dtype=scenario.dtype)
-        lattice = physical * (self._lattice_speed / self._reference_speed)
-        density = (
-            np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
-            if state.density is None
-            else np.asarray(state.density[0], dtype=scenario.dtype)
+        scenario, geometry, populations, solid = self._require()
+        checkpoint = (
+            populations.copy(),
+            None if self._outlet is None else self._outlet.copy(),
+            solid.copy(),
+            None if self._signed_distance is None else self._signed_distance.copy(),
+            self._solid_angle,
+            self._control,
+            self._time,
+            self._lattice_speed,
+            self._lattice_dt,
+            self._effective_reynolds,
+            self._viscosity_clamped,
+            self._omega_plus,
+            self._omega_minus,
+            None
+            if self._boundary_equilibrium is None
+            else self._boundary_equilibrium.copy(),
+            self._revision,
         )
-        if np.any(density <= 0.0):
+        try:
+            validate_canonical_import(state, scenario, control)
+            physical = np.asarray(state.velocity[0], dtype=scenario.dtype).copy()
+            maximum = float(np.max(np.linalg.norm(physical, axis=2)))
+            wall_speed = (
+                abs(np.deg2rad(control.angular_velocity_degrees))
+                * geometry.maximum_radius
+            )
+            self._configure_temporal_scaling(
+                scenario.output_dt,
+                max(maximum, wall_speed),
+            )
+            lattice = physical * (self._lattice_speed / self._reference_speed)
+            density = (
+                np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
+                if state.density is None
+                else np.asarray(state.density[0], dtype=scenario.dtype).copy()
+            )
+            if (
+                not np.isfinite(density).all()
+                or np.any(density <= 0.0)
+                or float(np.max(np.abs(density - 1.0))) > 0.75
+            ):
+                raise NumericalFailure(
+                    "invalid_density",
+                    "LBM warm import density is outside the admissible envelope",
+                    "canonical-import",
+                )
+            maximum_mach = (
+                max(maximum, wall_speed, self._reference_speed)
+                * self._lattice_speed
+                / (self._reference_speed * self._LATTICE_SOUND_SPEED)
+            )
+            if maximum_mach > self._MAXIMUM_MACH * (1.0 + 1.0e-6):
+                raise NumericalFailure(
+                    "excessive_velocity",
+                    "LBM warm import exceeds its Mach limit",
+                    "canonical-import",
+                    {
+                        "maximum_lattice_mach": maximum_mach,
+                        "maximum_lattice_mach_limit": self._MAXIMUM_MACH,
+                    },
+                )
+            self._time = state.time
+            self._control = control
+            self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+            if self._centers is None:
+                raise RuntimeError("LBM geometry cache has not been initialized")
+            wall = geometry.wall_velocity(
+                self._centers.reshape(-1, 2), control
+            ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+            physical[self._solid] = wall[self._solid]
+            density[self._solid] = 1.0
+            lattice = physical * (self._lattice_speed / self._reference_speed)
+            self._f = self._equilibrium(density, lattice)
+            self._outlet = self._f[:, -1:, :].copy()
+            self._signed_distance = geometry.signed_distance(
+                self._centers.reshape(-1, 2),
+                control.angle_degrees,
+            ).reshape(scenario.domain.ny, scenario.domain.nx)
+            self._solid_angle = control.angle_degrees
+        except NumericalFailure as failure:
+            (
+                self._f,
+                self._outlet,
+                self._solid,
+                self._signed_distance,
+                self._solid_angle,
+                self._control,
+                self._time,
+                self._lattice_speed,
+                self._lattice_dt,
+                self._effective_reynolds,
+                self._viscosity_clamped,
+                self._omega_plus,
+                self._omega_minus,
+                self._boundary_equilibrium,
+                self._revision,
+            ) = checkpoint
             return ImportOutcome(
                 "rejected",
-                "invalid_density",
-                warnings=("LBM warm import requires positive density",),
+                failure.reason,
+                warnings=(str(failure),),
+                stage=failure.stage,
+                evidence=failure.evidence,
             )
-        self._f = self._equilibrium(density, lattice)
-        self._outlet = self._f[:, -1:, :].copy()
-        self._time = state.time
-        self._control = control
-        self._solid = geometry.mask(scenario.domain, control.angle_degrees)
-        if self._centers is None:
-            raise RuntimeError("LBM geometry cache has not been initialized")
-        self._signed_distance = geometry.signed_distance(
-            self._centers.reshape(-1, 2),
-            control.angle_degrees,
-        ).reshape(scenario.domain.ny, scenario.domain.nx)
-        self._solid_angle = control.angle_degrees
+        except Exception:
+            (
+                self._f,
+                self._outlet,
+                self._solid,
+                self._signed_distance,
+                self._solid_angle,
+                self._control,
+                self._time,
+                self._lattice_speed,
+                self._lattice_dt,
+                self._effective_reynolds,
+                self._viscosity_clamped,
+                self._omega_plus,
+                self._omega_minus,
+                self._boundary_equilibrium,
+                self._revision,
+            ) = checkpoint
+            raise
+        self._revision += 1
         report = ImportReport(
             state.source_solver,
             self.info.id,
@@ -607,4 +1008,4 @@ class LBMSolver:
             if self._viscosity_clamped
             else ()
         )
-        return Diagnostics(values, warnings)
+        return Diagnostics(values, warnings, self._revision)

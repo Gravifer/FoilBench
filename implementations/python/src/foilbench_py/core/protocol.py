@@ -9,6 +9,8 @@ from foilbench_py.core.models import (
     Diagnostics,
     ImportOutcome,
     InteractiveTuning,
+    RestartState,
+    ReynoldsOutcome,
     Scenario,
     SolverInfo,
     StepReport,
@@ -23,9 +25,20 @@ class FlowSolver(Protocol):
     @property
     def reynolds(self) -> float: ...
 
+    @property
+    def state_revision(self) -> int: ...
+
     def initialize(self, scenario: Scenario, geometry: NacaFoil, seed: int) -> None: ...
 
-    def set_reynolds(self, reynolds: float) -> None: ...
+    def restart(
+        self,
+        scenario: Scenario,
+        geometry: NacaFoil,
+        seed: int,
+        start: RestartState,
+    ) -> None: ...
+
+    def set_reynolds(self, reynolds: float) -> ReynoldsOutcome: ...
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport: ...
 

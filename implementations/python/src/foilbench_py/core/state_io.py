@@ -48,13 +48,17 @@ def _matches_declared_order(array: np.ndarray, metadata: dict[str, object]) -> b
 def save_canonical_state(state: CanonicalFlowState, directory: str | Path) -> Path:
     destination = Path(directory)
     destination.mkdir(parents=True, exist_ok=True)
-    velocity = np.asarray(state.velocity, dtype=state.precision).astype(
-        np.dtype(state.precision).newbyteorder("<"), copy=False
+    velocity = np.ascontiguousarray(
+        np.asarray(state.velocity, dtype=state.precision).astype(
+            np.dtype(state.precision).newbyteorder("<"), copy=False
+        )
     )
     np.save(destination / "velocity.npy", velocity, allow_pickle=False)
     if state.density is not None:
-        density = np.asarray(state.density, dtype=state.precision).astype(
-            np.dtype(state.precision).newbyteorder("<"), copy=False
+        density = np.ascontiguousarray(
+            np.asarray(state.density, dtype=state.precision).astype(
+                np.dtype(state.precision).newbyteorder("<"), copy=False
+            )
         )
         np.save(destination / "density.npy", density, allow_pickle=False)
     manifest: dict[str, object] = {

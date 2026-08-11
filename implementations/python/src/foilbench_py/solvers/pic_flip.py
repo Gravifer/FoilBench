@@ -21,6 +21,8 @@ from foilbench_py.core.models import (
     ImportReport,
     InteractiveTuning,
     NumericalFailure,
+    RestartState,
+    ReynoldsOutcome,
     Scenario,
     SolverInfo,
     StepReport,
@@ -30,6 +32,11 @@ from foilbench_py.core.particle_population import (
     particle_cell_counts,
 )
 from foilbench_py.core.rng import PCG32
+from foilbench_py.core.solver_validation import (
+    validate_advance_request,
+    validate_canonical_import,
+    validate_restart_state,
+)
 from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
 from foilbench_py.types import (
     CoordinateField,
@@ -70,15 +77,24 @@ class PicFlipSolver:
         self._population_interval = 8
         self._cfl = 0.75
         self._swept_collisions_last_step = 0
+        self._revision = 0
 
     @property
     def reynolds(self) -> float:
         return self._reynolds
 
-    def set_reynolds(self, reynolds: float) -> None:
+    @property
+    def state_revision(self) -> int:
+        return self._revision
+
+    def set_reynolds(self, reynolds: float) -> ReynoldsOutcome:
         if not np.isfinite(reynolds) or reynolds <= 0.0:
             raise ValueError("Reynolds number must be finite and positive")
-        self._reynolds = float(reynolds)
+        selected = float(reynolds)
+        if selected != self._reynolds:
+            self._revision += 1
+        self._reynolds = selected
+        return ReynoldsOutcome(self._reynolds, self._reynolds)
 
     @property
     def blend(self) -> float:
@@ -86,6 +102,8 @@ class PicFlipSolver:
 
     @blend.setter
     def blend(self, value: float) -> None:
+        if not np.isfinite(value):
+            raise ValueError("PIC/FLIP blend must be finite")
         self._blend = float(np.clip(value, 0.0, 1.0))
 
     def interactive_tuning(self) -> InteractiveTuning:
@@ -136,11 +154,12 @@ class PicFlipSolver:
         self._geometry = geometry
         self._control = scenario.control_at(0.0)
         self._time = 0.0
-        self.set_reynolds(scenario.reynolds)
+        self._reynolds = float(scenario.reynolds)
+        self._revision = 0
         configured_blend = scenario.solver_options.get("pic_flip_blend", 0.95)
         if not isinstance(configured_blend, (int, float)):
             raise TypeError("pic_flip_blend must be numeric")
-        self._blend = float(configured_blend)
+        self.blend = float(configured_blend)
         configured_interval = scenario.solver_options.get("pic_population_interval", 8)
         if not isinstance(configured_interval, int) or isinstance(configured_interval, bool):
             raise TypeError("pic_population_interval must be an integer")
@@ -150,7 +169,7 @@ class PicFlipSolver:
         configured_cfl = scenario.solver_options.get("pic_cfl", 0.75)
         if not isinstance(configured_cfl, (int, float)):
             raise TypeError("pic_cfl must be numeric")
-        if not 0.0 < float(configured_cfl) <= 1.0:
+        if not np.isfinite(configured_cfl) or not 0.0 < float(configured_cfl) <= 1.0:
             raise ValueError("pic_cfl must be in (0, 1]")
         self._cfl = float(configured_cfl)
         self._advance_count = 0
@@ -174,6 +193,30 @@ class PicFlipSolver:
         self._grid_velocity = velocity
         self._seed_particles(velocity)
         self._particle_to_grid()
+
+    def restart(
+        self,
+        scenario: Scenario,
+        geometry: NacaFoil,
+        seed: int,
+        start: RestartState,
+    ) -> None:
+        validate_restart_state(start)
+        self.initialize(scenario, geometry, seed)
+        self.set_reynolds(start.reynolds)
+        self._time = start.time
+        self._control = ControlState(start.time, start.angle_degrees, 0.0)
+        self._solid = geometry.mask(scenario.domain, start.angle_degrees)
+        self._solid_angle = start.angle_degrees
+        velocity = np.empty(
+            (scenario.domain.ny, scenario.domain.nx, 2),
+            dtype=scenario.dtype,
+        )
+        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
+        self._grid_velocity = velocity
+        self._seed_particles(velocity)
+        self._particle_to_grid()
+        self._revision = 0
 
     def _seed_particles(self, velocity: VelocityField) -> None:
         scenario, _, _, _, _, solid = self._require_seed()
@@ -279,7 +322,14 @@ class PicFlipSolver:
             channel,
             pressure_tolerance,
         )
-        self._projection_warning = "" if info == 0 else f"pressure CG returned {info}"
+        if info != 0:
+            raise NumericalFailure(
+                "projection_failure",
+                f"PIC/FLIP pressure solve did not converge: {info}",
+                "projection",
+                {"solver_info": info},
+            )
+        self._projection_warning = ""
         return faces_to_cell(u, v)
 
     def _advect_particles(
@@ -438,14 +488,17 @@ class PicFlipSolver:
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
-        if target_dt <= 0.0:
-            raise ValueError("target_dt must be positive")
+        validate_advance_request(self._time, control, target_dt, scenario.precision)
         if not (
             np.isfinite(positions).all()
             and np.isfinite(particle_velocity).all()
             and np.isfinite(grid_velocity).all()
         ):
-            raise NumericalFailure("nonfinite_state", "PIC/FLIP input state is non-finite")
+            raise NumericalFailure(
+                "nonfinite_state",
+                "PIC/FLIP input state is non-finite",
+                "postcondition",
+            )
         max_speed = max(
             float(np.max(np.linalg.norm(grid_velocity, axis=2))),
             abs(scenario.freestream[0]),
@@ -466,70 +519,201 @@ class PicFlipSolver:
             / max(transport_speed, 1.0e-6)
         )
         substeps = max(1, int(np.ceil(target_dt / stable_dt)))
+        if substeps > 512:
+            raise NumericalFailure(
+                "stability_limit",
+                "PIC/FLIP motion requires too many internal substeps",
+                "particle-advection",
+                {
+                    "required_substeps": substeps,
+                    "maximum_substeps": 512,
+                    "maximum_particle_speed": max_speed,
+                    "maximum_wall_speed": wall_speed,
+                },
+            )
         dt = target_dt / substeps
-        self._reseeded_last_step = 0
-        self._swept_collisions_last_step = 0
-        for substep in range(substeps):
-            fraction = (substep + 1) / substeps
-            sub_control = ControlState(
-                self._time + fraction * target_dt,
-                self._control.angle_degrees
-                + fraction * (control.angle_degrees - self._control.angle_degrees),
-                boundary_angular_velocity,
-            )
-            if self._solid_angle != sub_control.angle_degrees:
-                self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
-                self._solid_angle = sub_control.angle_degrees
-            start_control = self._control
-            self._resolve_particle_collisions(sub_control)
-            transferred = self._particle_to_grid()
-            pre_projection_grid = transferred.copy()
-            viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
-            diffused = implicit_diffuse(transferred, viscosity, dt, scenario.domain)
-            self._grid_velocity = self._project(diffused, sub_control, dt)
-            pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
-            delta = self._grid_to_particle(
-                self._grid_velocity - pre_projection_grid,
-                positions,
-            )
-            blend = 0.0 if self._settling_steps > 0 else self._blend
-            particle_velocity[:] = (1.0 - blend) * pic_velocity + blend * (
-                particle_velocity + delta
-            )
-            self._control = sub_control
-            self._advect_particles(start_control, sub_control, dt, pic_velocity)
-            if self._settling_steps > 0:
-                self._settling_steps -= 1
-        self._advance_count += 1
-        if self._advance_count % self._population_interval == 0:
-            self._maintain_particle_population(control)
-        final_grid = self._grid_velocity
-        if final_grid is None or not (
-            np.isfinite(final_grid).all()
-            and np.isfinite(positions).all()
-            and np.isfinite(particle_velocity).all()
-        ):
-            raise NumericalFailure("nonfinite_state", "PIC/FLIP produced non-finite state")
-        report_speed = max(
-            transport_speed,
-            float(np.max(np.linalg.norm(final_grid, axis=2))),
-            float(np.max(np.linalg.norm(particle_velocity, axis=1))),
+        solid = self._solid
+        if solid is None:
+            raise RuntimeError("solver has not been initialized")
+        checkpoint = (
+            positions.copy(),
+            particle_velocity.copy(),
+            grid_velocity.copy(),
+            solid.copy(),
+            self._solid_angle,
+            self._control,
+            self._time,
+            self._rng.checkpoint(),
+            self._projection_warning,
+            self._reseeded_last_step,
+            self._swept_collisions_last_step,
+            self._advance_count,
+            self._settling_steps,
+            self._revision,
         )
-        if not np.isfinite(report_speed):
-            raise NumericalFailure("nonfinite_state", "PIC/FLIP produced a non-finite step report")
-        self._time += target_dt
+        start_time = self._time
+        start_angle = self._control.angle_degrees
+        report_speed = 0.0
+        counts = np.empty(0, dtype=np.int64)
+        try:
+            self._reseeded_last_step = 0
+            self._swept_collisions_last_step = 0
+            for substep in range(substeps):
+                fraction = (substep + 1) / substeps
+                sub_control = ControlState(
+                    start_time + fraction * target_dt,
+                    start_angle + fraction * (control.angle_degrees - start_angle),
+                    boundary_angular_velocity,
+                )
+                if self._solid_angle != sub_control.angle_degrees:
+                    self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+                    self._solid_angle = sub_control.angle_degrees
+                start_control = self._control
+                self._resolve_particle_collisions(sub_control)
+                transferred = self._particle_to_grid()
+                pre_projection_grid = transferred.copy()
+                viscosity = (
+                    scenario.reference_speed * scenario.foil.chord / self._reynolds
+                )
+                diffused = implicit_diffuse(transferred, viscosity, dt, scenario.domain)
+                self._grid_velocity = self._project(diffused, sub_control, dt)
+                pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
+                delta = self._grid_to_particle(
+                    self._grid_velocity - pre_projection_grid,
+                    positions,
+                )
+                blend = 0.0 if self._settling_steps > 0 else self._blend
+                particle_velocity[:] = (1.0 - blend) * pic_velocity + blend * (
+                    particle_velocity + delta
+                )
+                self._control = sub_control
+                self._advect_particles(start_control, sub_control, dt, pic_velocity)
+                if self._settling_steps > 0:
+                    self._settling_steps -= 1
+            self._advance_count += 1
+            if self._advance_count % self._population_interval == 0:
+                self._maintain_particle_population(control)
+            final_grid = self._grid_velocity
+            if final_grid is None or not (
+                np.isfinite(final_grid).all()
+                and np.isfinite(positions).all()
+                and np.isfinite(particle_velocity).all()
+            ):
+                raise NumericalFailure(
+                    "nonfinite_state",
+                    "PIC/FLIP produced non-finite state",
+                    "postcondition",
+                )
+            self._resolve_particle_collisions(control)
+            inside = geometry.contains(positions, control.angle_degrees)
+            if np.any(inside):
+                raise NumericalFailure(
+                    "postcondition_failure",
+                    "PIC/FLIP left particles inside the moving solid",
+                    "postcondition",
+                    {"unresolved_solid_particles": int(np.count_nonzero(inside))},
+                )
+            counts = particle_cell_counts(positions, scenario.domain)
+            report_speed = max(
+                transport_speed,
+                float(np.max(np.linalg.norm(final_grid, axis=2))),
+                float(np.max(np.linalg.norm(particle_velocity, axis=1))),
+            )
+            if not np.isfinite(report_speed):
+                raise NumericalFailure(
+                    "nonfinite_state",
+                    "PIC/FLIP produced a non-finite step report",
+                    "postcondition",
+                )
+            accepted_cfl = dt * report_speed / min(
+                scenario.domain.dx,
+                scenario.domain.dy,
+            )
+            if accepted_cfl > self._cfl * (1.0 + 1.0e-6):
+                raise NumericalFailure(
+                    "stability_limit",
+                    "PIC/FLIP post-step motion exceeded its swept envelope",
+                    "particle-advection",
+                    {
+                        "accepted_cfl": accepted_cfl,
+                        "maximum_cfl": self._cfl,
+                    },
+                )
+        except Exception:
+            (
+                self._positions,
+                self._particle_velocity,
+                self._grid_velocity,
+                self._solid,
+                self._solid_angle,
+                self._control,
+                self._time,
+                rng_checkpoint,
+                self._projection_warning,
+                self._reseeded_last_step,
+                self._swept_collisions_last_step,
+                self._advance_count,
+                self._settling_steps,
+                self._revision,
+            ) = checkpoint
+            self._rng.restore(rng_checkpoint)
+            raise
+        self._time = start_time + target_dt
         self._control = ControlState(
-            self._time, control.angle_degrees, control.angular_velocity_degrees
+            self._time,
+            control.angle_degrees,
+            control.angular_velocity_degrees,
         )
+        self._revision += 1
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        return StepReport(target_dt, target_dt, substeps, report_speed, warnings)
+        _, _, _, _, _, final_solid = self._require()
+        fluid_counts = counts[~final_solid.reshape(-1)]
+        empty_fraction = float(np.count_nonzero(fluid_counts == 0)) / max(
+            1,
+            fluid_counts.size,
+        )
+        underfilled_fraction = float(np.count_nonzero(fluid_counts < 2)) / max(
+            1,
+            fluid_counts.size,
+        )
+        return StepReport(
+            target_dt,
+            target_dt,
+            substeps,
+            report_speed,
+            warnings,
+            self._revision,
+            {
+                "maximum_wall_speed": wall_speed,
+                "maximum_particle_cfl": dt * report_speed / min(
+                    scenario.domain.dx,
+                    scenario.domain.dy,
+                ),
+                "particle_count": positions.shape[0],
+                "empty_cell_fraction": empty_fraction,
+                "underfilled_cell_fraction": underfilled_fraction,
+                "unresolved_solid_particles": 0,
+                "requested_reynolds": self._reynolds,
+                "effective_reynolds": self._reynolds,
+                "degraded_motion": wall_speed == 0.0
+                and abs(control.angle_degrees - start_angle) > 1.0e-9,
+            },
+        )
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _, grid_velocity, _ = self._require()
         return sample_vector(grid_velocity, points, scenario.domain)
 
     def export_state(self) -> CanonicalFlowState:
-        scenario, _, _, _, grid_velocity, _ = self._require()
+        scenario, geometry, _, _, grid_velocity, solid = self._require()
+        velocity = grid_velocity.copy()
+        if self._centers is None:
+            raise RuntimeError("PIC/FLIP grid cache has not been initialized")
+        wall = geometry.wall_velocity(
+            self._centers.reshape(-1, 2),
+            self._control,
+        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+        velocity[solid] = wall[solid]
         return CanonicalFlowState(
             schema_version=1,
             dimension=2,
@@ -542,24 +726,76 @@ class PicFlipSolver:
             angular_velocity_degrees=self._control.angular_velocity_degrees,
             source_language="python",
             source_solver=self.info.id,
-            velocity=grid_velocity[None, ...],
+            velocity=velocity[None, ...],
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
-        scenario, geometry, _, _, _, _ = self._require()
-        if state.dimension != 2 or state.resolution != scenario.domain.resolution:
+        scenario, geometry, positions, particle_velocity, grid_velocity, solid = self._require()
+        checkpoint = (
+            positions.copy(),
+            particle_velocity.copy(),
+            grid_velocity.copy(),
+            solid.copy(),
+            self._solid_angle,
+            self._control,
+            self._time,
+            self._rng.checkpoint(),
+            self._settling_steps,
+            self._revision,
+        )
+        try:
+            validate_canonical_import(state, scenario, control)
+            velocity = np.asarray(state.velocity[0], dtype=scenario.dtype).copy()
+            self._time = state.time
+            self._control = control
+            self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+            self._solid_angle = control.angle_degrees
+            if self._centers is None:
+                raise RuntimeError("PIC/FLIP grid cache has not been initialized")
+            wall = geometry.wall_velocity(
+                self._centers.reshape(-1, 2), control
+            ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+            velocity[self._solid] = wall[self._solid]
+            self._grid_velocity = velocity
+            self._seed_particles(self._grid_velocity)
+            self._settling_steps = 1
+        except NumericalFailure as failure:
+            (
+                self._positions,
+                self._particle_velocity,
+                self._grid_velocity,
+                self._solid,
+                self._solid_angle,
+                self._control,
+                self._time,
+                rng_checkpoint,
+                self._settling_steps,
+                self._revision,
+            ) = checkpoint
+            self._rng.restore(rng_checkpoint)
             return ImportOutcome(
                 "rejected",
-                "incompatible_domain",
-                warnings=("warm import requires the same 2D resolution",),
+                failure.reason,
+                warnings=(str(failure),),
+                stage=failure.stage,
+                evidence=failure.evidence,
             )
-        self._grid_velocity = np.asarray(state.velocity[0], dtype=scenario.dtype).copy()
-        self._time = state.time
-        self._control = control
-        self._solid = geometry.mask(scenario.domain, control.angle_degrees)
-        self._solid_angle = control.angle_degrees
-        self._seed_particles(self._grid_velocity)
-        self._settling_steps = 1
+        except Exception:
+            (
+                self._positions,
+                self._particle_velocity,
+                self._grid_velocity,
+                self._solid,
+                self._solid_angle,
+                self._control,
+                self._time,
+                rng_checkpoint,
+                self._settling_steps,
+                self._revision,
+            ) = checkpoint
+            self._rng.restore(rng_checkpoint)
+            raise
+        self._revision += 1
         report = ImportReport(
             state.source_solver,
             self.info.id,
@@ -611,4 +847,4 @@ class PicFlipSolver:
                 "PIC/FLIP produced non-finite diagnostics",
             )
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        return Diagnostics(values, warnings)
+        return Diagnostics(values, warnings, self._revision)
