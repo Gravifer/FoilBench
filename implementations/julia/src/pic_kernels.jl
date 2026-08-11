@@ -103,6 +103,141 @@ function particle_to_grid(
     return grid
 end
 
+function _scatter_face_component(
+    positions::AbstractMatrix{T},
+    values::AbstractVector{T},
+    domain::DomainSpec{2,T},
+    width::Int,
+    height::Int,
+    gx_offset::T,
+    gy_offset::T,
+    duplicate_x::Bool,
+    duplicate_y::Bool,
+    fallback::AbstractMatrix{T},
+) where {T<:AbstractFloat}
+    size(fallback) == (width, height) || throw(DimensionMismatch("invalid face fallback"))
+    momentum = zeros(T, width, height)
+    weights = zeros(T, width, height)
+    periodic_x = :x in domain.periodic_axes
+    periodic_y = :y in domain.periodic_axes
+    unique_width = duplicate_x ? width - 1 : width
+    unique_height = duplicate_y ? height - 1 : height
+    for particle in axes(positions, 2)
+        gx = (positions[1, particle] - domain.bounds[1][1]) / dx(domain) + gx_offset
+        gy = (positions[2, particle] - domain.bounds[2][1]) / dy(domain) + gy_offset
+        base_x = floor(Int, gx - T(0.5))
+        base_y = floor(Int, gy - T(0.5))
+        for offset_y in 0:2
+            source_y = base_y + offset_y
+            target_y_zero = periodic_y ? mod(source_y, unique_height) : source_y
+            0 <= target_y_zero < height || continue
+            weight_y = quadratic_bspline_weight(gy - T(source_y))
+            for offset_x in 0:2
+                source_x = base_x + offset_x
+                target_x_zero = periodic_x ? mod(source_x, unique_width) : source_x
+                0 <= target_x_zero < width || continue
+                weight = weight_y * quadratic_bspline_weight(gx - T(source_x))
+                target_x = target_x_zero + 1
+                target_y = target_y_zero + 1
+                weights[target_x, target_y] += weight
+                momentum[target_x, target_y] += weight * values[particle]
+            end
+        end
+    end
+    output = similar(fallback)
+    unsupported = 0
+    for index in eachindex(output)
+        if weights[index] > T(1.0e-12)
+            output[index] = momentum[index] / weights[index]
+        else
+            output[index] = fallback[index]
+            unsupported += 1
+        end
+    end
+    duplicate_x && (output[end, :] .= output[1, :])
+    duplicate_y && (output[:, end] .= output[:, 1])
+    return output, unsupported
+end
+
+function _gather_face_component(
+    field::AbstractMatrix{T},
+    positions::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+    gx_offset::T,
+    gy_offset::T,
+    duplicate_x::Bool,
+    duplicate_y::Bool,
+) where {T<:AbstractFloat}
+    width, height = size(field)
+    periodic_x = :x in domain.periodic_axes
+    periodic_y = :y in domain.periodic_axes
+    unique_width = duplicate_x ? width - 1 : width
+    unique_height = duplicate_y ? height - 1 : height
+    output = Vector{T}(undef, size(positions, 2))
+    for particle in axes(positions, 2)
+        gx = (positions[1, particle] - domain.bounds[1][1]) / dx(domain) + gx_offset
+        gy = (positions[2, particle] - domain.bounds[2][1]) / dy(domain) + gy_offset
+        base_x = floor(Int, gx - T(0.5))
+        base_y = floor(Int, gy - T(0.5))
+        value = zero(T)
+        weight_sum = zero(T)
+        for offset_y in 0:2
+            source_y = base_y + offset_y
+            target_y_zero = periodic_y ? mod(source_y, unique_height) : source_y
+            0 <= target_y_zero < height || continue
+            weight_y = quadratic_bspline_weight(gy - T(source_y))
+            for offset_x in 0:2
+                source_x = base_x + offset_x
+                target_x_zero = periodic_x ? mod(source_x, unique_width) : source_x
+                0 <= target_x_zero < width || continue
+                weight = weight_y * quadratic_bspline_weight(gx - T(source_x))
+                value += weight * field[target_x_zero + 1, target_y_zero + 1]
+                weight_sum += weight
+            end
+        end
+        output[particle] = value / max(weight_sum, T(1.0e-12))
+    end
+    return output
+end
+
+function particle_to_faces(
+    positions::AbstractMatrix{T},
+    velocities::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+    fallback_u::AbstractMatrix{T},
+    fallback_v::AbstractMatrix{T},
+) where {T<:AbstractFloat}
+    size(positions) == size(velocities) || throw(DimensionMismatch("particle arrays disagree"))
+    u, unsupported_u = _scatter_face_component(
+        positions, view(velocities, 1, :), domain, nx(domain) + 1, ny(domain),
+        zero(T), T(-0.5), :x in domain.periodic_axes, false, fallback_u,
+    )
+    v, unsupported_v = _scatter_face_component(
+        positions, view(velocities, 2, :), domain, nx(domain), ny(domain) + 1,
+        T(-0.5), zero(T), false, :y in domain.periodic_axes, fallback_v,
+    )
+    unsupported_fraction = T(unsupported_u + unsupported_v) / T(length(u) + length(v))
+    return u, v, unsupported_fraction
+end
+
+function faces_to_particle(
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    positions::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+) where {T<:AbstractFloat}
+    size(u) == (nx(domain) + 1, ny(domain)) || throw(DimensionMismatch("invalid u faces"))
+    size(v) == (nx(domain), ny(domain) + 1) || throw(DimensionMismatch("invalid v faces"))
+    output = Matrix{T}(undef, 2, size(positions, 2))
+    output[1, :] .= _gather_face_component(
+        u, positions, domain, zero(T), T(-0.5), :x in domain.periodic_axes, false,
+    )
+    output[2, :] .= _gather_face_component(
+        v, positions, domain, T(-0.5), zero(T), false, :y in domain.periodic_axes,
+    )
+    return output
+end
+
 function particle_cell_ids(
     positions::AbstractMatrix{T},
     domain::DomainSpec{2,T},

@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
+from foilbench_py.solvers._numba_adapter import (
+    faces_to_particle,
+    grid_to_particle,
+    particle_to_faces,
+    particle_to_grid,
+)
 
 
 def _quadratic_weight(distance: float) -> float:
@@ -197,3 +202,57 @@ def test_periodic_transfer_wraps_quadratic_support() -> None:
         periodic_y=True,
     )
     np.testing.assert_allclose(left, right, rtol=1.0e-6, atol=1.0e-6)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_direct_mac_transfer_preserves_constant_velocity(
+    dtype: type[np.float32] | type[np.float64],
+) -> None:
+    ny, nx = 6, 8
+    x0, y0 = -1.0, -0.75
+    dx, dy = 0.25, 0.25
+    positions = np.asarray(
+        [
+            [x0 + (x + 0.25) * dx, y0 + (y + 0.75) * dy]
+            for y in range(ny)
+            for x in range(nx)
+        ],
+        dtype=dtype,
+    )
+    velocities = np.broadcast_to(
+        np.asarray([0.75, -0.25], dtype=dtype),
+        positions.shape,
+    ).copy()
+    fallback_u = np.full((ny, nx + 1), 0.75, dtype=dtype)
+    fallback_v = np.full((ny + 1, nx), -0.25, dtype=dtype)
+
+    u, v, unsupported = particle_to_faces(
+        positions,
+        velocities,
+        fallback_u,
+        fallback_v,
+        x0,
+        y0,
+        dx,
+        dy,
+        periodic_x=True,
+        periodic_y=True,
+    )
+    gathered = faces_to_particle(
+        u,
+        v,
+        positions,
+        x0,
+        y0,
+        dx,
+        dy,
+        periodic_x=True,
+        periodic_y=True,
+    )
+
+    np.testing.assert_allclose(u, fallback_u, rtol=1.0e-6, atol=1.0e-6)
+    np.testing.assert_allclose(v, fallback_v, rtol=1.0e-6, atol=1.0e-6)
+    np.testing.assert_allclose(gathered, velocities, rtol=1.0e-6, atol=1.0e-6)
+    np.testing.assert_array_equal(u[:, 0], u[:, -1])
+    np.testing.assert_array_equal(v[0, :], v[-1, :])
+    assert 0.0 <= unsupported < 1.0

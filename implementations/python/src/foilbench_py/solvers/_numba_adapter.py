@@ -8,8 +8,13 @@ import numpy as np
 from jaxtyping import Float
 
 from foilbench_kernels.lbm import trt_collision_kernel
-from foilbench_kernels.pic import grid_to_particle_kernel, particle_to_grid_kernel
-from foilbench_py.types import LatticePopulation, ScalarField
+from foilbench_kernels.pic import (
+    gather_face_component_kernel,
+    grid_to_particle_kernel,
+    particle_to_grid_kernel,
+    scatter_face_component_kernel,
+)
+from foilbench_py.types import FaceVelocityX, FaceVelocityY, LatticePopulation, ScalarField
 
 
 def _require_supported_float(array: np.ndarray, name: str) -> None:
@@ -88,6 +93,61 @@ def grid_to_particle(
         periodic_x,
         periodic_y,
     )
+
+
+def particle_to_faces(
+    positions: Float[np.ndarray, "particle 2"],
+    velocities: Float[np.ndarray, "particle 2"],
+    fallback_u: FaceVelocityX,
+    fallback_v: FaceVelocityY,
+    x0: float,
+    y0: float,
+    dx: float,
+    dy: float,
+    periodic_x: bool = False,
+    periodic_y: bool = False,
+) -> tuple[FaceVelocityX, FaceVelocityY, float]:
+    if positions.ndim != 2 or positions.shape[1] != 2 or velocities.shape != positions.shape:
+        raise ValueError("particle positions and velocities must have shape (particle, 2)")
+    if fallback_u.shape != (fallback_v.shape[0] - 1, fallback_v.shape[1] + 1):
+        raise ValueError("fallback arrays do not form a 2D MAC grid")
+    u, unsupported_u = scatter_face_component_kernel(
+        positions, velocities[:, 0], x0, y0, dx, dy,
+        fallback_u.shape[1], fallback_u.shape[0], 0.0, -0.5,
+        periodic_x, periodic_y, periodic_x, False, fallback_u,
+    )
+    v, unsupported_v = scatter_face_component_kernel(
+        positions, velocities[:, 1], x0, y0, dx, dy,
+        fallback_v.shape[1], fallback_v.shape[0], -0.5, 0.0,
+        periodic_x, periodic_y, False, periodic_y, fallback_v,
+    )
+    unsupported = (unsupported_u + unsupported_v) / (u.size + v.size)
+    return u, v, float(unsupported)
+
+
+def faces_to_particle(
+    u: FaceVelocityX,
+    v: FaceVelocityY,
+    positions: Float[np.ndarray, "particle 2"],
+    x0: float,
+    y0: float,
+    dx: float,
+    dy: float,
+    periodic_x: bool = False,
+    periodic_y: bool = False,
+) -> Float[np.ndarray, "particle 2"]:
+    if u.shape != (v.shape[0] - 1, v.shape[1] + 1):
+        raise ValueError("face arrays do not form a 2D MAC grid")
+    output = np.empty_like(positions)
+    output[:, 0] = gather_face_component_kernel(
+        u, positions, x0, y0, dx, dy, 0.0, -0.5,
+        periodic_x, periodic_y, periodic_x, False,
+    )
+    output[:, 1] = gather_face_component_kernel(
+        v, positions, x0, y0, dx, dy, -0.5, 0.0,
+        periodic_x, periodic_y, False, periodic_y,
+    )
+    return output
 
 
 def lbm_trt_collision(

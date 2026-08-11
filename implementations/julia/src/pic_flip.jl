@@ -27,6 +27,7 @@ mutable struct PicFlipSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     cfl::T
     projection_iterations::Int
     solid_angle::T
+    unsupported_face_fraction::T
     revision::Int
 end
 
@@ -52,6 +53,7 @@ function PicFlipSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         T(0.75),
         0,
         T(NaN),
+        zero(T),
         0,
     )
 end
@@ -118,7 +120,8 @@ function _pic_seed_particles!(solver::PicFlipSolver{T}) where {T}
         end
     end
     solver.positions = positions
-    solver.particle_velocity = grid_to_particle(solver.grid_velocity, positions, scenario.domain)
+    u, v = cell_to_faces(solver.grid_velocity)
+    solver.particle_velocity = faces_to_particle(u, v, positions, scenario.domain)
     return nothing
 end
 
@@ -151,13 +154,17 @@ function initialize!(
     solver.advance_count = 0
     solver.projection_iterations = 0
     solver.revision = 0
+    solver.unsupported_face_fraction = zero(T)
     _pic_seed_particles!(solver)
-    solver.grid_velocity = particle_to_grid(
+    fallback_u, fallback_v = cell_to_faces(solver.grid_velocity)
+    u, v, solver.unsupported_face_fraction = particle_to_faces(
         solver.positions,
         solver.particle_velocity,
         scenario.domain,
-        scenario.freestream,
+        fallback_u,
+        fallback_v,
     )
+    solver.grid_velocity = faces_to_cell(u, v)
     return nothing
 end
 
@@ -185,6 +192,7 @@ function restart!(
     end
     _pic_seed_particles!(solver)
     solver.revision = 0
+    solver.unsupported_face_fraction = zero(T)
     return nothing
 end
 
@@ -325,8 +333,19 @@ function _pic_project!(
     control::ControlState,
     timestep::T,
 ) where {T}
-    scenario, geometry = _pic_require(solver)
     u, v = cell_to_faces(velocity)
+    _pic_project_faces!(solver, u, v, control, timestep)
+    return faces_to_cell(u, v)
+end
+
+function _pic_project_faces!(
+    solver::PicFlipSolver{T},
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    control::ControlState,
+    timestep::T,
+) where {T}
+    scenario, geometry = _pic_require(solver)
     wall = wall_velocity_grid(geometry, scenario.domain, control)
     channel_walls = option(scenario, "initial_condition", "") == "poiseuille"
     iterations, converged = project_faces!(
@@ -344,7 +363,7 @@ function _pic_project!(
     solver.projection_iterations = iterations
     solver.projection_warning = converged ? "" : "pressure CG did not converge"
     converged || throw(NumericalFailure(:projection_failure, solver.projection_warning))
-    return faces_to_cell(u, v)
+    return u, v
 end
 
 function _pic_advect_particles!(
@@ -353,11 +372,13 @@ function _pic_advect_particles!(
     control::ControlState,
     timestep::T,
     initial_velocity::AbstractMatrix{T},
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
 ) where {T}
     scenario, _ = _pic_require(solver)
     start_positions = copy(solver.positions)
     midpoint = solver.positions .+ T(0.5) * timestep .* initial_velocity
-    midpoint_velocity = grid_to_particle(solver.grid_velocity, midpoint, scenario.domain)
+    midpoint_velocity = faces_to_particle(u, v, midpoint, scenario.domain)
     solver.positions .+= timestep .* midpoint_velocity
     _pic_resolve_swept!(solver, start_positions, start_control, control)
     x0, x1 = scenario.domain.bounds[1]
@@ -453,8 +474,10 @@ function _pic_maintain_population!(solver::PicFlipSolver{T}, control::ControlSta
             (T(j - 1) + T(0.4) + T(0.2) * jitter_y) * dy(scenario.domain)
     end
     if !isempty(donors)
-        solver.particle_velocity[:, donors] .= grid_to_particle(
-            solver.grid_velocity,
+        u, v = cell_to_faces(solver.grid_velocity)
+        solver.particle_velocity[:, donors] .= faces_to_particle(
+            u,
+            v,
             view(solver.positions, :, donors),
             scenario.domain,
         )
@@ -508,7 +531,8 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
         copy(solver.solid), solver.control, solver.time, solver.settling_steps,
         solver.rng.state, solver.rng.increment, solver.projection_warning,
         solver.reseeded_last_step, solver.swept_collisions_last_step,
-        solver.advance_count, solver.projection_iterations, solver.solid_angle, solver.revision,
+        solver.advance_count, solver.projection_iterations, solver.solid_angle,
+        solver.unsupported_face_fraction, solver.revision,
     )
     start_time = solver.time
     start_angle = solver.control.angle_degrees
@@ -529,30 +553,52 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             end
             start_control = solver.control
             _pic_resolve_collisions!(solver, sub_control)
-            transferred = particle_to_grid(
-                solver.positions, solver.particle_velocity, scenario.domain, scenario.freestream,
+            fallback_u, fallback_v = cell_to_faces(solver.grid_velocity)
+            transferred_u, transferred_v, solver.unsupported_face_fraction = particle_to_faces(
+                solver.positions,
+                solver.particle_velocity,
+                scenario.domain,
+                fallback_u,
+                fallback_v,
             )
-            before_projection = copy(transferred)
+            before_projection_u = copy(transferred_u)
+            before_projection_v = copy(transferred_v)
             viscosity = reference_speed(scenario) * scenario.foil.chord / solver.reynolds_value
-            diffused, _, converged = implicit_diffuse_velocity(
-                transferred, viscosity, timestep, scenario.domain;
+            diffused_u, u_iterations, u_converged = implicit_diffuse_scalar(
+                transferred_u, viscosity, timestep, scenario.domain;
                 tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
             )
-            converged || throw(NumericalFailure(
+            diffused_v, v_iterations, v_converged = implicit_diffuse_scalar(
+                transferred_v, viscosity, timestep, scenario.domain;
+                tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+            )
+            solver.projection_iterations = max(u_iterations, v_iterations)
+            u_converged && v_converged || throw(NumericalFailure(
                 :projection_failure,
                 "PIC/FLIP implicit viscosity did not converge",
                 :viscosity,
             ))
-            solver.grid_velocity = _pic_project!(solver, diffused, sub_control, timestep)
-            pic_velocity = grid_to_particle(solver.grid_velocity, solver.positions, scenario.domain)
-            delta = grid_to_particle(
-                solver.grid_velocity .- before_projection, solver.positions, scenario.domain,
+            projected_u, projected_v = _pic_project_faces!(
+                solver, diffused_u, diffused_v, sub_control, timestep,
+            )
+            solver.grid_velocity = faces_to_cell(projected_u, projected_v)
+            pic_velocity = faces_to_particle(
+                projected_u, projected_v, solver.positions, scenario.domain,
+            )
+            delta = faces_to_particle(
+                projected_u .- before_projection_u,
+                projected_v .- before_projection_v,
+                solver.positions,
+                scenario.domain,
             )
             blend = solver.settling_steps > 0 ? zero(T) : solver.blend
             solver.particle_velocity .= (one(T) - blend) .* pic_velocity .+
                 blend .* (solver.particle_velocity .+ delta)
             solver.control = sub_control
-            _pic_advect_particles!(solver, start_control, sub_control, timestep, pic_velocity)
+            _pic_advect_particles!(
+                solver, start_control, sub_control, timestep, pic_velocity,
+                projected_u, projected_v,
+            )
             solver.settling_steps > 0 && (solver.settling_steps -= 1)
         end
         solver.advance_count += 1
@@ -579,7 +625,8 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
             solver.projection_warning, solver.reseeded_last_step,
             solver.swept_collisions_last_step, solver.advance_count,
-            solver.projection_iterations, solver.solid_angle, solver.revision = checkpoint
+            solver.projection_iterations, solver.solid_angle,
+            solver.unsupported_face_fraction, solver.revision = checkpoint
         solver.rng.state = rng_state
         solver.rng.increment = rng_increment
         rethrow()
@@ -598,6 +645,7 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             "particle_count" => size(solver.positions, 2),
             "minimum_particles_per_cell" => isempty(counts) ? 0 : minimum(counts),
             "maximum_particles_per_cell" => isempty(counts) ? 0 : maximum(counts),
+            "unsupported_face_fraction" => solver.unsupported_face_fraction,
             "projection_iterations" => solver.projection_iterations,
         ),
     )
@@ -640,7 +688,8 @@ function import_state!(
     checkpoint = (
         copy(solver.positions), copy(solver.particle_velocity), copy(solver.grid_velocity),
         copy(solver.solid), solver.control, solver.time, solver.settling_steps,
-        solver.rng.state, solver.rng.increment, solver.solid_angle, solver.revision,
+        solver.rng.state, solver.rng.increment, solver.solid_angle,
+        solver.unsupported_face_fraction, solver.revision,
     )
     try
         validate_canonical_import(state, scenario, control)
@@ -663,7 +712,7 @@ function import_state!(
     catch failure
         solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
             solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
-            solver.solid_angle, solver.revision = checkpoint
+            solver.solid_angle, solver.unsupported_face_fraction, solver.revision = checkpoint
         solver.rng.state = rng_state
         solver.rng.increment = rng_increment
         failure isa NumericalFailure || rethrow()
@@ -708,6 +757,7 @@ function diagnostics(solver::PicFlipSolver)
         "divergence_l2" => Float64(divergence_l2(solver.grid_velocity, scenario.domain)),
         "solid_leakage" => Float64(solid_leakage(solver.grid_velocity, solver.solid)),
         "particle_count" => Float64(size(solver.positions, 2)),
+        "unsupported_face_fraction" => Float64(solver.unsupported_face_fraction),
         "empty_fluid_cell_fraction" => count(==(0), fluid_counts) / length(fluid_counts),
         "underfilled_fluid_cell_fraction" => count(<(2), fluid_counts) / length(fluid_counts),
         "p05_particles_per_fluid_cell" => _pic_percentile(fluid_counts, 0.05),

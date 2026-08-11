@@ -285,12 +285,15 @@ def test_pic_flip_rejects_nonfinite_post_step_state(
     before_revision = solver.state_revision
 
     def nonfinite_projection(
-        velocity: np.ndarray, control: ControlState, dt: float
-    ) -> np.ndarray:
+        u: np.ndarray,
+        v: np.ndarray,
+        control: ControlState,
+        dt: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
         del control, dt
-        return np.full_like(velocity, np.nan)
+        return np.full_like(u, np.nan), np.full_like(v, np.nan)
 
-    monkeypatch.setattr(solver, "_project", nonfinite_projection)
+    monkeypatch.setattr(solver, "_project_faces", nonfinite_projection)
     with pytest.raises(NumericalFailure, match="non-finite state") as captured:
         solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
 

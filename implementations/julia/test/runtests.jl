@@ -528,6 +528,26 @@ end
     gathered = grid_to_particle(periodic_grid, positions, periodic)
     @test gathered[:, 1] ≈ gathered[:, 2] atol = 1.0f-5
     @test gathered[:, 3] ≈ gathered[:, 4] atol = 1.0f-5
+    mac_positions = Matrix{Float32}(undef, 2, 48)
+    particle = 1
+    for y in 0:5, x in 0:7
+        mac_positions[1, particle] = -1 + (x + 0.25f0) * 0.25f0
+        mac_positions[2, particle] = -0.75f0 + (y + 0.75f0) * 0.25f0
+        particle += 1
+    end
+    mac_velocity = repeat(Float32[0.75, -0.25], 1, size(mac_positions, 2))
+    fallback_u = fill(0.75f0, 9, 6)
+    fallback_v = fill(-0.25f0, 8, 7)
+    mac_u, mac_v, unsupported = particle_to_faces(
+        mac_positions, mac_velocity, periodic, fallback_u, fallback_v,
+    )
+    mac_gathered = faces_to_particle(mac_u, mac_v, mac_positions, periodic)
+    @test mac_u ≈ fallback_u atol = 1.0f-6
+    @test mac_v ≈ fallback_v atol = 1.0f-6
+    @test mac_gathered ≈ mac_velocity atol = 1.0f-6
+    @test mac_u[1, :] == mac_u[end, :]
+    @test mac_v[:, 1] == mac_v[:, end]
+    @test 0 <= unsupported < 1
     @test_throws DimensionMismatch grid_to_particle(periodic_grid, zeros(Float32, 3, 2), periodic)
 end
 

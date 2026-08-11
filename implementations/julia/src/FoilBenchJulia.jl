@@ -91,9 +91,11 @@ export lbm_macroscopic
 export lbm_scaling
 export lbm_trt_collision
 export grid_to_particle
+export faces_to_particle
 export particle_cell_counts
 export particle_cell_ids
 export particle_to_grid
+export particle_to_faces
 export quadratic_bspline_weight
 export load_canonical_state
 export load_scenario

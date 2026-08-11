@@ -3,7 +3,12 @@
 import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
-from foilbench_py.core.grid import cell_to_faces, faces_to_cell, implicit_diffuse, project_faces
+from foilbench_py.core.grid import (
+    cell_to_faces,
+    faces_to_cell,
+    implicit_diffuse_faces,
+    project_faces,
+)
 from foilbench_py.core.interpolation import sample_vector
 from foilbench_py.core.metrics import (
     divergence_l2,
@@ -37,9 +42,11 @@ from foilbench_py.core.solver_validation import (
     validate_canonical_import,
     validate_restart_state,
 )
-from foilbench_py.solvers._numba_adapter import grid_to_particle, particle_to_grid
+from foilbench_py.solvers._numba_adapter import faces_to_particle, particle_to_faces
 from foilbench_py.types import (
     CoordinateField,
+    FaceVelocityX,
+    FaceVelocityY,
     MaskField,
     ParticleVelocity,
     PointCloud,
@@ -78,6 +85,7 @@ class PicFlipSolver:
         self._cfl = 0.75
         self._swept_collisions_last_step = 0
         self._revision = 0
+        self._unsupported_face_fraction = 0.0
 
     @property
     def reynolds(self) -> float:
@@ -156,6 +164,7 @@ class PicFlipSolver:
         self._time = 0.0
         self._reynolds = float(scenario.reynolds)
         self._revision = 0
+        self._unsupported_face_fraction = 0.0
         configured_blend = scenario.solver_options.get("pic_flip_blend", 0.95)
         if not isinstance(configured_blend, (int, float)):
             raise TypeError("pic_flip_blend must be numeric")
@@ -217,6 +226,7 @@ class PicFlipSolver:
         self._seed_particles(velocity)
         self._particle_to_grid()
         self._revision = 0
+        self._unsupported_face_fraction = 0.0
 
     def _seed_particles(self, velocity: VelocityField) -> None:
         scenario, _, _, _, _, solid = self._require_seed()
@@ -263,20 +273,22 @@ class PicFlipSolver:
         )
 
     def _particle_to_grid(self) -> VelocityField:
-        scenario, _, positions, particle_velocity, _, _ = self._require()
-        return particle_to_grid(
+        scenario, _, positions, particle_velocity, grid_velocity, _ = self._require()
+        fallback_u, fallback_v = cell_to_faces(grid_velocity)
+        u, v, unsupported = particle_to_faces(
             positions,
             particle_velocity,
+            fallback_u,
+            fallback_v,
             scenario.domain.bounds[0][0],
             scenario.domain.bounds[1][0],
             scenario.domain.dx,
             scenario.domain.dy,
-            scenario.domain.nx,
-            scenario.domain.ny,
-            scenario.freestream,
             "x" in scenario.domain.periodic_axes,
             "y" in scenario.domain.periodic_axes,
         )
+        self._unsupported_face_fraction = unsupported
+        return faces_to_cell(u, v)
 
     def _grid_to_particle(
         self,
@@ -285,9 +297,21 @@ class PicFlipSolver:
     ) -> ParticleVelocity:
         if self._scenario is None:
             raise RuntimeError("solver has not been initialized")
+        u, v = cell_to_faces(velocity)
+        return self._faces_to_particle(u, v, positions)
+
+    def _faces_to_particle(
+        self,
+        u: FaceVelocityX,
+        v: FaceVelocityY,
+        positions: PointCloud,
+    ) -> ParticleVelocity:
+        if self._scenario is None:
+            raise RuntimeError("solver has not been initialized")
         domain = self._scenario.domain
-        return grid_to_particle(
-            velocity,
+        return faces_to_particle(
+            u,
+            v,
             positions,
             domain.bounds[0][0],
             domain.bounds[1][0],
@@ -297,9 +321,40 @@ class PicFlipSolver:
             "y" in domain.periodic_axes,
         )
 
+    def _particle_to_faces(
+        self,
+        fallback_u: FaceVelocityX,
+        fallback_v: FaceVelocityY,
+    ) -> tuple[FaceVelocityX, FaceVelocityY]:
+        scenario, _, positions, particle_velocity, _, _ = self._require()
+        u, v, unsupported = particle_to_faces(
+            positions,
+            particle_velocity,
+            fallback_u,
+            fallback_v,
+            scenario.domain.bounds[0][0],
+            scenario.domain.bounds[1][0],
+            scenario.domain.dx,
+            scenario.domain.dy,
+            "x" in scenario.domain.periodic_axes,
+            "y" in scenario.domain.periodic_axes,
+        )
+        self._unsupported_face_fraction = unsupported
+        return u, v
+
     def _project(self, velocity: VelocityField, control: ControlState, dt: float) -> VelocityField:
-        scenario, geometry, _, _, _, solid = self._require()
         u, v = cell_to_faces(velocity)
+        projected_u, projected_v = self._project_faces(u, v, control, dt)
+        return faces_to_cell(projected_u, projected_v)
+
+    def _project_faces(
+        self,
+        u: FaceVelocityX,
+        v: FaceVelocityY,
+        control: ControlState,
+        dt: float,
+    ) -> tuple[FaceVelocityX, FaceVelocityY]:
+        scenario, geometry, _, _, _, solid = self._require()
         if self._centers is None:
             raise RuntimeError("PIC/FLIP grid cache has not been initialized")
         points = self._centers.reshape(-1, 2)
@@ -330,7 +385,7 @@ class PicFlipSolver:
                 {"solver_info": info},
             )
         self._projection_warning = ""
-        return faces_to_cell(u, v)
+        return u, v
 
     def _advect_particles(
         self,
@@ -338,11 +393,13 @@ class PicFlipSolver:
         control: ControlState,
         dt: float,
         velocity_0: ParticleVelocity,
+        u: FaceVelocityX,
+        v: FaceVelocityY,
     ) -> None:
-        scenario, _geometry, positions, particle_velocity, grid_velocity, _solid = self._require()
+        scenario, _geometry, positions, particle_velocity, _grid_velocity, _solid = self._require()
         start_positions = positions.copy()
         midpoint = positions + 0.5 * dt * velocity_0
-        velocity_mid = self._grid_to_particle(grid_velocity, midpoint)
+        velocity_mid = self._faces_to_particle(u, v, midpoint)
         positions += dt * velocity_mid
         self._swept_collisions_last_step += self._resolve_swept_particle_collisions(
             start_positions,
@@ -550,6 +607,7 @@ class PicFlipSolver:
             self._advance_count,
             self._settling_steps,
             self._revision,
+            self._unsupported_face_fraction,
         )
         start_time = self._time
         start_angle = self._control.angle_degrees
@@ -570,16 +628,41 @@ class PicFlipSolver:
                     self._solid_angle = sub_control.angle_degrees
                 start_control = self._control
                 self._resolve_particle_collisions(sub_control)
-                transferred = self._particle_to_grid()
-                pre_projection_grid = transferred.copy()
+                fallback_grid = self._grid_velocity
+                if fallback_grid is None:
+                    raise RuntimeError("PIC/FLIP grid state is missing")
+                fallback_u, fallback_v = cell_to_faces(fallback_grid)
+                transferred_u, transferred_v = self._particle_to_faces(
+                    fallback_u,
+                    fallback_v,
+                )
+                pre_projection_u = transferred_u.copy()
+                pre_projection_v = transferred_v.copy()
                 viscosity = (
                     scenario.reference_speed * scenario.foil.chord / self._reynolds
                 )
-                diffused = implicit_diffuse(transferred, viscosity, dt, scenario.domain)
-                self._grid_velocity = self._project(diffused, sub_control, dt)
-                pic_velocity = self._grid_to_particle(self._grid_velocity, positions)
-                delta = self._grid_to_particle(
-                    self._grid_velocity - pre_projection_grid,
+                diffused_u, diffused_v = implicit_diffuse_faces(
+                    transferred_u,
+                    transferred_v,
+                    viscosity,
+                    dt,
+                    scenario.domain,
+                )
+                projected_u, projected_v = self._project_faces(
+                    diffused_u,
+                    diffused_v,
+                    sub_control,
+                    dt,
+                )
+                self._grid_velocity = faces_to_cell(projected_u, projected_v)
+                pic_velocity = self._faces_to_particle(
+                    projected_u,
+                    projected_v,
+                    positions,
+                )
+                delta = self._faces_to_particle(
+                    projected_u - pre_projection_u,
+                    projected_v - pre_projection_v,
                     positions,
                 )
                 blend = 0.0 if self._settling_steps > 0 else self._blend
@@ -587,7 +670,14 @@ class PicFlipSolver:
                     particle_velocity + delta
                 )
                 self._control = sub_control
-                self._advect_particles(start_control, sub_control, dt, pic_velocity)
+                self._advect_particles(
+                    start_control,
+                    sub_control,
+                    dt,
+                    pic_velocity,
+                    projected_u,
+                    projected_v,
+                )
                 if self._settling_steps > 0:
                     self._settling_steps -= 1
             self._advance_count += 1
@@ -655,6 +745,7 @@ class PicFlipSolver:
                 self._advance_count,
                 self._settling_steps,
                 self._revision,
+                self._unsupported_face_fraction,
             ) = checkpoint
             self._rng.restore(rng_checkpoint)
             raise
@@ -693,6 +784,7 @@ class PicFlipSolver:
                 "empty_cell_fraction": empty_fraction,
                 "underfilled_cell_fraction": underfilled_fraction,
                 "unresolved_solid_particles": 0,
+                "unsupported_face_fraction": self._unsupported_face_fraction,
                 "requested_reynolds": self._reynolds,
                 "effective_reynolds": self._reynolds,
                 "degraded_motion": wall_speed == 0.0
@@ -742,6 +834,7 @@ class PicFlipSolver:
             self._rng.checkpoint(),
             self._settling_steps,
             self._revision,
+            self._unsupported_face_fraction,
         )
         try:
             validate_canonical_import(state, scenario, control)
@@ -771,6 +864,7 @@ class PicFlipSolver:
                 rng_checkpoint,
                 self._settling_steps,
                 self._revision,
+                self._unsupported_face_fraction,
             ) = checkpoint
             self._rng.restore(rng_checkpoint)
             return ImportOutcome(
@@ -792,6 +886,7 @@ class PicFlipSolver:
                 rng_checkpoint,
                 self._settling_steps,
                 self._revision,
+                self._unsupported_face_fraction,
             ) = checkpoint
             self._rng.restore(rng_checkpoint)
             raise
@@ -819,6 +914,7 @@ class PicFlipSolver:
             "divergence_l2": divergence_l2(grid_velocity, scenario.domain),
             "solid_leakage": solid_leakage(grid_velocity, solid),
             "particle_count": float(positions.shape[0]),
+            "unsupported_face_fraction": self._unsupported_face_fraction,
             "empty_fluid_cell_fraction": float(np.count_nonzero(fluid_counts == 0))
             / fluid_counts.size,
             "underfilled_fluid_cell_fraction": float(np.count_nonzero(fluid_counts < 2))
