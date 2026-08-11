@@ -241,7 +241,7 @@ class StepReport:
     max_speed: float
     warnings: tuple[str, ...] = ()
     state_revision: int = 0
-    evidence: FailureEvidence = field(default_factory=dict)
+    evidence: FailureEvidence = field(default_factory=lambda: {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +273,7 @@ class ImportOutcome:
     report: ImportReport | None = None
     warnings: tuple[str, ...] = ()
     stage: FailureStage | None = None
-    evidence: FailureEvidence = field(default_factory=dict)
+    evidence: FailureEvidence = field(default_factory=lambda: {})
 
     @property
     def accepted(self) -> bool:

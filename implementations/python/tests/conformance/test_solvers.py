@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+# pyright: reportPrivateUsage=false
+
 import numpy as np
 import pytest
 

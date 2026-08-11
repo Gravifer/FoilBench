@@ -47,6 +47,15 @@ from foilbench_py.types import FaceVelocityX, FaceVelocityY, MaskField, PointClo
 
 _MIN_PROJECTION_CFL_LIMIT = 1.0
 type StableTransportMode = Literal["maccormack", "semi-lagrangian", "skew-rk2"]
+type StableCheckpoint = tuple[
+    FaceVelocityX,
+    FaceVelocityY,
+    MaskField,
+    ControlState,
+    float,
+    str,
+    int,
+]
 
 
 def parse_stable_transport_mode(value: object) -> StableTransportMode:
@@ -74,14 +83,14 @@ class StableFluidsSolver:
         self._u: FaceVelocityX | None = None
         self._v: FaceVelocityY | None = None
         self._solid: MaskField | None = None
-        self._control = ControlState(0.0, 0.0, 0.0)
-        self._time = 0.0
-        self._projection_warning = ""
-        self._maccormack = True
-        self._face_advection = False
-        self._skew_rk2 = False
-        self._reynolds = 1.0
-        self._revision = 0
+        self._control: ControlState = ControlState(0.0, 0.0, 0.0)
+        self._time: float = 0.0
+        self._projection_warning: str = ""
+        self._maccormack: bool = True
+        self._face_advection: bool = False
+        self._skew_rk2: bool = False
+        self._reynolds: float = 1.0
+        self._revision: int = 0
 
     @property
     def reynolds(self) -> float:
@@ -320,7 +329,7 @@ class StableFluidsSolver:
             )
         dt = target_dt / substeps
         viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
-        checkpoint = (
+        checkpoint: StableCheckpoint = (
             current_u.copy(),
             current_v.copy(),
             current_solid.copy(),
@@ -455,7 +464,7 @@ class StableFluidsSolver:
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, u, v, solid = self._require()
-        checkpoint = (
+        checkpoint: StableCheckpoint = (
             u.copy(),
             v.copy(),
             solid.copy(),

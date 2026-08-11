@@ -125,7 +125,7 @@ class SimulationWorker:
                 self._next_command += 1
                 self._commands.append(ViewerCommand(sequence, "shutdown"))
                 self._condition.notify_all()
-        if thread is not None and thread is not current_thread():
+        if thread is not current_thread():
             thread.join()
 
     @property

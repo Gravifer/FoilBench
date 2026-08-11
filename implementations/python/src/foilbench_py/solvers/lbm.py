@@ -43,6 +43,24 @@ from foilbench_py.types import (
     VelocityField,
 )
 
+type LBMCheckpoint = tuple[
+    LatticePopulation,
+    LatticePopulation | None,
+    MaskField,
+    ScalarField | None,
+    float | None,
+    ControlState,
+    float,
+    float,
+    float,
+    float,
+    bool,
+    float,
+    float,
+    LatticePopulation | None,
+    int,
+]
+
 
 class LBMSolver:
     info = SolverInfo(
@@ -59,11 +77,11 @@ class LBMSolver:
     )
     _W = np.asarray([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
     _OPPOSITE = np.asarray([0, 3, 4, 1, 2, 7, 8, 5, 6], dtype=np.int64)
-    _LATTICE_SOUND_SPEED = 1.0 / np.sqrt(3.0)
-    _MAXIMUM_MACH = 0.08
-    _MAXIMUM_LATTICE_SPEED = _MAXIMUM_MACH * _LATTICE_SOUND_SPEED
-    _MAXIMUM_SUBSTEPS = 512
-    _MINIMUM_POPULATION = -0.05
+    _LATTICE_SOUND_SPEED: float = float(1.0 / np.sqrt(3.0))
+    _MAXIMUM_MACH: float = 0.08
+    _MAXIMUM_LATTICE_SPEED: float = _MAXIMUM_MACH * _LATTICE_SOUND_SPEED
+    _MAXIMUM_SUBSTEPS: int = 512
+    _MINIMUM_POPULATION: float = -0.05
 
     def __init__(self) -> None:
         self._scenario: Scenario | None = None
@@ -76,18 +94,18 @@ class LBMSolver:
         self._signed_distance: ScalarField | None = None
         self._solid_angle: float | None = None
         self._boundary_equilibrium: LatticePopulation | None = None
-        self._control = ControlState(0.0, 0.0, 0.0)
-        self._time = 0.0
-        self._density_initial = 1.0
-        self._lattice_speed = 0.08
-        self._lattice_dt = 1.0
-        self._reference_speed = 1.0
-        self._effective_reynolds = 0.0
-        self._viscosity_clamped = False
-        self._reynolds = 1.0
-        self._omega_plus = 1.0
-        self._omega_minus = 1.0
-        self._revision = 0
+        self._control: ControlState = ControlState(0.0, 0.0, 0.0)
+        self._time: float = 0.0
+        self._density_initial: float = 1.0
+        self._lattice_speed: float = 0.08
+        self._lattice_dt: float = 1.0
+        self._reference_speed: float = 1.0
+        self._effective_reynolds: float = 0.0
+        self._viscosity_clamped: bool = False
+        self._reynolds: float = 1.0
+        self._omega_plus: float = 1.0
+        self._omega_minus: float = 1.0
+        self._revision: int = 0
 
     @property
     def reynolds(self) -> float:
@@ -629,7 +647,7 @@ class LBMSolver:
                 "LBM populations are non-finite",
                 "postcondition",
             )
-        checkpoint = (
+        checkpoint: LBMCheckpoint = (
             populations.copy(),
             None if self._outlet is None else self._outlet.copy(),
             solid.copy(),
@@ -846,7 +864,7 @@ class LBMSolver:
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, populations, solid = self._require()
-        checkpoint = (
+        checkpoint: LBMCheckpoint = (
             populations.copy(),
             None if self._outlet is None else self._outlet.copy(),
             solid.copy(),

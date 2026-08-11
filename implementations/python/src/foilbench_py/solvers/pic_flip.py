@@ -53,6 +53,37 @@ from foilbench_py.types import (
     VelocityField,
 )
 
+type PicAdvanceCheckpoint = tuple[
+    PointCloud,
+    ParticleVelocity,
+    VelocityField,
+    MaskField,
+    float | None,
+    ControlState,
+    float,
+    tuple[int, int],
+    str,
+    int,
+    int,
+    int,
+    int,
+    int,
+    float,
+]
+type PicImportCheckpoint = tuple[
+    PointCloud,
+    ParticleVelocity,
+    VelocityField,
+    MaskField,
+    float | None,
+    ControlState,
+    float,
+    tuple[int, int],
+    int,
+    int,
+    float,
+]
+
 
 class PicFlipSolver:
     info = SolverInfo(
@@ -72,20 +103,20 @@ class PicFlipSolver:
         self._solid: MaskField | None = None
         self._centers: CoordinateField | None = None
         self._solid_angle: float | None = None
-        self._control = ControlState(0.0, 0.0, 0.0)
-        self._time = 0.0
-        self._blend = 0.95
-        self._settling_steps = 0
-        self._reynolds = 1.0
-        self._rng = PCG32(0)
-        self._projection_warning = ""
-        self._reseeded_last_step = 0
-        self._advance_count = 0
-        self._population_interval = 8
-        self._cfl = 0.75
-        self._swept_collisions_last_step = 0
-        self._revision = 0
-        self._unsupported_face_fraction = 0.0
+        self._control: ControlState = ControlState(0.0, 0.0, 0.0)
+        self._time: float = 0.0
+        self._blend: float = 0.95
+        self._settling_steps: int = 0
+        self._reynolds: float = 1.0
+        self._rng: PCG32 = PCG32(0)
+        self._projection_warning: str = ""
+        self._reseeded_last_step: int = 0
+        self._advance_count: int = 0
+        self._population_interval: int = 8
+        self._cfl: float = 0.75
+        self._swept_collisions_last_step: int = 0
+        self._revision: int = 0
+        self._unsupported_face_fraction: float = 0.0
 
     @property
     def reynolds(self) -> float:
@@ -592,7 +623,7 @@ class PicFlipSolver:
         solid = self._solid
         if solid is None:
             raise RuntimeError("solver has not been initialized")
-        checkpoint = (
+        checkpoint: PicAdvanceCheckpoint = (
             positions.copy(),
             particle_velocity.copy(),
             grid_velocity.copy(),
@@ -823,7 +854,7 @@ class PicFlipSolver:
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:
         scenario, geometry, positions, particle_velocity, grid_velocity, solid = self._require()
-        checkpoint = (
+        checkpoint: PicImportCheckpoint = (
             positions.copy(),
             particle_velocity.copy(),
             grid_velocity.copy(),

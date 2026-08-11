@@ -140,10 +140,10 @@ class ViewerModel:
     pose_only_calm_steps: int = 0
     pose_only_guarded_trial: bool = False
     last_requested_angular_velocity_degrees: float = 0.0
-    tuning_values: dict[str, str | float] = field(default_factory=dict)
+    tuning_values: dict[str, str | float] = field(default_factory=lambda: {})
     tuning_notice: str | None = None
     manual_angular_velocity_degrees: float = 0.0
-    pose_samples: deque[PoseSample] = field(default_factory=deque)
+    pose_samples: deque[PoseSample] = field(default_factory=lambda: deque[PoseSample]())
     last_pose_received_at: float | None = None
     recovery_count: int = 0
     recovery_reason: str | None = None
