@@ -4,20 +4,9 @@ import json
 from pathlib import Path
 from typing import cast
 
+from foilbench_py.benchmark.artifact import physical_identity, validate_result_semantics
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.scenario import find_repo_root
-
-_PHYSICAL_IDENTITY_FIELDS = (
-    "bounds",
-    "periodic_axes",
-    "reynolds",
-    "freestream",
-    "foil",
-    "control_history",
-    "requested_duration",
-    "output_dt",
-    "seed",
-)
 
 
 def collect_results(directory: str | Path) -> list[dict[str, object]]:
@@ -33,12 +22,13 @@ def collect_results(directory: str | Path) -> list[dict[str, object]]:
             typed = cast(dict[str, object], value)
             if typed.get("schema_version") == 1 and "solver" in typed:
                 validate_json(typed, schema)
+                validate_result_semantics(typed)
                 results.append(typed)
     return results
 
 
 def _assert_matched_identities(results: list[dict[str, object]]) -> None:
-    signatures: dict[tuple[str, str, str, str], str] = {}
+    signatures: dict[tuple[str, str, str, str, str], dict[str, object]] = {}
     for result in results:
         resolution = json.dumps(result["resolution"], separators=(",", ":"))
         key = (
@@ -46,12 +36,9 @@ def _assert_matched_identities(results: list[dict[str, object]]) -> None:
             str(result["scenario_id"]),
             str(result["precision"]),
             resolution,
+            str(result["solver"]),
         )
-        signature = json.dumps(
-            {field: result[field] for field in _PHYSICAL_IDENTITY_FIELDS},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        signature = physical_identity(result)
         previous = signatures.setdefault(key, signature)
         if previous != signature:
             raise ValueError(

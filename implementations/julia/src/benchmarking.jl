@@ -96,7 +96,8 @@ function describe_implementation()
 end
 
 function validate_benchmark_result(result::Dict{String,Any}, schema_path::AbstractString)
-    return validate_json_file(result, schema_path)
+    validate_json_file(result, schema_path)
+    return validate_benchmark_result_semantics(result)
 end
 
 function _percentile(values::Vector{Float64}, fraction::Float64)
@@ -190,9 +191,69 @@ function _benchmark_evidence(evidence::Dict{String,Any})
     for (key, value) in evidence
         (value === nothing || value isa Bool || value isa Real || value isa AbstractString) ||
             throw(ArgumentError("benchmark evidence $key is not a JSON scalar"))
+        value isa Real && !isfinite(value) &&
+            throw(ArgumentError("benchmark evidence $key must be finite"))
         output[key] = value
     end
     return output
+end
+
+function _benchmark_solver_configuration(scenario::Scenario)
+    return Dict{String,Any}(
+        "initial_condition" => option(scenario, "initial_condition", "freestream"),
+        "stable_advection" => option(scenario, "stable_advection", "maccormack"),
+        "stable_face_advection" => option(scenario, "stable_face_advection", false),
+        "stable_cfl" => Float64(option(scenario, "stable_cfl", 0.7)),
+        "pressure_tolerance" => Float64(option(scenario, "pressure_tolerance", 1.0e-5)),
+        "pressure_max_iterations" => option(scenario, "pressure_max_iterations", 640),
+        "pic_flip_blend" => Float64(option(scenario, "pic_flip_blend", 0.95)),
+        "pic_population_interval" => option(scenario, "pic_population_interval", 8),
+        "pic_cfl" => Float64(option(scenario, "pic_cfl", 0.75)),
+    )
+end
+
+function _require_finite_artifact(value, path::AbstractString = "result")
+    value isa Real && !(value isa Bool) && !isfinite(value) &&
+        throw(ArgumentError("$path contains a non-finite number"))
+    if value isa AbstractDict
+        for (name, child) in value
+            _require_finite_artifact(child, "$path.$name")
+        end
+    elseif value isa AbstractVector
+        for (index, child) in pairs(value)
+            _require_finite_artifact(child, "$path[$index]")
+        end
+    end
+    return nothing
+end
+
+function validate_benchmark_result_semantics(result::AbstractDict)
+    _require_finite_artifact(result)
+    success = result["success"] === true
+    last_step = result["last_step"]
+    if success
+        result["failure"] === nothing ||
+            throw(ArgumentError("successful benchmark result contains a failure"))
+        last_step isa AbstractDict && !isempty(result["step_seconds"]) ||
+            throw(ArgumentError("successful benchmark result lacks completed-step semantics"))
+        final_revision = result["final_state_revision"]
+        result["diagnostic_state_revision"] == final_revision &&
+            last_step["state_revision"] == final_revision ||
+            throw(ArgumentError("successful benchmark result contains stale revision evidence"))
+        requested = Float64(result["requested_duration"])
+        simulated = Float64(result["simulated_duration"])
+        tolerance = (result["precision"] == "float32" ? 1.0e-6 : 1.0e-12) *
+            max(1.0, abs(requested))
+        abs(simulated - requested) <= tolerance ||
+            throw(ArgumentError("successful benchmark result did not complete requested duration"))
+    else
+        result["failure"] isa AbstractDict ||
+            throw(ArgumentError("failed benchmark result lacks structured failure evidence"))
+    end
+    (result["memory_measurement"] == "unavailable") ==
+        (result["peak_rss_bytes"] === nothing) ||
+        throw(ArgumentError("memory measurement kind and RSS value disagree"))
+    return nothing
 end
 
 function _benchmark_step(report::Union{Nothing,StepReport})
@@ -271,17 +332,9 @@ function run_benchmark_matrix(
         T = scalar_type(scenario)
         geometry = NacaFoil(scenario.foil)
         for solver_id in matrix.solvers, repetition in 1:matrix.repetitions
-            initialization_started = time_ns()
-            cold_solver = create_solver(solver_id, T)
-            initialize!(cold_solver, scenario, geometry, scenario.seed)
-            initialization_seconds = (time_ns() - initialization_started) / 1.0e9
-            cold_dt = min(scenario.output_dt, scenario.duration)
-            cold_started = time_ns()
-            advance!(cold_solver, control_at(scenario, cold_dt), cold_dt)
-            cold_step_seconds = (time_ns() - cold_started) / 1.0e9
-
-            solver = create_solver(solver_id, T)
-            initialize!(solver, scenario, geometry, scenario.seed)
+            initialization_seconds = 0.0
+            cold_step_seconds = 0.0
+            solver = nothing
             elapsed_simulated = zero(T)
             step_seconds = Float64[]
             total_substeps = 0
@@ -303,6 +356,17 @@ function run_benchmark_matrix(
                 scenario.foil.pivot[2],
             ], 2, 1)
             try
+                initialization_started = time_ns()
+                cold_solver = create_solver(solver_id, T)
+                initialize!(cold_solver, scenario, geometry, scenario.seed)
+                initialization_seconds = (time_ns() - initialization_started) / 1.0e9
+                cold_dt = min(scenario.output_dt, scenario.duration)
+                cold_started = time_ns()
+                advance!(cold_solver, control_at(scenario, cold_dt), cold_dt)
+                cold_step_seconds = (time_ns() - cold_started) / 1.0e9
+
+                solver = create_solver(solver_id, T)
+                initialize!(solver, scenario, geometry, scenario.seed)
                 while elapsed_simulated < scenario.duration - T(1.0e-12)
                     timestep = min(scenario.output_dt, scenario.duration - elapsed_simulated)
                     control = control_at(scenario, elapsed_simulated + timestep)
@@ -388,9 +452,10 @@ function run_benchmark_matrix(
             result = Dict{String,Any}(
                 "schema_version" => 1,
                 "contract_id" => "foilbench-phase2-v1",
-                "contract_revision" => 2,
+                "contract_revision" => 3,
                 "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,
+                "repetition" => repetition,
                 "language" => "julia",
                 "solver" => solver_id,
                 "git_commit" => _git_commit(root),
@@ -400,6 +465,12 @@ function run_benchmark_matrix(
                 "bounds" => [collect(pair) for pair in scenario.domain.bounds],
                 "periodic_axes" => [string(axis) for axis in scenario.domain.periodic_axes],
                 "reynolds" => Float64(scenario.reynolds),
+                "effective_reynolds" => get(
+                    diagnostic_values,
+                    "effective_reynolds",
+                    Float64(scenario.reynolds),
+                ),
+                "solver_configuration" => _benchmark_solver_configuration(scenario),
                 "freestream" => collect(scenario.freestream),
                 "foil" => Dict{String,Any}(
                     "naca" => scenario.foil.naca,
@@ -427,7 +498,7 @@ function run_benchmark_matrix(
                 "runtime_startup_seconds" => nothing,
                 "worker_startup_seconds" => nothing,
                 "substeps" => total_substeps,
-                "final_state_revision" => state_revision(solver),
+                "final_state_revision" => solver === nothing ? 0 : state_revision(solver),
                 "diagnostic_state_revision" => diagnostic_revision,
                 "last_step" => _benchmark_step(last_report),
                 "diagnostics" => diagnostic_values,
@@ -438,7 +509,7 @@ function run_benchmark_matrix(
             validate_benchmark_result(result, schema_path)
             stem = "$solver_id-$(resolution[1])x$(resolution[2])-r$repetition"
             _write_json(joinpath(destination, "$stem.json"), result)
-            matrix.save_snapshots && success &&
+            matrix.save_snapshots && success && solver !== nothing &&
                 save_canonical_state(export_state(solver), joinpath(destination, "$stem-state"))
             push!(rows, [
                 solver_id,
@@ -491,6 +562,8 @@ const _BENCHMARK_IDENTITY_FIELDS = (
     "bounds",
     "periodic_axes",
     "reynolds",
+    "effective_reynolds",
+    "solver_configuration",
     "freestream",
     "foil",
     "control_history",
@@ -500,15 +573,16 @@ const _BENCHMARK_IDENTITY_FIELDS = (
 )
 
 function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
-    signatures = Dict{NTuple{4,String},String}()
+    signatures = Dict{NTuple{5,String},Vector{Any}}()
     for result in results
         key = (
             String(result["benchmark_matrix_id"]),
             String(result["scenario_id"]),
             String(result["precision"]),
             JSON3.write(result["resolution"]),
+            String(result["solver"]),
         )
-        signature = JSON3.write([result[field] for field in _BENCHMARK_IDENTITY_FIELDS])
+        signature = [result[field] for field in _BENCHMARK_IDENTITY_FIELDS]
         previous = get!(signatures, key, signature)
         previous == signature || throw(ArgumentError(
             "benchmark artifacts reuse a matrix/scenario/resolution identity with " *

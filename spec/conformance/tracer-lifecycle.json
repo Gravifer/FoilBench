@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "contract_id": "foilbench-phase2-v1",
-  "contract_revision": 2,
+  "contract_revision": 3,
   "integrator": {
     "method": "frozen-field-explicit-midpoint",
     "initial_position": [1.0, 0.0],

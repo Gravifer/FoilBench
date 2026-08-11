@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": {"const": 1},
     "contract_id": {"const": "foilbench-phase2-v1"},
-    "contract_revision": {"const": 2},
+    "contract_revision": {"const": 3},
     "id": {"type": "string", "minLength": 1},
     "scenario": {"type": "string", "minLength": 1},
     "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},

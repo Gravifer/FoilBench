@@ -95,10 +95,10 @@ def test_solver_protocol_and_canonical_export(
     assert diagnostics.state_revision == report.state_revision
 
 
-def test_shared_revision_2_validity_fixture() -> None:
+def test_shared_revision_3_validity_fixture() -> None:
     fixture = _validity_fixture()
     assert fixture["contract_id"] == "foilbench-phase2-v1"
-    assert fixture["contract_revision"] == 2
+    assert fixture["contract_revision"] == 3
     scenario = load_scenario(_REPOSITORY_ROOT / fixture["scenario"])
     resolution = fixture["resolution"]
     scenario = replace(

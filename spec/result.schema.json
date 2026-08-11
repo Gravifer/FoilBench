@@ -10,6 +10,7 @@
     "contract_revision",
     "benchmark_matrix_id",
     "scenario_id",
+    "repetition",
     "language",
     "solver",
     "git_commit",
@@ -19,6 +20,8 @@
     "bounds",
     "periodic_axes",
     "reynolds",
+    "effective_reynolds",
+    "solver_configuration",
     "freestream",
     "foil",
     "control_history",
@@ -50,9 +53,10 @@
   "properties": {
     "schema_version": {"const": 1},
     "contract_id": {"const": "foilbench-phase2-v1"},
-    "contract_revision": {"const": 2},
+    "contract_revision": {"const": 3},
     "benchmark_matrix_id": {"type": "string", "minLength": 1},
     "scenario_id": {"type": "string"},
+    "repetition": {"type": "integer", "minimum": 1},
     "language": {"type": "string"},
     "solver": {"type": "string"},
     "git_commit": {"type": "string"},
@@ -93,6 +97,33 @@
     },
     "periodic_axes": {"type": "array", "uniqueItems": true, "items": {"enum": ["x", "y", "z"]}},
     "reynolds": {"type": "number", "exclusiveMinimum": 0},
+    "effective_reynolds": {"type": "number", "exclusiveMinimum": 0},
+    "solver_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initial_condition",
+        "stable_advection",
+        "stable_face_advection",
+        "stable_cfl",
+        "pressure_tolerance",
+        "pressure_max_iterations",
+        "pic_flip_blend",
+        "pic_population_interval",
+        "pic_cfl"
+      ],
+      "properties": {
+        "initial_condition": {"enum": ["freestream", "taylor-green", "poiseuille"]},
+        "stable_advection": {"enum": ["maccormack", "semi-lagrangian", "skew-rk2"]},
+        "stable_face_advection": {"type": "boolean"},
+        "stable_cfl": {"type": "number", "exclusiveMinimum": 0},
+        "pressure_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "pressure_max_iterations": {"type": "integer", "minimum": 1},
+        "pic_flip_blend": {"type": "number", "minimum": 0, "maximum": 1},
+        "pic_population_interval": {"type": "integer", "minimum": 1},
+        "pic_cfl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+      }
+    },
     "freestream": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}},
     "foil": {
       "type": "object",
@@ -117,9 +148,7 @@
     "requested_duration": {"type": "number", "exclusiveMinimum": 0},
     "simulated_duration": {"type": "number", "minimum": 0},
     "output_dt": {"type": "number", "exclusiveMinimum": 0},
-    "memory_measurement": {
-      "enum": ["rss", "browser-estimate", "unavailable"]
-    },
+    "memory_measurement": {"enum": ["rss", "browser-estimate", "unavailable"]},
     "runtime_startup_seconds": {
       "anyOf": [
         {"type": "number", "minimum": 0},
@@ -201,6 +230,25 @@
     },
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"success": {"const": true}}, "required": ["success"]},
+      "then": {
+        "properties": {
+          "failure": {"type": "null"},
+          "last_step": {"type": "object"},
+          "diagnostic_state_revision": {"type": "integer"},
+          "step_seconds": {"type": "array", "minItems": 1}
+        }
+      },
+      "else": {"properties": {"failure": {"type": "object"}}}
+    },
+    {
+      "if": {"properties": {"memory_measurement": {"const": "unavailable"}}, "required": ["memory_measurement"]},
+      "then": {"properties": {"peak_rss_bytes": {"type": "null"}}},
+      "else": {"properties": {"peak_rss_bytes": {"type": "integer"}}}
+    }
+  ],
   "$defs": {
     "failureReason": {
       "enum": [

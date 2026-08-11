@@ -2,15 +2,16 @@ import {mkdtemp, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it} from "vitest";
-import {compareResults} from "../../src/benchmark/runner.js";
+import {compareResults, validateResultSemantics} from "../../src/benchmark/runner.js";
 
 function result(language: string): Record<string, unknown> {
   return {
     schema_version: 1,
     contract_id: "foilbench-phase2-v1",
-    contract_revision: 2,
+    contract_revision: 3,
     benchmark_matrix_id: "test",
     scenario_id: "default-airfoil",
+    repetition: 1,
     language,
     solver: "stable-fluids",
     git_commit: "test",
@@ -20,6 +21,8 @@ function result(language: string): Record<string, unknown> {
     bounds: [[-2, 6], [-2, 2]],
     periodic_axes: [],
     reynolds: 500,
+    effective_reynolds: 500,
+    solver_configuration: {initial_condition: "freestream", stable_advection: "maccormack", stable_face_advection: false, stable_cfl: 0.7, pressure_tolerance: 1e-5, pressure_max_iterations: 640, pic_flip_blend: 0.95, pic_population_interval: 8, pic_cfl: 0.75},
     freestream: [1, 0],
     foil: {naca: "2412", chord: 1, pivot: [0, 0]},
     control_history: [{time: 0, angle_degrees: 4}],
@@ -68,5 +71,25 @@ describe("benchmark artifact comparison", () => {
     mismatched["reynolds"] = 1000;
     await writeFile(join(directory, "python.json"), JSON.stringify(mismatched), "utf8");
     await expect(compareResults(directory)).rejects.toThrow("different physical inputs");
+  });
+
+  it("uses semantic numeric equality and key-order-independent identity", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "foilbench-ts-equivalent-"));
+    directories.push(directory);
+    const first = result("typescript");
+    const second = result("python");
+    second["foil"] = {pivot: [0, 0], chord: 1.0, naca: "2412"};
+    await writeFile(join(directory, "first.json"), JSON.stringify(first), "utf8");
+    await writeFile(join(directory, "second.json"), JSON.stringify(second), "utf8");
+    await expect(compareResults(directory)).resolves.toContain("python");
+  });
+
+  it("rejects contradictory successful artifacts", () => {
+    const contradictory = result("typescript");
+    contradictory["failure"] = {kind: "unexpected", reason: null, stage: null, message: "impossible", evidence: {}};
+    expect(() => validateResultSemantics(contradictory)).toThrow("completed-step semantics");
+    const stale = result("typescript");
+    stale["diagnostic_state_revision"] = 0;
+    expect(() => validateResultSemantics(stale)).toThrow("stale revision");
   });
 });

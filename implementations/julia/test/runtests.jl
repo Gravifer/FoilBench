@@ -758,10 +758,10 @@ end
     @test export_state(lattice).velocity == lattice_before.velocity
 end
 
-@testset "Shared Revision 2 solver-validity fixture" begin
+@testset "Shared Revision 3 solver-validity fixture" begin
     fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
     @test fixture.contract_id == "foilbench-phase2-v1"
-    @test fixture.contract_revision == 2
+    @test fixture.contract_revision == 3
     fixture_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, fixture.scenario)),
         (Int(fixture.resolution[1]), Int(fixture.resolution[2])),
@@ -846,10 +846,10 @@ end
     end
 end
 
-@testset "Shared Revision 2 tracer fixture" begin
+@testset "Shared Revision 3 tracer fixture" begin
     fixture = JSON3.read(read(joinpath(FIXTURES, "tracer-lifecycle.json"), String))
     @test fixture.contract_id == "foilbench-phase2-v1"
-    @test fixture.contract_revision == 2
+    @test fixture.contract_revision == 3
     scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
         (32, 16),
@@ -1437,9 +1437,10 @@ end
     result = Dict{String,Any}(
         "schema_version" => 1,
         "contract_id" => "foilbench-phase2-v1",
-        "contract_revision" => 2,
+        "contract_revision" => 3,
         "benchmark_matrix_id" => "test",
         "scenario_id" => "test",
+        "repetition" => 1,
         "language" => "julia",
         "solver" => "stable-fluids",
         "git_commit" => "test",
@@ -1449,6 +1450,18 @@ end
         "bounds" => [[-1.0, 1.0], [-0.5, 0.5]],
         "periodic_axes" => ["x"],
         "reynolds" => 100.0,
+        "effective_reynolds" => 100.0,
+        "solver_configuration" => Dict{String,Any}(
+            "initial_condition" => "freestream",
+            "stable_advection" => "maccormack",
+            "stable_face_advection" => false,
+            "stable_cfl" => 0.7,
+            "pressure_tolerance" => 1.0e-5,
+            "pressure_max_iterations" => 640,
+            "pic_flip_blend" => 0.95,
+            "pic_population_interval" => 8,
+            "pic_cfl" => 0.75,
+        ),
         "freestream" => [1.0, 0.0],
         "foil" => Dict("naca" => "0012", "chord" => 1.0, "pivot" => [0.0, 0.0]),
         "control_history" => [Dict("time" => 0.0, "angle_degrees" => 0.0)],
@@ -1487,6 +1500,14 @@ end
     )
     schema_path = joinpath(REPOSITORY_ROOT, "spec", "result.schema.json")
     @test isnothing(validate_benchmark_result(result, schema_path))
+    equivalent = deepcopy(result)
+    equivalent["language"] = "typescript"
+    equivalent["reynolds"] = 100
+    equivalent["foil"] = Dict("pivot" => [0.0, 0.0], "chord" => 1, "naca" => "0012")
+    @test isnothing(validate_benchmark_result(equivalent, schema_path))
+    stale = deepcopy(result)
+    stale["diagnostic_state_revision"] = 0
+    @test_throws ArgumentError validate_benchmark_result(stale, schema_path)
     invalid = copy(result)
     invalid["unexpected"] = true
     @test_throws ArgumentError validate_benchmark_result(invalid, schema_path)
@@ -1528,7 +1549,7 @@ end
             @test document["periodic_axes"] isa Vector
             @test isnothing(validate_benchmark_result(document, schema_path))
             @test document["contract_id"] == "foilbench-phase2-v1"
-            @test document["contract_revision"] == 2
+            @test document["contract_revision"] == 3
             @test isnothing(document["failure"])
             @test document["final_state_revision"] == document["diagnostic_state_revision"]
             @test document["final_state_revision"] == document["last_step"]["state_revision"]

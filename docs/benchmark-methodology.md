@@ -5,18 +5,22 @@ The latest historical Phase 1 interactive snapshot is recorded in
 Julia, and TypeScript now emit the same result-schema identity and canonical
 snapshot semantics for offline cross-language comparison.
 
-Runs are matched by physical domain, resolution, Reynolds number, control
-history, precision, seed, and simulated duration. Each solver may choose the
-stable internal timestep and number of substeps it needs.
+Runs are matched per solver family by physical domain, resolution, requested
+and effective Reynolds numbers, normalized numerical solver configuration,
+control history, precision, seed, and simulated duration. Each solver may
+choose the stable internal timestep and number of substeps it needs.
 
 Every result JSON identifies the accepted contract with `contract_id` and
 `contract_revision`, then repeats the matched physical identity directly:
-benchmark-matrix and scenario IDs, bounds and periodic axes, resolution, Reynolds number,
-freestream, foil specification, control history, requested and actually
-simulated duration, output interval, precision, and seed. Comparisons therefore
+benchmark-matrix and scenario IDs, repetition, bounds and periodic axes,
+resolution, requested and effective Reynolds numbers, normalized solver
+configuration, freestream, foil specification, control history, requested and
+actually simulated duration, output interval, precision, and seed. Comparisons therefore
 do not have to infer physical equivalence from a filename or scenario ID.
-Comparers schema-validate their inputs and reject mismatched physical identity
-rather than producing a misleading performance table.
+Comparers schema-validate their inputs, apply cross-field semantic validation,
+and compare decoded numeric structures rather than JSON spelling or object-key
+order. They reject mismatched physical identity rather than producing a
+misleading performance table.
 
 The runner records cold initialization and the first cold solver step
 separately from steady-state work. Initialization-time compilation is therefore
@@ -41,7 +45,8 @@ intervals, substeps, maximum speed, revision, warnings, and solver-family
 validity evidence. A successful artifact cannot silently combine stale
 diagnostics with a newer final field. Classified failures use a structured
 kind, reason, stage, message, and evidence object; unexpected failures remain
-distinguishable from numerical rejection.
+distinguishable from numerical rejection. Initialization and cold-step failures
+produce ordinary failed artifacts and do not abort the remainder of a matrix.
 
 Reported diagnostics include energy, enstrophy, divergence, mass or
 density drift where meaningful, solid leakage, wake width, and recirculation

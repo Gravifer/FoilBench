@@ -14,10 +14,12 @@ from typing import cast
 import numpy as np
 import psutil
 
+from foilbench_py.benchmark.artifact import solver_configuration, validate_result_semantics
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.metrics import analyze_wake_probe
 from foilbench_py.core.models import NumericalFailure, Scenario, StepReport
+from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
@@ -95,6 +97,8 @@ type JsonScalar = float | int | bool | str | None
 def _json_scalar(value: object) -> JsonScalar:
     if isinstance(value, np.generic):
         return _json_scalar(cast(object, value.item()))
+    if isinstance(value, float) and not np.isfinite(value):
+        raise ValueError("benchmark evidence values must be finite")
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     raise TypeError(f"benchmark evidence value {value!r} is not a JSON scalar")
@@ -184,20 +188,9 @@ def run_matrix(
         geometry = NacaFoil(scenario.foil)
         for solver_id in matrix.solvers:
             for repetition in range(matrix.repetitions):
-                cold_solver = create_solver(solver_id)
-                init_start = time.perf_counter()
-                cold_solver.initialize(scenario, geometry, scenario.seed)
-                initialization_seconds = time.perf_counter() - init_start
-
-                warm_control = scenario.control_at(min(scenario.output_dt, scenario.duration))
-                cold_step_start = time.perf_counter()
-                cold_solver.advance(warm_control, min(scenario.output_dt, scenario.duration))
-                cold_step_seconds = time.perf_counter() - cold_step_start
-
-                # Reinitialize after warming process-global compiled kernels so the
-                # measured physical run starts from the declared scenario state.
-                solver = create_solver(solver_id)
-                solver.initialize(scenario, geometry, scenario.seed)
+                initialization_seconds = 0.0
+                cold_step_seconds = 0.0
+                solver: FlowSolver | None = None
                 elapsed_simulated = 0.0
                 step_seconds: list[float] = []
                 total_substeps = 0
@@ -225,6 +218,21 @@ def run_matrix(
                 )
                 success = True
                 try:
+                    cold_solver = create_solver(solver_id)
+                    init_start = time.perf_counter()
+                    cold_solver.initialize(scenario, geometry, scenario.seed)
+                    initialization_seconds = time.perf_counter() - init_start
+
+                    warm_dt = min(scenario.output_dt, scenario.duration)
+                    warm_control = scenario.control_at(warm_dt)
+                    cold_step_start = time.perf_counter()
+                    cold_solver.advance(warm_control, warm_dt)
+                    cold_step_seconds = time.perf_counter() - cold_step_start
+
+                    # Reinitialize after warming process-global compiled kernels so the
+                    # measured physical run starts from the declared scenario state.
+                    solver = create_solver(solver_id)
+                    solver.initialize(scenario, geometry, scenario.seed)
                     while elapsed_simulated < scenario.duration - 1.0e-12:
                         dt = min(scenario.output_dt, scenario.duration - elapsed_simulated)
                         control = scenario.control_at(elapsed_simulated + dt)
@@ -338,9 +346,10 @@ def run_matrix(
                 result: dict[str, object] = {
                     "schema_version": 1,
                     "contract_id": "foilbench-phase2-v1",
-                    "contract_revision": 2,
+                    "contract_revision": 3,
                     "benchmark_matrix_id": matrix.id,
                     "scenario_id": scenario.id,
+                    "repetition": repetition + 1,
                     "language": "python",
                     "solver": solver_id,
                     "git_commit": _git_commit(root),
@@ -350,6 +359,10 @@ def run_matrix(
                     "bounds": [list(pair) for pair in scenario.domain.bounds],
                     "periodic_axes": list(scenario.domain.periodic_axes),
                     "reynolds": scenario.reynolds,
+                    "effective_reynolds": diagnostic_values.get(
+                        "effective_reynolds", scenario.reynolds
+                    ),
+                    "solver_configuration": solver_configuration(scenario),
                     "freestream": list(scenario.freestream),
                     "foil": {
                         "naca": scenario.foil.naca,
@@ -379,7 +392,7 @@ def run_matrix(
                     "runtime_startup_seconds": None,
                     "worker_startup_seconds": None,
                     "substeps": total_substeps,
-                    "final_state_revision": solver.state_revision,
+                    "final_state_revision": 0 if solver is None else solver.state_revision,
                     "diagnostic_state_revision": diagnostic_revision,
                     "last_step": _step_artifact(last_report),
                     "diagnostics": diagnostic_values,
@@ -388,10 +401,13 @@ def run_matrix(
                     "warnings": sorted(set(warnings)),
                 }
                 validate_json(result, result_schema)
+                validate_result_semantics(result)
                 stem = f"{solver_id}-{resolution[0]}x{resolution[1]}-r{repetition + 1}"
                 result_path = destination / f"{stem}.json"
-                result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-                if matrix.save_snapshots and success:
+                result_path.write_text(
+                    json.dumps(result, indent=2, allow_nan=False), encoding="utf-8"
+                )
+                if matrix.save_snapshots and success and solver is not None:
                     save_canonical_state(solver.export_state(), destination / f"{stem}-state")
                 rows.append(
                     {

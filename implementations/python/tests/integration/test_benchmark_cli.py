@@ -4,6 +4,7 @@ from typing import cast
 
 import pytest
 
+from foilbench_py.benchmark.artifact import validate_result_semantics
 from foilbench_py.benchmark.compare import format_comparison
 from foilbench_py.benchmark.runner import recovery_window, run_matrix
 from foilbench_py.cli import main
@@ -15,11 +16,14 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     root = find_repo_root(Path(__file__))
     matrix_path = root / "benchmark-matrices" / "test.json"
     output = run_matrix(matrix_path, root / "results" / "test-artifacts")
-    result_files = sorted(output.glob("*.json"))
+    result_files = sorted(output.glob("*-r1.json"))
     assert len(result_files) == 3
     result = cast(dict[str, object], json.loads(result_files[0].read_text(encoding="utf-8")))
     assert result["contract_id"] == "foilbench-phase2-v1"
-    assert result["contract_revision"] == 2
+    assert result["contract_revision"] == 3
+    assert result["repetition"] == 1
+    assert cast(float, result["effective_reynolds"]) > 0.0
+    assert isinstance(result["solver_configuration"], dict)
     assert result["resolution"] == [32, 16]
     assert result["memory_measurement"] == "rss"
     assert cast(float, result["cell_updates_per_second"]) > 0.0
@@ -52,6 +56,46 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     (mismatch_directory / "second.json").write_text(json.dumps(second), encoding="utf-8")
     with pytest.raises(ValueError, match="different physical inputs"):
         format_comparison(mismatch_directory)
+
+    equivalent = dict(result)
+    equivalent["language"] = "typescript"
+    equivalent["reynolds"] = int(cast(float, result["reynolds"]))
+    equivalent["foil"] = {
+        "pivot": cast(dict[str, object], result["foil"])["pivot"],
+        "chord": cast(dict[str, object], result["foil"])["chord"],
+        "naca": cast(dict[str, object], result["foil"])["naca"],
+    }
+    (output / "equivalent.json").write_text(
+        json.dumps(equivalent), encoding="utf-8"
+    )
+    format_comparison(output)
+    assert validate_result_semantics(equivalent) is None
+
+
+def test_result_semantics_reject_cross_field_contradictions() -> None:
+    root = find_repo_root(Path(__file__))
+    output = run_matrix(
+        root / "benchmark-matrices" / "test.json",
+        root / "results" / "test-artifacts-semantics",
+    )
+    result = cast(
+        dict[str, object],
+        json.loads(next(output.glob("*.json")).read_text(encoding="utf-8")),
+    )
+    contradictory = dict(result)
+    contradictory["failure"] = {
+        "kind": "unexpected",
+        "reason": None,
+        "stage": None,
+        "message": "impossible",
+        "evidence": {},
+    }
+    with pytest.raises(ValueError, match="completed-step semantics"):
+        validate_result_semantics(contradictory)
+    stale = dict(result)
+    stale["diagnostic_state_revision"] = -1
+    with pytest.raises(ValueError, match="stale revision"):
+        validate_result_semantics(stale)
 
 
 def test_describe_reports_python_capabilities(capsys: pytest.CaptureFixture[str]) -> None:
