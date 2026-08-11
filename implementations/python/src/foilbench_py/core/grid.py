@@ -1,6 +1,7 @@
 """Shared 2D MAC-grid operations."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 from jaxtyping import Float
@@ -10,6 +11,15 @@ from foilbench_py.core.geometry import cell_centers
 from foilbench_py.core.interpolation import sample_staggered_scalar, sample_vector
 from foilbench_py.core.models import DomainSpec
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, MaskField, VelocityField
+
+
+@dataclass(frozen=True, slots=True)
+class IterativeReport:
+    criterion: str
+    tolerance: float
+    iterations: int
+    final_residual: float
+    converged: bool
 
 
 def faces_to_cell(u: FaceVelocityX, v: FaceVelocityY) -> Float[np.ndarray, "ny nx 2"]:
@@ -131,19 +141,21 @@ def project_faces(
     dt: float,
     channel_walls: bool = False,
     pressure_tolerance: float = 1.0e-5,
-) -> tuple[FaceVelocityX, FaceVelocityY, int]:
+    pressure_max_iterations: int = 640,
+) -> tuple[FaceVelocityX, FaceVelocityY, IterativeReport]:
     apply_domain_boundaries(u, v, domain, freestream, channel_walls)
     enforce_solid_faces(u, v, solid, wall_velocity)
     divergence = (u[:, 1:] - u[:, :-1]) / domain.dx + (v[1:, :] - v[:-1, :]) / domain.dy
     fluid = ~solid
     rhs = np.where(fluid, -divergence / max(dt, 1.0e-12), 0.0)
-    pressure, info = solve_masked_poisson(
+    pressure, info, iterations, relative_residual = solve_masked_poisson(
         rhs,
         fluid,
         domain.dx,
         domain.dy,
         domain.periodic_axes,
         pressure_tolerance,
+        pressure_max_iterations,
     )
     u[:, 1:-1] -= dt * (pressure[:, 1:] - pressure[:, :-1]) / domain.dx
     v[1:-1, :] -= dt * (pressure[1:, :] - pressure[:-1, :]) / domain.dy
@@ -155,7 +167,13 @@ def project_faces(
         v[-1, :] = v[0, :]
     apply_domain_boundaries(u, v, domain, freestream, channel_walls)
     enforce_solid_faces(u, v, solid, wall_velocity)
-    return u, v, info
+    return u, v, IterativeReport(
+        "relative-l2",
+        pressure_tolerance,
+        iterations,
+        relative_residual,
+        info == 0 and relative_residual <= pressure_tolerance * (1.0 + 1.0e-6),
+    )
 
 
 def implicit_diffuse(
@@ -163,23 +181,35 @@ def implicit_diffuse(
     viscosity: float,
     dt: float,
     domain: DomainSpec,
-    iterations: int = 12,
-) -> VelocityField:
-    if viscosity <= 0.0:
-        return velocity.copy()
-    ax = viscosity * dt / (domain.dx * domain.dx)
-    ay = viscosity * dt / (domain.dy * domain.dy)
-    denominator = 1.0 + 2.0 * ax + 2.0 * ay
-    original = velocity.copy()
-    result = velocity.copy()
-    for _ in range(iterations):
-        padded = np.pad(result, ((1, 1), (1, 1), (0, 0)), mode="edge")
-        result = (
-            original
-            + ax * (padded[1:-1, :-2] + padded[1:-1, 2:])
-            + ay * (padded[:-2, 1:-1] + padded[2:, 1:-1])
-        ) / denominator
-    return result
+    tolerance: float = 1.0e-5,
+    max_iterations: int = 640,
+) -> tuple[VelocityField, IterativeReport]:
+    components: list[Float[np.ndarray, "ny nx"]] = []
+    performed = 0
+    residual = 0.0
+    converged = True
+    for component in range(velocity.shape[2]):
+        selected, iterations, final_residual, component_converged = (
+            _implicit_diffuse_scalar(
+                velocity[:, :, component],
+                viscosity,
+                dt,
+                domain,
+                tolerance,
+                max_iterations,
+            )
+        )
+        components.append(selected)
+        performed = max(performed, iterations)
+        residual = max(residual, final_residual)
+        converged = converged and component_converged
+    return np.stack(components, axis=2), IterativeReport(
+        "update-linf",
+        tolerance,
+        performed,
+        residual,
+        converged,
+    )
 
 
 def _implicit_diffuse_scalar(
@@ -187,23 +217,58 @@ def _implicit_diffuse_scalar(
     viscosity: float,
     dt: float,
     domain: DomainSpec,
-    iterations: int = 12,
-) -> Float[np.ndarray, "field_y field_x"]:
+    tolerance: float = 1.0e-5,
+    max_iterations: int = 640,
+) -> tuple[Float[np.ndarray, "field_y field_x"], int, float, bool]:
     if viscosity <= 0.0:
-        return field.copy()
+        return field.copy(), 0, 0.0, True
+    periodic_x = "x" in domain.periodic_axes
+    periodic_y = "y" in domain.periodic_axes
+    duplicate_x = periodic_x and field.shape[1] == domain.nx + 1
+    duplicate_y = periodic_y and field.shape[0] == domain.ny + 1
+    logical = field[
+        : field.shape[0] - int(duplicate_y),
+        : field.shape[1] - int(duplicate_x),
+    ]
     ax = viscosity * dt / (domain.dx * domain.dx)
     ay = viscosity * dt / (domain.dy * domain.dy)
     denominator = 1.0 + 2.0 * ax + 2.0 * ay
-    original = field.copy()
-    result = field.copy()
-    for _ in range(iterations):
-        padded = np.pad(result, 1, mode="edge")
-        result = (
+    original = logical.copy()
+    result = logical.copy()
+    scale = max(float(np.max(np.abs(original))), 1.0)
+    final_residual = float("inf")
+    performed = 0
+    for iteration in range(1, max_iterations + 1):
+        performed = iteration
+        left = np.roll(result, 1, axis=1) if periodic_x else np.concatenate(
+            (result[:, :1], result[:, :-1]), axis=1
+        )
+        right = np.roll(result, -1, axis=1) if periodic_x else np.concatenate(
+            (result[:, 1:], result[:, -1:]), axis=1
+        )
+        lower = np.roll(result, 1, axis=0) if periodic_y else np.concatenate(
+            (result[:1, :], result[:-1, :]), axis=0
+        )
+        upper = np.roll(result, -1, axis=0) if periodic_y else np.concatenate(
+            (result[1:, :], result[-1:, :]), axis=0
+        )
+        updated = (
             original
-            + ax * (padded[1:-1, :-2] + padded[1:-1, 2:])
-            + ay * (padded[:-2, 1:-1] + padded[2:, 1:-1])
+            + ax * (left + right)
+            + ay * (lower + upper)
         ) / denominator
-    return np.asarray(result, dtype=field.dtype)
+        final_residual = float(np.max(np.abs(updated - result))) / scale
+        result = updated
+        if final_residual <= tolerance:
+            break
+    converged = final_residual <= tolerance
+    output = field.copy()
+    output[: result.shape[0], : result.shape[1]] = result
+    if duplicate_x:
+        output[:, -1] = output[:, 0]
+    if duplicate_y:
+        output[-1, :] = output[0, :]
+    return np.asarray(output, dtype=field.dtype), performed, final_residual, converged
 
 
 def implicit_diffuse_faces(
@@ -212,10 +277,25 @@ def implicit_diffuse_faces(
     viscosity: float,
     dt: float,
     domain: DomainSpec,
-) -> tuple[FaceVelocityX, FaceVelocityY]:
+    tolerance: float = 1.0e-5,
+    max_iterations: int = 640,
+) -> tuple[FaceVelocityX, FaceVelocityY, IterativeReport]:
+    selected_u, u_iterations, u_residual, u_converged = _implicit_diffuse_scalar(
+        u, viscosity, dt, domain, tolerance, max_iterations
+    )
+    selected_v, v_iterations, v_residual, v_converged = _implicit_diffuse_scalar(
+        v, viscosity, dt, domain, tolerance, max_iterations
+    )
     return (
-        _implicit_diffuse_scalar(u, viscosity, dt, domain),
-        _implicit_diffuse_scalar(v, viscosity, dt, domain),
+        selected_u,
+        selected_v,
+        IterativeReport(
+            "update-linf",
+            tolerance,
+            max(u_iterations, v_iterations),
+            max(u_residual, v_residual),
+            u_converged and v_converged,
+        ),
     )
 
 

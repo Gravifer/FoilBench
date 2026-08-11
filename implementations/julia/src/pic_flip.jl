@@ -66,14 +66,22 @@ pic_flip_blend(solver::PicFlipSolver) = solver.blend
 function set_reynolds!(solver::PicFlipSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
+    narrowed = T(selected)
+    isfinite(narrowed) && narrowed > zero(T) ||
+        throw(ArgumentError("Reynolds number is not representable in solver precision"))
     previous = solver.reynolds_value
-    solver.reynolds_value = T(selected)
-    previous == solver.reynolds_value || (solver.revision += 1)
-    return ReynoldsOutcome(T(selected), solver.reynolds_value, String[])
+    solver.reynolds_value = narrowed
+    previous == narrowed || (solver.revision += 1)
+    return ReynoldsOutcome(narrowed, solver.reynolds_value, String[])
 end
 
 function set_pic_flip_blend!(solver::PicFlipSolver{T}, selected::Real) where {T}
-    solver.blend = clamp(T(selected), zero(T), one(T))
+    narrowed = T(selected)
+    isfinite(narrowed) || throw(ArgumentError("PIC/FLIP blend must be finite"))
+    next_blend = clamp(narrowed, zero(T), one(T))
+    previous = solver.blend
+    solver.blend = next_blend
+    previous == next_blend || (solver.revision += 1)
     return solver.blend
 end
 
@@ -348,7 +356,7 @@ function _pic_project_faces!(
     scenario, geometry = _pic_require(solver)
     wall = wall_velocity_grid(geometry, scenario.domain, control)
     channel_walls = option(scenario, "initial_condition", "") == "poiseuille"
-    iterations, converged = project_faces!(
+    iterations, relative_residual, converged = project_faces!(
         u,
         v,
         scenario.domain,
@@ -362,8 +370,17 @@ function _pic_project_faces!(
     )
     solver.projection_iterations = iterations
     solver.projection_warning = converged ? "" : "pressure CG did not converge"
-    converged || throw(NumericalFailure(:projection_failure, solver.projection_warning))
-    return u, v
+    converged || throw(NumericalFailure(
+        :projection_failure,
+        solver.projection_warning,
+        :projection,
+        Dict{String,Any}(
+            "iterations" => iterations,
+            "tolerance" => option(scenario, "pressure_tolerance", T(1.0e-5)),
+            "relative_residual" => relative_residual,
+        ),
+    ))
+    return u, v, relative_residual
 end
 
 function _pic_advect_particles!(
@@ -538,6 +555,13 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     start_angle = solver.control.angle_degrees
     counts = Int[]
     projected_u, projected_v = cell_to_faces(solver.grid_velocity)
+    pressure_residual = zero(T)
+    diffusion_residual = zero(T)
+    viscosity_iterations = 0
+    final_speed = transport_speed
+    particle_speed = maximum_speed
+    maximum_particle_cfl = timestep * transport_speed /
+        min(dx(scenario.domain), dy(scenario.domain))
     try
         solver.reseeded_last_step = 0
         solver.swept_collisions_last_step = 0
@@ -565,21 +589,29 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             before_projection_u = copy(transferred_u)
             before_projection_v = copy(transferred_v)
             viscosity = reference_speed(scenario) * scenario.foil.chord / solver.reynolds_value
-            diffused_u, u_iterations, u_converged = implicit_diffuse_scalar(
+            diffused_u, u_iterations, u_residual, u_converged = implicit_diffuse_scalar(
                 transferred_u, viscosity, timestep, scenario.domain;
                 tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+                max_iterations = option(scenario, "pressure_max_iterations", 640),
             )
-            diffused_v, v_iterations, v_converged = implicit_diffuse_scalar(
+            diffused_v, v_iterations, v_residual, v_converged = implicit_diffuse_scalar(
                 transferred_v, viscosity, timestep, scenario.domain;
                 tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+                max_iterations = option(scenario, "pressure_max_iterations", 640),
             )
-            solver.projection_iterations = max(u_iterations, v_iterations)
+            diffusion_residual = max(u_residual, v_residual)
+            viscosity_iterations = max(u_iterations, v_iterations)
             u_converged && v_converged || throw(NumericalFailure(
-                :projection_failure,
+                :convergence_failure,
                 "PIC/FLIP implicit viscosity did not converge",
                 :viscosity,
+                Dict{String,Any}(
+                    "iterations" => viscosity_iterations,
+                    "tolerance" => option(scenario, "pressure_tolerance", T(1.0e-5)),
+                    "final_residual" => diffusion_residual,
+                ),
             ))
-            projected_u, projected_v = _pic_project_faces!(
+            projected_u, projected_v, pressure_residual = _pic_project_faces!(
                 solver, diffused_u, diffused_v, sub_control, timestep,
             )
             solver.grid_velocity = faces_to_cell(projected_u, projected_v)
@@ -621,6 +653,27 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
                 :postcondition,
             ))
         counts = vec(particle_cell_counts(solver.positions, scenario.domain))
+        grid_speed = maximum(
+            hypot(solver.grid_velocity[i, j, 1], solver.grid_velocity[i, j, 2]) for
+                i in axes(solver.grid_velocity, 1), j in axes(solver.grid_velocity, 2)
+        )
+        particle_speed = maximum(
+            hypot(solver.particle_velocity[1, index], solver.particle_velocity[2, index])
+                for index in axes(solver.particle_velocity, 2)
+        )
+        final_speed = max(transport_speed, grid_speed, particle_speed)
+        maximum_particle_cfl = timestep * final_speed /
+            min(dx(scenario.domain), dy(scenario.domain))
+        maximum_particle_cfl <= solver.cfl * (one(T) + T(1.0e-6)) ||
+            throw(NumericalFailure(
+                :stability_limit,
+                "PIC/FLIP post-step motion exceeded its swept envelope",
+                Symbol("particle-advection"),
+                Dict{String,Any}(
+                    "accepted_cfl" => maximum_particle_cfl,
+                    "maximum_cfl" => solver.cfl,
+                ),
+            ))
     catch
         solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
             solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
@@ -643,24 +696,27 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
         solver.solid[i, j] || push!(fluid_counts, counts[(j - 1) * nx(scenario.domain) + i])
     end
     final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
-    maximum_particle_cfl = timestep * transport_speed /
-        min(dx(scenario.domain), dy(scenario.domain))
     return StepReport(
-        target, target, substeps, transport_speed, warnings, solver.revision,
+        target, target, substeps, final_speed, warnings, solver.revision,
         Dict{String,Any}(
-            "maximum_particle_speed" => maximum_speed,
+            "maximum_particle_speed" => particle_speed,
             "maximum_wall_speed" => wall_speed,
             "maximum_particle_cfl" => maximum_particle_cfl,
             "maximum_characteristic_displacement" => maximum_particle_cfl,
             "particle_count" => size(solver.positions, 2),
             "empty_cell_fraction" => count(==(0), fluid_counts) / max(1, length(fluid_counts)),
-            "underfilled_cell_fraction" => count(value -> value < 2, fluid_counts) /
+            "underfilled_cell_fraction" => count(value -> value < 4, fluid_counts) /
                 max(1, length(fluid_counts)),
             "unresolved_solid_particles" => 0,
             "minimum_particles_per_cell" => isempty(counts) ? 0 : minimum(counts),
             "maximum_particles_per_cell" => isempty(counts) ? 0 : maximum(counts),
             "unsupported_face_fraction" => solver.unsupported_face_fraction,
             "pressure_converged" => true,
+            "pressure_iterations" => solver.projection_iterations,
+            "pressure_relative_residual" => pressure_residual,
+            "viscosity_converged" => true,
+            "viscosity_iterations" => viscosity_iterations,
+            "viscosity_final_residual" => diffusion_residual,
             "divergence_linf" => native_divergence_linf(
                 projected_u, projected_v, scenario.domain, solver.solid,
             ),

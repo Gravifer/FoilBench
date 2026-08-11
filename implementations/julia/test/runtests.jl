@@ -319,7 +319,7 @@ end
     freestream = SVector{2,Float64}(0, 0)
     apply_domain_boundaries!(u, v, domain, freestream)
     before = sqrt(sum(abs2, face_divergence(u, v, domain)))
-    iterations, converged = project_faces!(
+    iterations, residual, converged = project_faces!(
         u,
         v,
         domain,
@@ -331,6 +331,7 @@ end
     )
     after = sqrt(sum(abs2, face_divergence(u, v, domain)))
     @test converged
+    @test residual <= 1.0e-7
     @test iterations > 0
     @test after < 0.5 * before
 
@@ -341,7 +342,7 @@ end
     periodic_wall = zeros(Float64, 16, 12, 2)
     apply_domain_boundaries!(periodic_u, periodic_v, periodic_domain, freestream)
     periodic_before = sqrt(sum(abs2, face_divergence(periodic_u, periodic_v, periodic_domain)))
-    _, periodic_converged = project_faces!(
+    _, periodic_residual, periodic_converged = project_faces!(
         periodic_u,
         periodic_v,
         periodic_domain,
@@ -353,13 +354,14 @@ end
     )
     periodic_after = sqrt(sum(abs2, face_divergence(periodic_u, periodic_v, periodic_domain)))
     @test periodic_converged
+    @test periodic_residual <= 1.0e-8
     @test periodic_after < 1.0e-5 * periodic_before
     @test periodic_u[1, :] ≈ periodic_u[end, :]
     @test periodic_v[:, 1] ≈ periodic_v[:, end]
 
     impulse = zeros(Float64, 24, 16)
     impulse[12, 8] = 1.0
-    diffused, diffusion_iterations, diffusion_converged = implicit_diffuse_scalar(
+    diffused, diffusion_iterations, diffusion_residual, diffusion_converged = implicit_diffuse_scalar(
         impulse,
         0.1,
         0.02,
@@ -367,9 +369,30 @@ end
         tolerance = 1.0e-8,
     )
     @test diffusion_converged
+    @test diffusion_residual <= 1.0e-8
     @test diffusion_iterations > 0
     @test 0.0 < maximum(diffused) < 1.0
     @test sum(diffused) ≈ 1.0 atol = 1.0e-7
+
+    periodic_faces = DomainSpec(((0.0, 2.0), (0.0, 1.0)), (32, 16), (:x, :y))
+    phase = 2pi .* (0:32) ./ 32
+    periodic_u = repeat(reshape(sin.(phase), :, 1), 1, 16)
+    original_u = copy(periodic_u)
+    viscosity = 0.2
+    timestep = 0.03
+    diffused_u, _, face_residual, face_converged = implicit_diffuse_scalar(
+        periodic_u,
+        viscosity,
+        timestep,
+        periodic_faces;
+        tolerance = 1.0e-10,
+    )
+    eigenvalue = 4sin(pi / 32)^2 / dx(periodic_faces)^2
+    decay = inv(1 + viscosity * timestep * eigenvalue)
+    @test face_converged
+    @test face_residual <= 1.0e-10
+    @test diffused_u[1:32, :] ≈ decay .* original_u[1:32, :] atol = 1.0e-8
+    @test diffused_u[end, :] ≈ diffused_u[1, :] atol = 1.0e-12
 
     nonfinite_rhs = zeros(Float64, 4, 4)
     nonfinite_rhs[2, 3] = Inf
@@ -716,6 +739,17 @@ end
         @test export_state(solver).time == scenario.output_dt
     end
 
+    for solver in (StableFluidsSolver(Float32), LBMSolver(Float32), PicFlipSolver(Float32))
+        initialize!(solver, scenario, geometry, scenario.seed)
+        previous_reynolds = reynolds(solver)
+        previous_revision = state_revision(solver)
+        previous_state = export_state(solver)
+        @test_throws ArgumentError set_reynolds!(solver, 1.0e-100)
+        @test reynolds(solver) == previous_reynolds
+        @test state_revision(solver) == previous_revision
+        @test export_state(solver).velocity == previous_state.velocity
+    end
+
     shorter = LBMSolver(Float32)
     longer = LBMSolver(Float32)
     initialize!(shorter, scenario, geometry, scenario.seed)
@@ -775,7 +809,11 @@ end
     )
         solver_id = solver_info(solver).id
         initialize!(solver, fixture_scenario, geometry, fixture_scenario.seed)
+        @test state_revision(solver) == 0
         set_reynolds!(solver, fixture.changed_reynolds)
+        @test state_revision(solver) == 1
+        set_reynolds!(solver, fixture.changed_reynolds)
+        @test state_revision(solver) == 1
         report = advance!(
             solver,
             control_at(fixture_scenario, fixture.target_dt),
@@ -783,16 +821,49 @@ end
         )
         for key in fixture.accepted_evidence[solver_id]
             @test haskey(report.evidence, String(key))
+            value = report.evidence[String(key)]
+            if endswith(String(key), "_converged")
+                @test value === true
+            else
+                @test value isa Real && isfinite(value)
+            end
         end
-        @test report.state_revision == state_revision(solver)
+        @test report.state_revision == state_revision(solver) == 2
         @test diagnostics(solver).state_revision == report.state_revision
-        if solver_id == "lbm-d2q9"
+        if solver_id == "stable-fluids"
+            @test report.evidence["maximum_characteristic_displacement"] <=
+                fixture.limits.stable_maximum_characteristic_displacement
+            @test report.evidence["maximum_boundary_sweep"] <=
+                fixture.limits.stable_maximum_boundary_sweep
+        elseif solver_id == "lbm-d2q9"
             @test report.evidence["maximum_lattice_mach"] <=
                 fixture.limits.lbm_maximum_mach * (1 + 1.0e-6)
+            @test report.evidence["density_excursion"] <=
+                fixture.limits.lbm_maximum_density_excursion
+            @test report.evidence["minimum_population"] >=
+                fixture.limits.lbm_minimum_population
             @test report.evidence["trt_magic"] ≈ fixture.limits.lbm_trt_magic
         elseif solver_id == "pic-flip"
             @test report.evidence["maximum_particle_cfl"] <=
                 fixture.limits.pic_maximum_particle_cfl * (1 + 1.0e-6)
+            @test report.evidence["empty_cell_fraction"] <=
+                fixture.limits.pic_maximum_empty_cell_fraction
+            @test report.evidence["underfilled_cell_fraction"] <=
+                fixture.limits.pic_maximum_underfilled_cell_fraction
+            @test report.evidence["unsupported_face_fraction"] <=
+                fixture.limits.pic_maximum_unsupported_face_fraction
+            @test report.evidence["unresolved_solid_particles"] <=
+                fixture.limits.pic_maximum_unresolved_solid_particles
+        end
+        if solver_id in ("stable-fluids", "pic-flip")
+            @test report.evidence["pressure_relative_residual"] <=
+                fixture.limits.pressure_maximum_relative_residual
+            @test report.evidence["viscosity_final_residual"] <=
+                fixture.limits.viscosity_maximum_final_residual
+            @test report.evidence["divergence_linf"] <=
+                fixture.limits.mac_maximum_divergence_linf
+            @test report.evidence["solid_leakage"] <=
+                fixture.limits.mac_maximum_solid_leakage
         end
 
         mismatch = solver_id == "stable-fluids" ? StableFluidsSolver(T) :

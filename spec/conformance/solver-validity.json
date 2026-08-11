@@ -18,6 +18,11 @@
       "maximum_characteristic_displacement",
       "maximum_boundary_sweep",
       "pressure_converged",
+      "pressure_iterations",
+      "pressure_relative_residual",
+      "viscosity_converged",
+      "viscosity_iterations",
+      "viscosity_final_residual",
       "divergence_linf",
       "solid_leakage",
       "requested_reynolds",
@@ -36,12 +41,19 @@
     ],
     "pic-flip": [
       "maximum_particle_cfl",
+      "maximum_particle_speed",
+      "maximum_characteristic_displacement",
       "particle_count",
       "empty_cell_fraction",
       "underfilled_cell_fraction",
       "unresolved_solid_particles",
       "unsupported_face_fraction",
       "pressure_converged",
+      "pressure_iterations",
+      "pressure_relative_residual",
+      "viscosity_converged",
+      "viscosity_iterations",
+      "viscosity_final_residual",
       "divergence_linf",
       "solid_leakage",
       "requested_reynolds",
@@ -49,8 +61,20 @@
     ]
   },
   "limits": {
+    "stable_maximum_characteristic_displacement": 0.7,
+    "stable_maximum_boundary_sweep": 0.7,
+    "pressure_maximum_relative_residual": 0.000011,
+    "viscosity_maximum_final_residual": 0.000011,
+    "mac_maximum_divergence_linf": 0.0001,
+    "mac_maximum_solid_leakage": 0.0001,
     "lbm_maximum_mach": 0.08,
+    "lbm_maximum_density_excursion": 0.75,
+    "lbm_minimum_population": -0.000001,
     "lbm_trt_magic": 0.1875,
-    "pic_maximum_particle_cfl": 0.75
+    "pic_maximum_particle_cfl": 0.75,
+    "pic_maximum_empty_cell_fraction": 0.1,
+    "pic_maximum_underfilled_cell_fraction": 0.6,
+    "pic_maximum_unsupported_face_fraction": 0.15,
+    "pic_maximum_unresolved_solid_particles": 0
   }
 }

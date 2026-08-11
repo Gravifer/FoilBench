@@ -14,7 +14,7 @@ interface ValidityFixture {
   readonly resolution: readonly [number, number];
   readonly target_dt: number;
   readonly accepted_evidence: Readonly<Record<SolverId, readonly string[]>>;
-  readonly limits: {readonly lbm_maximum_mach: number; readonly lbm_trt_magic: number; readonly pic_maximum_particle_cfl: number};
+  readonly limits: Readonly<Record<string, number>>;
 }
 
 async function loadScenario(path: string): Promise<Scenario> {
@@ -59,10 +59,28 @@ describe("revision-2 solver validity evidence", () => {
     expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(3);
     const scenario = await loadScenario(`../../${fixture.scenario}`);
     const reports = Object.fromEntries(solverIds.map((solverId) => { const solver = createSolver(solverId); solver.initialize(scenario, 0); return [solverId, solver.advance({time: fixture.target_dt, angleDegrees: 0, angularVelocityDegrees: 0}, fixture.target_dt)]; })) as Record<SolverId, ReturnType<ReturnType<typeof createSolver>["advance"]>>;
-    for (const solverId of solverIds) for (const key of fixture.accepted_evidence[solverId]) expect(reports[solverId].evidence[key]).not.toBeUndefined();
-    expect(reports["stable-fluids"].evidence["pressure_converged"]).toBe(true);
-    expect(Number(reports["lbm-d2q9"].evidence["maximum_lattice_mach"])).toBeLessThanOrEqual(fixture.limits.lbm_maximum_mach * (1 + 1e-6)); expect(Number(reports["lbm-d2q9"].evidence["trt_magic"])).toBeCloseTo(fixture.limits.lbm_trt_magic, 10);
-    expect(Number(reports["pic-flip"].evidence["maximum_particle_cfl"])).toBeLessThanOrEqual(fixture.limits.pic_maximum_particle_cfl * (1 + 1e-6)); expect(Number(reports["pic-flip"].evidence["particle_count"])).toBeGreaterThan(0); expect(Number(reports["pic-flip"].evidence["unsupported_face_fraction"])).toBeGreaterThanOrEqual(0); expect(reports["pic-flip"].evidence["pressure_converged"]).toBe(true);
+    for (const solverId of solverIds) for (const key of fixture.accepted_evidence[solverId]) {
+      const value = reports[solverId].evidence[key]; expect(value).not.toBeUndefined();
+      if (key.endsWith("_converged")) expect(value).toBe(true); else expect(Number.isFinite(Number(value))).toBe(true);
+    }
+    const stable = reports["stable-fluids"].evidence; const lattice = reports["lbm-d2q9"].evidence; const particles = reports["pic-flip"].evidence;
+    expect(Number(stable["maximum_characteristic_displacement"])).toBeLessThanOrEqual(fixture.limits["stable_maximum_characteristic_displacement"] ?? 0);
+    expect(Number(stable["maximum_boundary_sweep"])).toBeLessThanOrEqual(fixture.limits["stable_maximum_boundary_sweep"] ?? 0);
+    expect(Number(lattice["maximum_lattice_mach"])).toBeLessThanOrEqual((fixture.limits["lbm_maximum_mach"] ?? 0) * (1 + 1e-6));
+    expect(Number(lattice["density_excursion"])).toBeLessThanOrEqual(fixture.limits["lbm_maximum_density_excursion"] ?? 0);
+    expect(Number(lattice["minimum_population"])).toBeGreaterThanOrEqual(fixture.limits["lbm_minimum_population"] ?? 0);
+    expect(Number(lattice["trt_magic"])).toBeCloseTo(fixture.limits["lbm_trt_magic"] ?? 0, 10);
+    expect(Number(particles["maximum_particle_cfl"])).toBeLessThanOrEqual((fixture.limits["pic_maximum_particle_cfl"] ?? 0) * (1 + 1e-6));
+    expect(Number(particles["empty_cell_fraction"])).toBeLessThanOrEqual(fixture.limits["pic_maximum_empty_cell_fraction"] ?? 0);
+    expect(Number(particles["underfilled_cell_fraction"])).toBeLessThanOrEqual(fixture.limits["pic_maximum_underfilled_cell_fraction"] ?? 0);
+    expect(Number(particles["unsupported_face_fraction"])).toBeLessThanOrEqual(fixture.limits["pic_maximum_unsupported_face_fraction"] ?? 0);
+    expect(Number(particles["unresolved_solid_particles"])).toBeLessThanOrEqual(fixture.limits["pic_maximum_unresolved_solid_particles"] ?? 0);
+    for (const evidence of [stable, particles]) {
+      expect(Number(evidence["pressure_relative_residual"])).toBeLessThanOrEqual(fixture.limits["pressure_maximum_relative_residual"] ?? 0);
+      expect(Number(evidence["viscosity_final_residual"])).toBeLessThanOrEqual(fixture.limits["viscosity_maximum_final_residual"] ?? 0);
+      expect(Number(evidence["divergence_linf"])).toBeLessThanOrEqual(fixture.limits["mac_maximum_divergence_linf"] ?? 0);
+      expect(Number(evidence["solid_leakage"])).toBeLessThanOrEqual(fixture.limits["mac_maximum_solid_leakage"] ?? 0);
+    }
   });
 
   it("classifies a finite pressure solve that exhausts its iteration budget", async () => {

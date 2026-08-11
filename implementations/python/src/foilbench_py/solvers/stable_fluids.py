@@ -6,6 +6,7 @@ import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
 from foilbench_py.core.grid import (
+    IterativeReport,
     advect_faces,
     advect_faces_skew_rk2,
     advect_velocity,
@@ -57,6 +58,8 @@ type StableCheckpoint = tuple[
     float,
     str,
     int,
+    IterativeReport,
+    IterativeReport,
 ]
 
 
@@ -68,6 +71,20 @@ def parse_stable_transport_mode(value: object) -> StableTransportMode:
     if value == "skew-rk2":
         return "skew-rk2"
     raise ValueError(f"unsupported Stable Fluids advection: {value}")
+
+
+def _float_option(scenario: Scenario, name: str, default: float) -> float:
+    value = scenario.solver_options.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric")
+    return float(value)
+
+
+def _int_option(scenario: Scenario, name: str, default: int) -> int:
+    value = scenario.solver_options.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    return value
 
 
 class StableFluidsSolver:
@@ -88,6 +105,12 @@ class StableFluidsSolver:
         self._control: ControlState = ControlState(0.0, 0.0, 0.0)
         self._time: float = 0.0
         self._projection_warning: str = ""
+        self._last_projection: IterativeReport = IterativeReport(
+            "relative-l2", 0.0, 0, 0.0, True
+        )
+        self._last_viscosity: IterativeReport = IterativeReport(
+            "update-linf", 0.0, 0, 0.0, True
+        )
         self._maccormack: bool = True
         self._face_advection: bool = False
         self._skew_rk2: bool = False
@@ -118,8 +141,11 @@ class StableFluidsSolver:
         return "maccormack" if self._maccormack else "semi-lagrangian"
 
     def set_transport_mode(self, mode: StableTransportMode) -> None:
+        changed = mode != self.transport_mode
         self._maccormack = mode == "maccormack"
         self._skew_rk2 = mode == "skew-rk2"
+        if changed and self._scenario is not None:
+            self._revision += 1
 
     def interactive_tuning(self) -> InteractiveTuning:
         mode = self.transport_mode
@@ -150,6 +176,8 @@ class StableFluidsSolver:
         self._time = 0.0
         self._revision = 0
         self._reynolds = float(scenario.reynolds)
+        self._last_projection = IterativeReport("relative-l2", 0.0, 0, 0.0, True)
+        self._last_viscosity = IterativeReport("update-linf", 0.0, 0, 0.0, True)
         velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
         velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
         initial = str(scenario.solver_options.get("initial_condition", "freestream"))
@@ -171,6 +199,7 @@ class StableFluidsSolver:
         self.set_transport_mode(advection)
         self._face_advection = bool(scenario.solver_options.get("stable_face_advection", False))
         self._apply_projection(max(scenario.output_dt, 1.0e-4))
+        self._revision = 0
 
     def restart(
         self,
@@ -217,10 +246,10 @@ class StableFluidsSolver:
     def _apply_projection(self, dt: float) -> None:
         scenario, _, u, v, solid = self._require()
         channel = str(scenario.solver_options.get("initial_condition", "")) == "poiseuille"
-        tolerance_option = scenario.solver_options.get("pressure_tolerance", 1.0e-5)
-        if not isinstance(tolerance_option, (int, float)):
-            raise TypeError("pressure_tolerance must be numeric")
-        pressure_tolerance = float(tolerance_option)
+        pressure_tolerance = _float_option(scenario, "pressure_tolerance", 1.0e-5)
+        pressure_max_iterations = _int_option(
+            scenario, "pressure_max_iterations", 640
+        )
         cfl_option = scenario.solver_options.get("stable_cfl", 0.7)
         if not isinstance(cfl_option, (int, float)):
             raise TypeError("stable_cfl must be numeric")
@@ -257,7 +286,7 @@ class StableFluidsSolver:
                     "maximum_cfl_limit": projection_cfl_limit,
                 },
             )
-        self._u, self._v, info = project_faces(
+        self._u, self._v, report = project_faces(
             u,
             v,
             scenario.domain,
@@ -267,13 +296,20 @@ class StableFluidsSolver:
             dt,
             channel,
             pressure_tolerance,
+            pressure_max_iterations,
         )
-        if info != 0:
+        self._last_projection = report
+        if not report.converged:
             raise NumericalFailure(
                 "projection_failure",
-                f"Stable Fluids pressure CG did not converge: {info}",
+                "Stable Fluids pressure CG did not converge",
                 "projection",
-                {"solver_info": info},
+                {
+                    "criterion": report.criterion,
+                    "iterations": report.iterations,
+                    "tolerance": report.tolerance,
+                    "relative_residual": report.final_residual,
+                },
             )
         if not np.isfinite(self._u).all() or not np.isfinite(self._v).all():
             raise NumericalFailure(
@@ -311,7 +347,7 @@ class StableFluidsSolver:
             else target_dt * max_speed / spacing
         )
         required = max(
-            fluid_measure / cfl,
+            1.05 * fluid_measure / cfl,
             target_dt * wall_speed / (cfl * spacing),
             sweep_cells / cfl,
         )
@@ -339,6 +375,8 @@ class StableFluidsSolver:
             self._time,
             self._projection_warning,
             self._revision,
+            self._last_projection,
+            self._last_viscosity,
         )
         start_time = self._time
         start_angle = self._control.angle_degrees
@@ -361,8 +399,14 @@ class StableFluidsSolver:
                         self._wall_grid(sub_control),
                         scenario.freestream,
                     )
-                    self._u, self._v = implicit_diffuse_faces(
-                        self._u, self._v, viscosity, dt, scenario.domain
+                    self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
+                        self._u,
+                        self._v,
+                        viscosity,
+                        dt,
+                        scenario.domain,
+                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                        _int_option(scenario, "pressure_max_iterations", 640),
                     )
                 elif self._face_advection:
                     advected_u, advected_v = advect_faces(
@@ -372,16 +416,41 @@ class StableFluidsSolver:
                         scenario.domain,
                         self._maccormack,
                     )
-                    self._u, self._v = implicit_diffuse_faces(
-                        advected_u, advected_v, viscosity, dt, scenario.domain
+                    self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
+                        advected_u,
+                        advected_v,
+                        viscosity,
+                        dt,
+                        scenario.domain,
+                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                        _int_option(scenario, "pressure_max_iterations", 640),
                     )
                 else:
                     velocity = faces_to_cell(step_u, step_v)
                     velocity = advect_velocity(
                         velocity, dt, scenario.domain, self._maccormack
                     )
-                    velocity = implicit_diffuse(velocity, viscosity, dt, scenario.domain)
+                    velocity, self._last_viscosity = implicit_diffuse(
+                        velocity,
+                        viscosity,
+                        dt,
+                        scenario.domain,
+                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                        _int_option(scenario, "pressure_max_iterations", 640),
+                    )
                     self._u, self._v = cell_to_faces(velocity)
+                if not self._last_viscosity.converged:
+                    raise NumericalFailure(
+                        "convergence_failure",
+                        "Stable Fluids implicit viscosity did not converge",
+                        "viscosity",
+                        {
+                            "criterion": self._last_viscosity.criterion,
+                            "iterations": self._last_viscosity.iterations,
+                            "tolerance": self._last_viscosity.tolerance,
+                            "final_residual": self._last_viscosity.final_residual,
+                        },
+                    )
                 self._control = sub_control
                 self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
                 self._apply_projection(dt)
@@ -392,6 +461,22 @@ class StableFluidsSolver:
                     "Stable Fluids produced non-finite velocity",
                     "postcondition",
                 )
+            final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
+            accepted_measure = (
+                dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+                if self._skew_rk2
+                else dt * final_speed / spacing
+            )
+            if accepted_measure > cfl * (1.0 + 1.0e-6):
+                raise NumericalFailure(
+                    "stability_limit",
+                    "Stable Fluids post-step motion exceeded its transport envelope",
+                    "advection",
+                    {
+                        "accepted_measure": accepted_measure,
+                        "maximum_measure": cfl,
+                    },
+                )
         except Exception:
             (
                 self._u,
@@ -401,6 +486,8 @@ class StableFluidsSolver:
                 self._time,
                 self._projection_warning,
                 self._revision,
+                self._last_projection,
+                self._last_viscosity,
             ) = checkpoint
             raise
         self._time = start_time + target_dt
@@ -411,12 +498,6 @@ class StableFluidsSolver:
         )
         self._revision += 1
         warnings = () if not self._projection_warning else (self._projection_warning,)
-        final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
-        accepted_measure = (
-            dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
-            if self._skew_rk2
-            else dt * final_speed / spacing
-        )
         _, _, final_u, final_v, final_solid = self._require()
         final_wall = self._wall_grid(self._control)
         native_divergence = native_divergence_linf(
@@ -444,6 +525,11 @@ class StableFluidsSolver:
                 "maximum_characteristic_displacement": accepted_measure,
                 "maximum_boundary_sweep": sweep_cells / substeps,
                 "pressure_converged": True,
+                "pressure_iterations": self._last_projection.iterations,
+                "pressure_relative_residual": self._last_projection.final_residual,
+                "viscosity_converged": self._last_viscosity.converged,
+                "viscosity_iterations": self._last_viscosity.iterations,
+                "viscosity_final_residual": self._last_viscosity.final_residual,
                 "divergence_linf": native_divergence,
                 "solid_leakage": native_leakage,
                 "requested_reynolds": self._reynolds,
@@ -493,6 +579,8 @@ class StableFluidsSolver:
             self._time,
             self._projection_warning,
             self._revision,
+            self._last_projection,
+            self._last_viscosity,
         )
         try:
             validate_canonical_import(state, scenario, control)
@@ -513,6 +601,8 @@ class StableFluidsSolver:
                 self._time,
                 self._projection_warning,
                 self._revision,
+                self._last_projection,
+                self._last_viscosity,
             ) = checkpoint
             return ImportOutcome(
                 "rejected",
@@ -530,6 +620,8 @@ class StableFluidsSolver:
                 self._time,
                 self._projection_warning,
                 self._revision,
+                self._last_projection,
+                self._last_viscosity,
             ) = checkpoint
             raise
         self._revision += 1

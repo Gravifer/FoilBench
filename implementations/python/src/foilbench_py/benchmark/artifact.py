@@ -53,11 +53,13 @@ def _require_finite(value: object, path: str = "result") -> None:
             raise ValueError(f"{path} contains a non-finite number")
         return
     if isinstance(value, Mapping):
-        for name, child in value.items():
+        children = cast(Mapping[object, object], value)
+        for name, child in children.items():
             _require_finite(child, f"{path}.{name}")
         return
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        for index, child in enumerate(value):
+        children = cast(Sequence[object], value)
+        for index, child in enumerate(children):
             _require_finite(child, f"{path}[{index}]")
 
 
@@ -79,9 +81,10 @@ def validate_result_semantics(result: Mapping[str, object]) -> None:
     if success:
         if failure is not None or not isinstance(last_step, Mapping) or not steps:
             raise ValueError("successful benchmark result lacks completed-step semantics")
+        completed_step = cast(Mapping[str, object], last_step)
         if (
             diagnostic_revision != final_revision
-            or last_step.get("state_revision") != final_revision
+            or completed_step.get("state_revision") != final_revision
         ):
             raise ValueError("successful benchmark result contains stale revision evidence")
         if abs(simulated - requested) > tolerance:

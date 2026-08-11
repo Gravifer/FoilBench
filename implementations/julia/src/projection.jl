@@ -14,7 +14,7 @@ function _pcg(
     operator_direction = similar(direction)
     residual_dot = dot(residual, preconditioned)
     right_norm = sqrt(dot(right_hand_side, right_hand_side))
-    right_norm <= eps(T) && return solution, 0, true
+    right_norm <= eps(T) && return solution, 0, zero(T), true
     threshold = max(tolerance * right_norm, eps(T) * sqrt(T(length(right_hand_side))))
     for iteration in 1:max_iterations
         apply_operator!(operator_direction, direction)
@@ -32,14 +32,17 @@ function _pcg(
                 :nonfinite_state,
                 "preconditioned CG produced non-finite state",
             ))
-        sqrt(dot(residual, residual)) <= threshold && return solution, iteration, true
+        residual_norm = sqrt(dot(residual, residual))
+        residual_norm <= threshold &&
+            return solution, iteration, residual_norm / max(right_norm, eps(T)), true
         @. preconditioned = residual * inverse_diagonal
         next_residual_dot = dot(residual, preconditioned)
         beta = next_residual_dot / residual_dot
         @. direction = preconditioned + beta * direction
         residual_dot = next_residual_dot
     end
-    return solution, max_iterations, false
+    final_residual = sqrt(dot(residual, residual)) / max(right_norm, eps(T))
+    return solution, max_iterations, final_residual, false
 end
 
 function _pressure_diagonal(fluid::AbstractMatrix{Bool}, domain::DomainSpec{2,T}) where {T}
@@ -135,17 +138,17 @@ function solve_masked_poisson(
     inverse_diagonal = inv.(diagonal)
     apply_operator! = (output, pressure) ->
         _apply_pressure_operator!(output, pressure, fluid, diagonal, domain)
-    pressure, iterations, converged = _pcg(
+    pressure, iterations, relative_residual, converged = _pcg(
         apply_operator!,
         compatible,
         inverse_diagonal;
         tolerance = T(tolerance),
         max_iterations = max_iterations,
     )
-    if any(fluid)
+    if :x in domain.periodic_axes && :y in domain.periodic_axes && any(fluid)
         pressure[fluid] .-= sum(pressure[fluid]) / T(count(fluid))
     end
-    return pressure, iterations, converged
+    return pressure, iterations, relative_residual, converged
 end
 
 function project_faces!(
@@ -169,7 +172,7 @@ function project_faces!(
     for index in eachindex(divergence)
         right_hand_side[index] = fluid[index] ? -divergence[index] / timestep : zero(T)
     end
-    pressure, iterations, converged = solve_masked_poisson(
+    pressure, iterations, relative_residual, converged = solve_masked_poisson(
         right_hand_side,
         fluid,
         domain;
@@ -192,7 +195,7 @@ function project_faces!(
     end
     apply_domain_boundaries!(u, v, domain, freestream; channel_walls)
     enforce_solid_faces!(u, v, solid, wall_velocity)
-    return iterations, converged
+    return iterations, relative_residual, converged
 end
 
 function _helmholtz_diagonal(field::AbstractMatrix{T}, domain::DomainSpec{2,T}, ax::T, ay::T) where {T}
@@ -215,13 +218,20 @@ function implicit_diffuse_scalar(
     tolerance::Real = 1.0e-5,
     max_iterations::Int = 80,
 ) where {T<:AbstractFloat}
-    viscosity <= zero(T) && return Matrix{T}(field), 0, true
+    viscosity <= zero(T) && return Matrix{T}(field), 0, zero(T), true
     ax = viscosity * timestep / dx(domain)^2
     ay = viscosity * timestep / dy(domain)^2
-    diagonal = _helmholtz_diagonal(field, domain, ax, ay)
+    duplicate_x = :x in domain.periodic_axes && size(field, 1) == nx(domain) + 1
+    duplicate_y = :y in domain.periodic_axes && size(field, 2) == ny(domain) + 1
+    logical = Matrix(view(
+        field,
+        1:(size(field, 1) - Int(duplicate_x)),
+        1:(size(field, 2) - Int(duplicate_y)),
+    ))
+    diagonal = _helmholtz_diagonal(logical, domain, ax, ay)
     inverse_diagonal = inv.(diagonal)
-    periodic_x = :x in domain.periodic_axes && size(field, 1) == nx(domain)
-    periodic_y = :y in domain.periodic_axes && size(field, 2) == ny(domain)
+    periodic_x = :x in domain.periodic_axes
+    periodic_y = :y in domain.periodic_axes
     function apply_operator!(output, candidate)
         for j in axes(candidate, 2), i in axes(candidate, 1)
             value = diagonal[i, j] * candidate[i, j]
@@ -237,13 +247,18 @@ function implicit_diffuse_scalar(
         end
         return nothing
     end
-    return _pcg(
+    result, iterations, residual, converged = _pcg(
         apply_operator!,
-        Matrix{T}(field),
+        logical,
         inverse_diagonal;
         tolerance = T(tolerance),
         max_iterations,
     )
+    output = Matrix{T}(field)
+    output[axes(result, 1), axes(result, 2)] .= result
+    duplicate_x && (output[end, :] .= output[1, :])
+    duplicate_y && (output[:, end] .= output[:, 1])
+    return output, iterations, residual, converged
 end
 
 function implicit_diffuse_velocity(
@@ -252,21 +267,25 @@ function implicit_diffuse_velocity(
     timestep::T,
     domain::DomainSpec{2,T};
     tolerance::Real = 1.0e-5,
+    max_iterations::Int = 640,
 ) where {T<:AbstractFloat}
     output = similar(velocity)
     iterations = 0
+    residual = zero(T)
     converged = true
     for component in 1:2
-        result, component_iterations, component_converged = implicit_diffuse_scalar(
+        result, component_iterations, component_residual, component_converged = implicit_diffuse_scalar(
             view(velocity, :, :, component),
             viscosity,
             timestep,
             domain;
             tolerance,
+            max_iterations,
         )
         output[:, :, component] = result
         iterations = max(iterations, component_iterations)
+        residual = max(residual, component_residual)
         converged &= component_converged
     end
-    return output, iterations, converged
+    return output, iterations, residual, converged
 end

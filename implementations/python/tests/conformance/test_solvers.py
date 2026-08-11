@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict, cast
@@ -110,20 +111,43 @@ def test_shared_revision_3_validity_fixture() -> None:
     for solver_id in solver_ids():
         solver = create_solver(solver_id)
         solver.initialize(scenario, geometry, scenario.seed)
+        assert solver.state_revision == 0
         solver.set_reynolds(fixture["changed_reynolds"])
+        assert solver.state_revision == 1
+        solver.set_reynolds(fixture["changed_reynolds"])
+        assert solver.state_revision == 1
         report = solver.advance(
             scenario.control_at(fixture["target_dt"]),
             fixture["target_dt"],
         )
         for key in fixture["accepted_evidence"][solver_id]:
             assert key in report.evidence
-        assert report.state_revision == solver.state_revision
+            value = report.evidence[key]
+            if isinstance(value, bool):
+                if key.endswith("_converged"):
+                    assert value
+            else:
+                assert math.isfinite(float(value))
+        assert report.state_revision == solver.state_revision == 2
         assert solver.diagnostics().state_revision == report.state_revision
 
-        if solver_id == "lbm-d2q9":
+        if solver_id == "stable-fluids":
+            assert float(report.evidence["maximum_characteristic_displacement"]) <= (
+                fixture["limits"]["stable_maximum_characteristic_displacement"]
+            )
+            assert float(report.evidence["maximum_boundary_sweep"]) <= fixture["limits"][
+                "stable_maximum_boundary_sweep"
+            ]
+        elif solver_id == "lbm-d2q9":
             assert float(report.evidence["maximum_lattice_mach"]) <= (
                 fixture["limits"]["lbm_maximum_mach"] * (1.0 + 1.0e-6)
             )
+            assert float(report.evidence["density_excursion"]) <= fixture["limits"][
+                "lbm_maximum_density_excursion"
+            ]
+            assert float(report.evidence["minimum_population"]) >= fixture["limits"][
+                "lbm_minimum_population"
+            ]
             assert float(report.evidence["trt_magic"]) == pytest.approx(
                 fixture["limits"]["lbm_trt_magic"]
             )
@@ -131,6 +155,31 @@ def test_shared_revision_3_validity_fixture() -> None:
             assert float(report.evidence["maximum_particle_cfl"]) <= (
                 fixture["limits"]["pic_maximum_particle_cfl"] * (1.0 + 1.0e-6)
             )
+            assert float(report.evidence["empty_cell_fraction"]) <= fixture["limits"][
+                "pic_maximum_empty_cell_fraction"
+            ]
+            assert float(report.evidence["underfilled_cell_fraction"]) <= fixture[
+                "limits"
+            ]["pic_maximum_underfilled_cell_fraction"]
+            assert float(report.evidence["unsupported_face_fraction"]) <= fixture[
+                "limits"
+            ]["pic_maximum_unsupported_face_fraction"]
+            assert int(report.evidence["unresolved_solid_particles"]) <= fixture[
+                "limits"
+            ]["pic_maximum_unresolved_solid_particles"]
+        if solver_id in {"stable-fluids", "pic-flip"}:
+            assert float(report.evidence["pressure_relative_residual"]) <= fixture[
+                "limits"
+            ]["pressure_maximum_relative_residual"]
+            assert float(report.evidence["viscosity_final_residual"]) <= fixture[
+                "limits"
+            ]["viscosity_maximum_final_residual"]
+            assert float(report.evidence["divergence_linf"]) <= fixture["limits"][
+                "mac_maximum_divergence_linf"
+            ]
+            assert float(report.evidence["solid_leakage"]) <= fixture["limits"][
+                "mac_maximum_solid_leakage"
+            ]
 
         mismatch = create_solver(solver_id)
         mismatch.initialize(scenario, geometry, scenario.seed)
@@ -351,6 +400,63 @@ def test_pic_flip_rejects_an_unsafe_configured_cfl(
 
     with pytest.raises(ValueError, match="pic_cfl"):
         solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+
+def test_stable_fluids_honors_pressure_iteration_budget(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(64, 32))
+    scenario = replace(
+        scenario,
+        solver_options={
+            **scenario.solver_options,
+            "pressure_max_iterations": 1,
+            "pressure_tolerance": 1.0e-12,
+        },
+    )
+    solver = StableFluidsSolver()
+
+    with pytest.raises(NumericalFailure) as captured:
+        solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+    assert captured.value.reason == "projection_failure"
+    assert captured.value.stage == "projection"
+    assert captured.value.evidence["iterations"] == 1
+
+
+def test_pic_flip_pressure_exhaustion_rolls_back_private_state(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(64, 32))
+    scenario = replace(
+        scenario,
+        reynolds=1.0e20,
+        solver_options={
+            **scenario.solver_options,
+            "pressure_max_iterations": 1,
+            "pressure_tolerance": 1.0e-12,
+        },
+    )
+    solver = PicFlipSolver()
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+    before = solver.export_state()
+    positions = solver._positions
+    particle_velocity = solver._particle_velocity
+    assert positions is not None and particle_velocity is not None
+    positions_before = positions.copy()
+    particle_velocity_before = particle_velocity.copy()
+    rng_before = solver._rng.checkpoint()
+
+    with pytest.raises(NumericalFailure) as captured:
+        solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+
+    assert captured.value.reason == "projection_failure"
+    assert captured.value.stage == "projection"
+    assert captured.value.evidence["iterations"] == 1
+    _assert_same_canonical_state(before, solver.export_state())
+    np.testing.assert_array_equal(positions_before, solver._positions)
+    np.testing.assert_array_equal(particle_velocity_before, solver._particle_velocity)
+    assert solver._rng.checkpoint() == rng_before
 
 
 def test_lbm_rejects_nonfinite_post_step_state(

@@ -21,7 +21,7 @@ def solve_masked_poisson(
     periodic_axes: tuple[str, ...] = (),
     tolerance: float = 1.0e-5,
     max_iterations: int = 120,
-) -> tuple[np.ndarray, int]:
+) -> tuple[np.ndarray, int, int, float]:
     """Solve a masked negative Laplacian with solid-wall Neumann conditions."""
 
     ny, nx = rhs.shape
@@ -119,7 +119,11 @@ def solve_masked_poisson(
             "pressure RHS exceeds the safe CG dot-product range",
         )
 
+    iterations = 0
+
     def validate_iterate(iterate: np.ndarray) -> None:
+        nonlocal iterations
+        iterations += 1
         if not np.isfinite(iterate).all():
             raise NumericalFailure(
                 "nonfinite_state", "pressure CG produced a non-finite iterate"
@@ -143,6 +147,12 @@ def solve_masked_poisson(
             "nonfinite_state", "pressure CG produced a non-finite solution"
         )
     pressure = solution.reshape(ny, nx)
-    if np.any(fluid):
+    if singular and np.any(fluid):
         pressure[fluid] -= np.mean(pressure[fluid])
-    return pressure, int(info)
+    residual = compatible_rhs.ravel() - apply(solution)
+    right_norm = float(np.linalg.norm(compatible_rhs.ravel()))
+    relative_residual = float(np.linalg.norm(residual)) / max(
+        right_norm,
+        float(np.finfo(rhs.dtype).eps),
+    )
+    return pressure, int(info), iterations, relative_residual

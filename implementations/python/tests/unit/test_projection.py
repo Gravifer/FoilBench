@@ -9,6 +9,7 @@ from foilbench_py.core.grid import (
     apply_domain_boundaries,
     cell_to_faces,
     enforce_solid_faces,
+    implicit_diffuse_faces,
     local_velocity_bounds,
     project_faces,
     rk2_backtrace,
@@ -38,7 +39,7 @@ def test_preconditioned_masked_projection_reduces_fluid_divergence() -> None:
     enforce_solid_faces(u, v, solid, wall)
     before = _divergence(u, v, domain)
 
-    projected_u, projected_v, info = project_faces(
+    projected_u, projected_v, report = project_faces(
         u,
         v,
         domain,
@@ -49,7 +50,8 @@ def test_preconditioned_masked_projection_reduces_fluid_divergence() -> None:
     )
     after = _divergence(projected_u, projected_v, domain)
 
-    assert info == 0
+    assert report.converged
+    assert report.final_residual <= report.tolerance * (1.0 + 1.0e-6)
     assert np.linalg.norm(after[~solid]) < 0.25 * np.linalg.norm(before[~solid])
 
 
@@ -63,7 +65,7 @@ def test_periodic_projection_updates_wrapped_normal_faces() -> None:
     apply_domain_boundaries(u, v, domain, (0.0, 0.0))
     before = _divergence(u, v, domain)
 
-    projected_u, projected_v, info = project_faces(
+    projected_u, projected_v, report = project_faces(
         u,
         v,
         domain,
@@ -75,10 +77,36 @@ def test_periodic_projection_updates_wrapped_normal_faces() -> None:
     )
     after = _divergence(projected_u, projected_v, domain)
 
-    assert info == 0
+    assert report.converged
+    assert report.final_residual <= report.tolerance * (1.0 + 1.0e-6)
     assert np.linalg.norm(after) < 1.0e-5 * np.linalg.norm(before)
     np.testing.assert_allclose(projected_u[:, 0], projected_u[:, -1])
     np.testing.assert_allclose(projected_v[0, :], projected_v[-1, :])
+
+
+def test_periodic_face_diffusion_matches_discrete_fourier_decay() -> None:
+    domain = DomainSpec(2, ((0.0, 2.0), (0.0, 1.0)), (32, 16), ("x", "y"))
+    phase = 2.0 * np.pi * np.arange(domain.nx + 1) / domain.nx
+    u = np.broadcast_to(np.sin(phase), (domain.ny, domain.nx + 1)).copy()
+    v = np.zeros((domain.ny + 1, domain.nx), dtype=np.float64)
+    viscosity = 0.2
+    dt = 0.03
+    original = u.copy()
+
+    diffused_u, _, report = implicit_diffuse_faces(
+        u,
+        v,
+        viscosity,
+        dt,
+        domain,
+        tolerance=1.0e-10,
+    )
+
+    eigenvalue = 4.0 * np.sin(np.pi / domain.nx) ** 2 / domain.dx**2
+    factor = 1.0 / (1.0 + viscosity * dt * eigenvalue)
+    assert report.converged
+    np.testing.assert_allclose(diffused_u[:, :-1], factor * original[:, :-1], atol=1.0e-8)
+    np.testing.assert_allclose(diffused_u[:, 0], diffused_u[:, -1], atol=1.0e-12)
 
 
 def test_masked_projection_rejects_non_finite_rhs_before_cg() -> None:

@@ -4,6 +4,7 @@ import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil, cell_centers
 from foilbench_py.core.grid import (
+    IterativeReport,
     cell_to_faces,
     faces_to_cell,
     implicit_diffuse_faces,
@@ -65,6 +66,8 @@ type PicAdvanceCheckpoint = tuple[
     float,
     tuple[int, int],
     str,
+    IterativeReport,
+    IterativeReport,
     int,
     int,
     int,
@@ -85,6 +88,20 @@ type PicImportCheckpoint = tuple[
     int,
     float,
 ]
+
+
+def _float_option(scenario: Scenario, name: str, default: float) -> float:
+    value = scenario.solver_options.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric")
+    return float(value)
+
+
+def _int_option(scenario: Scenario, name: str, default: int) -> int:
+    value = scenario.solver_options.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    return value
 
 
 class PicFlipSolver:
@@ -112,6 +129,12 @@ class PicFlipSolver:
         self._reynolds: float = 1.0
         self._rng: PCG32 = PCG32(0)
         self._projection_warning: str = ""
+        self._last_projection: IterativeReport = IterativeReport(
+            "relative-l2", 0.0, 0, 0.0, True
+        )
+        self._last_viscosity: IterativeReport = IterativeReport(
+            "update-linf", 0.0, 0, 0.0, True
+        )
         self._reseeded_last_step: int = 0
         self._advance_count: int = 0
         self._population_interval: int = 8
@@ -145,7 +168,10 @@ class PicFlipSolver:
     def blend(self, value: float) -> None:
         if not np.isfinite(value):
             raise ValueError("PIC/FLIP blend must be finite")
-        self._blend = float(np.clip(value, 0.0, 1.0))
+        selected = float(np.clip(value, 0.0, 1.0))
+        if selected != self._blend and self._scenario is not None:
+            self._revision += 1
+        self._blend = selected
 
     def interactive_tuning(self) -> InteractiveTuning:
         return InteractiveTuning(
@@ -198,6 +224,8 @@ class PicFlipSolver:
         self._reynolds = float(scenario.reynolds)
         self._revision = 0
         self._unsupported_face_fraction = 0.0
+        self._last_projection = IterativeReport("relative-l2", 0.0, 0, 0.0, True)
+        self._last_viscosity = IterativeReport("update-linf", 0.0, 0, 0.0, True)
         configured_blend = scenario.solver_options.get("pic_flip_blend", 0.95)
         if not isinstance(configured_blend, (int, float)):
             raise TypeError("pic_flip_blend must be numeric")
@@ -235,6 +263,7 @@ class PicFlipSolver:
         self._grid_velocity = velocity
         self._seed_particles(velocity)
         self._particle_to_grid()
+        self._revision = 0
 
     def restart(
         self,
@@ -395,11 +424,9 @@ class PicFlipSolver:
             scenario.domain.ny, scenario.domain.nx, 2
         )
         channel = str(scenario.solver_options.get("initial_condition", "")) == "poiseuille"
-        tolerance_option = scenario.solver_options.get("pressure_tolerance", 1.0e-5)
-        if not isinstance(tolerance_option, (int, float)):
-            raise TypeError("pressure_tolerance must be numeric")
-        pressure_tolerance = float(tolerance_option)
-        u, v, info = project_faces(
+        pressure_tolerance = _float_option(scenario, "pressure_tolerance", 1.0e-5)
+        iterations_option = _int_option(scenario, "pressure_max_iterations", 640)
+        u, v, report = project_faces(
             u,
             v,
             scenario.domain,
@@ -409,13 +436,20 @@ class PicFlipSolver:
             dt,
             channel,
             pressure_tolerance,
+            iterations_option,
         )
-        if info != 0:
+        self._last_projection = report
+        if not report.converged:
             raise NumericalFailure(
                 "projection_failure",
-                f"PIC/FLIP pressure solve did not converge: {info}",
+                "PIC/FLIP pressure solve did not converge",
                 "projection",
-                {"solver_info": info},
+                {
+                    "criterion": report.criterion,
+                    "iterations": report.iterations,
+                    "tolerance": report.tolerance,
+                    "relative_residual": report.final_residual,
+                },
             )
         self._projection_warning = ""
         return u, v
@@ -638,6 +672,8 @@ class PicFlipSolver:
             self._time,
             self._rng.checkpoint(),
             self._projection_warning,
+            self._last_projection,
+            self._last_viscosity,
             self._reseeded_last_step,
             self._swept_collisions_last_step,
             self._advance_count,
@@ -678,13 +714,27 @@ class PicFlipSolver:
                 viscosity = (
                     scenario.reference_speed * scenario.foil.chord / self._reynolds
                 )
-                diffused_u, diffused_v = implicit_diffuse_faces(
+                diffused_u, diffused_v, self._last_viscosity = implicit_diffuse_faces(
                     transferred_u,
                     transferred_v,
                     viscosity,
                     dt,
                     scenario.domain,
+                    _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                    _int_option(scenario, "pressure_max_iterations", 640),
                 )
+                if not self._last_viscosity.converged:
+                    raise NumericalFailure(
+                        "convergence_failure",
+                        "PIC/FLIP implicit viscosity did not converge",
+                        "viscosity",
+                        {
+                            "criterion": self._last_viscosity.criterion,
+                            "iterations": self._last_viscosity.iterations,
+                            "tolerance": self._last_viscosity.tolerance,
+                            "final_residual": self._last_viscosity.final_residual,
+                        },
+                    )
                 projected_u, projected_v = self._project_faces(
                     diffused_u,
                     diffused_v,
@@ -777,6 +827,8 @@ class PicFlipSolver:
                 self._time,
                 rng_checkpoint,
                 self._projection_warning,
+                self._last_projection,
+                self._last_viscosity,
                 self._reseeded_last_step,
                 self._swept_collisions_last_step,
                 self._advance_count,
@@ -816,7 +868,7 @@ class PicFlipSolver:
             1,
             fluid_counts.size,
         )
-        underfilled_fraction = float(np.count_nonzero(fluid_counts < 2)) / max(
+        underfilled_fraction = float(np.count_nonzero(fluid_counts < 4)) / max(
             1,
             fluid_counts.size,
         )
@@ -828,6 +880,9 @@ class PicFlipSolver:
             warnings,
             self._revision,
             {
+                "maximum_particle_speed": float(
+                    np.max(np.linalg.norm(particle_velocity, axis=1))
+                ),
                 "maximum_wall_speed": wall_speed,
                 "maximum_particle_cfl": dt * report_speed / min(
                     scenario.domain.dx,
@@ -842,6 +897,11 @@ class PicFlipSolver:
                 "unresolved_solid_particles": 0,
                 "unsupported_face_fraction": self._unsupported_face_fraction,
                 "pressure_converged": True,
+                "pressure_iterations": self._last_projection.iterations,
+                "pressure_relative_residual": self._last_projection.final_residual,
+                "viscosity_converged": self._last_viscosity.converged,
+                "viscosity_iterations": self._last_viscosity.iterations,
+                "viscosity_final_residual": self._last_viscosity.final_residual,
                 "divergence_linf": native_divergence,
                 "solid_leakage": native_leakage,
                 "requested_reynolds": self._reynolds,
@@ -976,7 +1036,7 @@ class PicFlipSolver:
             "unsupported_face_fraction": self._unsupported_face_fraction,
             "empty_fluid_cell_fraction": float(np.count_nonzero(fluid_counts == 0))
             / fluid_counts.size,
-            "underfilled_fluid_cell_fraction": float(np.count_nonzero(fluid_counts < 2))
+            "underfilled_fluid_cell_fraction": float(np.count_nonzero(fluid_counts < 4))
             / fluid_counts.size,
             "p05_particles_per_fluid_cell": float(np.percentile(fluid_counts, 5.0)),
             "p95_particles_per_fluid_cell": float(np.percentile(fluid_counts, 95.0)),

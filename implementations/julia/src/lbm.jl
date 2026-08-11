@@ -68,21 +68,24 @@ end
 function set_reynolds!(solver::LBMSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
+    narrowed = T(selected)
+    isfinite(narrowed) && narrowed > zero(T) ||
+        throw(ArgumentError("Reynolds number is not representable in solver precision"))
     previous = solver.reynolds_value
-    solver.reynolds_value = T(selected)
-    if solver.scenario !== nothing
-        solver.scaling = _lbm_scaling_at_speed(
+    next_scaling = solver.scenario === nothing ? solver.scaling :
+        _lbm_scaling_at_speed(
             solver.scenario,
-            solver.reynolds_value,
+            narrowed,
             solver.scaling.lattice_dt,
             solver.scaling.lattice_speed,
         )
-    end
-    previous == solver.reynolds_value || (solver.revision += 1)
+    solver.reynolds_value = narrowed
+    solver.scaling = next_scaling
+    previous == narrowed || (solver.revision += 1)
     warnings = solver.scaling.clamped ?
         ["effective Reynolds clamped to $(round(solver.scaling.effective_reynolds; digits = 1))"] :
         String[]
-    return ReynoldsOutcome(T(selected), solver.scaling.effective_reynolds, warnings)
+    return ReynoldsOutcome(narrowed, solver.scaling.effective_reynolds, warnings)
 end
 
 function _lbm_scaling_at_speed(
