@@ -45,6 +45,10 @@ class ViewerCommand:
 class ViewerSnapshot:
     revision: int
     applied_command: int
+    solver_epoch: int
+    solver_state_revision: int
+    diagnostic_solver_state_revision: int | None
+    vorticity_solver_state_revision: int | None
     simulation_time: float
     angle_degrees: float
     status: str
@@ -320,6 +324,14 @@ class SimulationWorker:
         return ViewerSnapshot(
             revision=revision,
             applied_command=applied_command,
+            solver_epoch=self._model.solver_epoch,
+            solver_state_revision=self._model.manager.solver.state_revision,
+            diagnostic_solver_state_revision=(
+                None
+                if self._model.last_diagnostics is None
+                else self._model.last_diagnostics.state_revision
+            ),
+            vorticity_solver_state_revision=self._model.vorticity_solver_state_revision,
             simulation_time=self._model.time,
             angle_degrees=angle,
             status=status,

@@ -31,7 +31,17 @@ _POSE_ONLY_RELEASE_STEPS = 2
 _POSE_SAMPLE_WINDOW_SECONDS = 0.08
 _MAX_RESOLVED_TIP_SPEED_RATIO = 8.0
 _TRANSIENT_IMPORT_FAILURES: frozenset[ImportFailureReason] = frozenset(
-    ("excessive_velocity", "nonfinite_state", "projection_failure", "invalid_density")
+    (
+        "excessive_velocity",
+        "stability_limit",
+        "nonfinite_state",
+        "convergence_failure",
+        "projection_failure",
+        "invalid_density",
+        "invalid_population",
+        "transfer_failure",
+        "postcondition_failure",
+    )
 )
 
 type DiagnosticMode = Literal["cadenced", "every-step"]
@@ -99,7 +109,7 @@ def viewer_crop_enabled_by_default(scenario: Scenario) -> bool:
     full_bounds = viewer_bounds(scenario, cropped=False)
     cropped_bounds = viewer_bounds(scenario, cropped=True)
     crop_available = cropped_bounds != full_bounds
-    configured = scenario.solver_options.get("viewer_crop_default", crop_available)
+    configured = scenario.solver_options.get("viewer_crop_default", False)
     if not isinstance(configured, bool):
         raise TypeError("viewer_crop_default must be a boolean")
     return crop_available and configured
@@ -122,6 +132,7 @@ class ViewerModel:
     simulated_seconds_per_wall_second: float = 0.0
     vorticity_display: ScalarField | None = None
     vorticity_revision: int = 0
+    vorticity_solver_state_revision: int | None = None
     recovery_notice: str | None = None
     drag_active: bool = False
     pose_only_drag: bool = False
@@ -133,11 +144,14 @@ class ViewerModel:
     tuning_notice: str | None = None
     manual_angular_velocity_degrees: float = 0.0
     pose_samples: deque[PoseSample] = field(default_factory=deque)
+    last_pose_received_at: float | None = None
     recovery_count: int = 0
     recovery_reason: str | None = None
     recovery_stage: str | None = None
     metrics_warming: bool = True
     warm_validation_pending: bool = False
+    presentation_failure: str | None = None
+    solver_epoch: int = 0
 
     @property
     def playback_rate(self) -> float:
@@ -189,7 +203,7 @@ class ViewerModel:
     @property
     def session_state(self) -> ViewerSessionState:
         if self.paused:
-            phase: ViewerPhase = "failed" if self.recovery_notice else "paused"
+            phase: ViewerPhase = "failed" if self.presentation_failure else "paused"
         elif self.metrics_warming:
             phase = "warming"
         else:
@@ -213,7 +227,10 @@ class ViewerModel:
 
     def _refresh_diagnostics(self, *, force_vorticity: bool = False) -> None:
         solver = self.manager.solver
-        self.last_diagnostics = solver.diagnostics()
+        diagnostics = solver.diagnostics()
+        if diagnostics.state_revision != solver.state_revision:
+            raise RuntimeError("solver diagnostics describe a stale state revision")
+        self.last_diagnostics = diagnostics
         if not (self.show_vorticity or force_vorticity):
             return
         state = solver.export_state()
@@ -236,6 +253,7 @@ class ViewerModel:
             dtype=np.float32,
         )
         self.vorticity_revision += 1
+        self.vorticity_solver_state_revision = solver.state_revision
 
     def control(self, dt: float) -> ControlState:
         del dt
@@ -269,9 +287,26 @@ class ViewerModel:
         self.pose_only_calm_steps = 0
         self.pose_only_guarded_trial = guard_next_failure
 
+    def _pause_for_presentation_failure(self, stage: str, error: Exception) -> None:
+        self.presentation_failure = f"{stage} {type(error).__name__}: {error}"
+        self.paused = True
+
+    def _settle_idle_drag(self) -> None:
+        if (
+            not self.drag_active
+            or self.last_pose_received_at is None
+            or perf_counter() - self.last_pose_received_at <= _POSE_SAMPLE_WINDOW_SECONDS
+        ):
+            return
+        self.manual_angular_velocity_degrees = 0.0
+        self.last_requested_angular_velocity_degrees = 0.0
+        self.pose_samples.clear()
+        self.last_pose_received_at = None
+
     def update(self, dt: float) -> None:
         if self.paused:
             return
+        self._settle_idle_drag()
         was_warming = self.metrics_warming
         del dt
         simulation_dt = self.scenario.output_dt * self.playback_rate
@@ -308,15 +343,28 @@ class ViewerModel:
             self.simulated_seconds_per_wall_second = (
                 1.0 - smoothing
             ) * self.simulated_seconds_per_wall_second + smoothing * instantaneous_throughput
-        self.tracers.update(self.manager.solver, control, simulation_dt)
         self.previous_angle = control.angle_degrees
+        try:
+            self.tracers.update(self.manager.solver, control, simulation_dt)
+        except Exception as error:
+            self.last_diagnostics = None
+            self.metrics_warming = True
+            self._pause_for_presentation_failure("tracer", error)
+            return
         self.presentation.diagnostic_elapsed += simulation_dt
         if self.presentation.diagnostic_mode == "every-step" or was_warming or (
             self.presentation.diagnostic_elapsed >= self.presentation.diagnostic_interval
         ):
-            self._refresh_diagnostics()
+            try:
+                self._refresh_diagnostics()
+            except Exception as error:
+                self.last_diagnostics = None
+                self.metrics_warming = True
+                self._pause_for_presentation_failure("diagnostic", error)
+                return
             self.presentation.diagnostic_elapsed = 0.0
         self.metrics_warming = False
+        self.presentation_failure = None
         if self.pose_only_drag:
             if self.pose_only_release_pending and not self.drag_active:
                 self._disable_pose_only_drag(guard_next_failure=True)
@@ -330,8 +378,14 @@ class ViewerModel:
     def set_angle(self, angle_degrees: float, timestamp: float | None = None) -> None:
         selected = float(np.clip(angle_degrees, -30.0, 30.0))
         selected_time = perf_counter() if timestamp is None else timestamp
-        if self.pose_samples and selected_time <= self.pose_samples[-1].timestamp:
-            selected_time = self.pose_samples[-1].timestamp + 1.0e-6
+        self.last_pose_received_at = perf_counter()
+        if self.pose_samples and (
+            selected_time <= self.pose_samples[-1].timestamp
+            or selected_time - self.pose_samples[-1].timestamp
+            > _POSE_SAMPLE_WINDOW_SECONDS
+        ):
+            self.pose_samples.clear()
+            self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.append(PoseSample(selected_time, selected))
         cutoff = selected_time - _POSE_SAMPLE_WINDOW_SECONDS
         while len(self.pose_samples) > 2 and self.pose_samples[1].timestamp < cutoff:
@@ -356,6 +410,7 @@ class ViewerModel:
             self.previous_angle = self.angle_override
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
+        self.last_pose_received_at = None
         self.drag_active = False
         self.pose_only_release_pending = self.pose_only_drag
 
@@ -403,10 +458,12 @@ class ViewerModel:
                 fresh = self.manager.switch_fresh(solver_id, fresh_control)
                 if fresh.accepted:
                     self._apply_saved_tuning()
+                    self.solver_epoch += 1
                     self.angle_override = current_control.angle_degrees
                     self.previous_angle = current_control.angle_degrees
                     self.manual_angular_velocity_degrees = 0.0
                     self.pose_samples.clear()
+                    self.last_pose_received_at = None
                     self.tracers.reseed_all(current_control.angle_degrees)
                     self.recovery_count += 1
                     self.recovery_reason = outcome.reason
@@ -422,7 +479,11 @@ class ViewerModel:
                     self.simulated_seconds_per_wall_second = 0.0
                     self.metrics_warming = True
                     self.warm_validation_pending = False
-                    self._refresh_diagnostics()
+                    self.presentation_failure = None
+                    try:
+                        self._refresh_diagnostics()
+                    except Exception as error:
+                        self._pause_for_presentation_failure("diagnostic", error)
                     self.last_diagnostics = None
                     return fresh
                 self.recovery_notice = (
@@ -434,6 +495,7 @@ class ViewerModel:
             self.recovery_notice = f"warm import rejected ({outcome.reason}); source retained"
             return outcome
         self._apply_saved_tuning()
+        self.solver_epoch += 1
         self.recovery_notice = None
         self.tuning_notice = None
         self.time = validation_time
@@ -441,10 +503,17 @@ class ViewerModel:
         elapsed = self.manager.last_validation_elapsed
         self.solver_steps_per_second = 1.0 / elapsed
         self.simulated_seconds_per_wall_second = validation_dt / elapsed
-        self.tracers.update(self.manager.solver, validation_control, validation_dt)
         self.previous_angle = validation_control.angle_degrees
-        self._refresh_diagnostics()
-        self.metrics_warming = False
+        try:
+            self.tracers.update(self.manager.solver, validation_control, validation_dt)
+            self._refresh_diagnostics()
+        except Exception as error:
+            self.last_diagnostics = None
+            self.metrics_warming = True
+            self._pause_for_presentation_failure("warm-switch presentation", error)
+        else:
+            self.metrics_warming = False
+            self.presentation_failure = None
         self.warm_validation_pending = True
         return outcome
 
@@ -463,10 +532,12 @@ class ViewerModel:
         recovery_control = ControlState(current_time, current_angle, 0.0)
         self.manager.restart_at(recovery_control)
         self._apply_saved_tuning()
+        self.solver_epoch += 1
         self.angle_override = current_angle
         self.previous_angle = current_angle
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
+        self.last_pose_received_at = None
         self.tracers.reseed_all(current_angle)
         self.last_report = None
         self.last_diagnostics = None
@@ -487,7 +558,11 @@ class ViewerModel:
             f"fresh restart reason={self.recovery_reason}; "
             f"stage={self.recovery_stage}; private-state-discarded{reynolds_notice}"
         )
-        self._refresh_diagnostics()
+        self.presentation_failure = None
+        try:
+            self._refresh_diagnostics()
+        except Exception as error:
+            self._pause_for_presentation_failure("diagnostic", error)
         self.last_diagnostics = None
 
     def reset(self) -> None:
@@ -503,6 +578,7 @@ class ViewerModel:
         replacement.tracers.mode = tracer_mode
         replacement.presentation = presentation
         self.manager = replacement.manager
+        self.solver_epoch += 1
         self.tracers = replacement.tracers
         self.time = 0.0
         self.paused = False
@@ -515,6 +591,7 @@ class ViewerModel:
         self.simulated_seconds_per_wall_second = 0.0
         self.vorticity_display = replacement.vorticity_display
         self.vorticity_revision = replacement.vorticity_revision
+        self.vorticity_solver_state_revision = replacement.vorticity_solver_state_revision
         self.presentation = replacement.presentation
         self.recovery_notice = None
         self.drag_active = False
@@ -524,10 +601,12 @@ class ViewerModel:
         self.tuning_notice = None
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
+        self.last_pose_received_at = None
         self.recovery_reason = None
         self.recovery_stage = None
         self.metrics_warming = True
         self.warm_validation_pending = False
+        self.presentation_failure = None
 
     def _remember_active_tuning(self) -> InteractiveTuning | None:
         tuning = self.manager.solver.interactive_tuning()
@@ -569,8 +648,13 @@ class ViewerModel:
     def toggle_vorticity(self) -> bool:
         self.show_vorticity = not self.show_vorticity
         if self.show_vorticity:
-            self._refresh_diagnostics(force_vorticity=True)
-            self.presentation.diagnostic_elapsed = 0.0
+            try:
+                self._refresh_diagnostics(force_vorticity=True)
+            except Exception as error:
+                self._pause_for_presentation_failure("diagnostic", error)
+            else:
+                self.presentation.diagnostic_elapsed = 0.0
+                self.presentation_failure = None
         return self.show_vorticity
 
     def toggle_diagnostics(self) -> DiagnosticMode:
@@ -579,8 +663,13 @@ class ViewerModel:
             if self.presentation.diagnostic_mode == "cadenced"
             else "cadenced"
         )
-        self._refresh_diagnostics()
-        self.presentation.diagnostic_elapsed = 0.0
+        try:
+            self._refresh_diagnostics()
+        except Exception as error:
+            self._pause_for_presentation_failure("diagnostic", error)
+        else:
+            self.presentation.diagnostic_elapsed = 0.0
+            self.presentation_failure = None
         return self.presentation.diagnostic_mode
 
     def toggle_crop(self) -> bool:
@@ -615,6 +704,8 @@ class ViewerModel:
             warning = "  warm-import transient"
         if self.recovery_notice is not None:
             warning = f"  recovered={self.recovery_notice}"
+        if self.presentation_failure is not None:
+            warning = f"  presentation-error={self.presentation_failure}"
         motion_mode = "  motion=pose-only" if self.pose_only_drag else ""
         recovery_epoch = (
             f"  recovery_epoch={self.recovery_count}" if self.recovery_count else ""

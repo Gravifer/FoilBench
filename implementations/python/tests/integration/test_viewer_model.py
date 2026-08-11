@@ -34,8 +34,10 @@ def test_viewer_bounds_can_crop_only_the_presentation(
     assert bounds[1][1] == pytest.approx(scenario.domain.bounds[1][1] - 3 * scenario.domain.dy)
     assert scenario.domain.bounds != bounds
     assert full_bounds == (scenario.domain.bounds[0], scenario.domain.bounds[1])
-    assert viewer_crop_enabled_by_default(scenario)
+    assert not viewer_crop_enabled_by_default(scenario)
 
+    scenario.solver_options["viewer_crop_default"] = True
+    assert viewer_crop_enabled_by_default(scenario)
     scenario.solver_options["viewer_crop_default"] = False
     assert not viewer_crop_enabled_by_default(scenario)
     scenario.solver_options["viewer_crop_default"] = "yes"
@@ -238,7 +240,7 @@ def test_pose_only_drag_tracks_angle_and_clears_after_release(
     model.set_angle(12.0, 1.0)
 
     assert model.control(scenario.output_dt).angular_velocity_degrees == 0.0
-    model.set_angle(13.0, 1.1)
+    model.set_angle(13.0, 1.05)
     assert model.control(scenario.output_dt).angular_velocity_degrees != 0.0
     model.enable_pose_only_drag()
     pose_control = model.control(scenario.output_dt)
@@ -297,6 +299,19 @@ def test_drag_velocity_uses_timestamped_samples_and_a_generous_cap(
     model.set_angle(30.0, 1.01)
     assert model.rapid_drag_attempted
     assert model.requested_tip_speed_ratio <= 8.0 + 1.0e-6
+
+
+def test_nonmonotonic_drag_sample_does_not_fabricate_a_tiny_interval(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    model.set_angle(0.0, 1.0)
+    model.set_angle(20.0, 1.01)
+    assert model.control(model.scenario.output_dt).angular_velocity_degrees != 0.0
+
+    model.set_angle(10.0, 1.005)
+
+    assert model.control(model.scenario.output_dt).angular_velocity_degrees == 0.0
 
 
 def test_pose_only_survives_warm_switch_and_pic_uses_authoritative_wall_speed(

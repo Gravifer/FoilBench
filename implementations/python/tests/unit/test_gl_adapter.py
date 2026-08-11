@@ -19,6 +19,10 @@ def _snapshot(revision: int, status: str, *, cropped: bool) -> ViewerSnapshot:
     return ViewerSnapshot(
         revision=revision,
         applied_command=0,
+        solver_epoch=0,
+        solver_state_revision=0,
+        diagnostic_solver_state_revision=None,
+        vorticity_solver_state_revision=None,
         simulation_time=float(revision),
         angle_degrees=0.0,
         status=status,

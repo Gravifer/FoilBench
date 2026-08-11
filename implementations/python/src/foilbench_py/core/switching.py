@@ -1,5 +1,6 @@
 """Atomic direct warm switching among solvers in one implementation."""
 
+import math
 from collections.abc import Callable
 from dataclasses import replace
 from time import perf_counter
@@ -7,12 +8,12 @@ from time import perf_counter
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import (
     CanonicalFlowState,
-    ControlKeyframe,
     ControlState,
     ImportFailureReason,
     ImportOutcome,
     ImportReport,
     NumericalFailure,
+    RestartState,
     Scenario,
     StepReport,
 )
@@ -154,27 +155,30 @@ class SolverManager:
     def restart_at(self, control: ControlState) -> None:
         """Atomically replace the active solver with a fresh state at ``control``."""
         solver_id = self._solver.info.id
-        initialization_scenario = replace(
-            self._scenario,
-            controls=(ControlKeyframe(0.0, control.angle_degrees),),
-        )
         candidate = self._factory(solver_id)
-        candidate.initialize(
-            initialization_scenario,
+        candidate.restart(
+            self._scenario,
             self._geometry,
             self._scenario.seed,
+            RestartState(control.time, control.angle_degrees, self._reynolds),
         )
-        candidate.set_reynolds(self._reynolds)
-        state = state_at_control(candidate.export_state(), control)
+        state = candidate.export_state()
         if state.source_solver != solver_id:
             raise RuntimeError(
                 f"fresh {solver_id!r} solver exported state for {state.source_solver!r}"
             )
-        outcome = candidate.import_state(state, control)
-        if not outcome.accepted:
+        time_matches = math.isclose(
+            state.time, control.time, rel_tol=0.0, abs_tol=1.0e-12
+        )
+        pose_matches = math.isclose(
+            state.angle_degrees,
+            control.angle_degrees,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        )
+        if not time_matches or not pose_matches:
             raise RuntimeError(
-                f"fresh {solver_id!r} solver rejected its own canonical state: "
-                f"{outcome.reason}"
+                f"fresh {solver_id!r} solver disagreed with authoritative time or pose"
             )
         candidate.diagnostics()
         self._solver = candidate
@@ -193,17 +197,29 @@ class SolverManager:
                 "unsupported_conversion",
                 warnings=(str(error),),
             )
-        initialization_scenario = replace(
-            self._scenario,
-            controls=(ControlKeyframe(0.0, control.angle_degrees),),
-        )
         try:
-            candidate.initialize(initialization_scenario, self._geometry, self._scenario.seed)
-            candidate.set_reynolds(self._reynolds)
-            state = state_at_control(candidate.export_state(), control)
-            outcome = candidate.import_state(state, control)
-            if not outcome.accepted:
-                return outcome
+            candidate.restart(
+                self._scenario,
+                self._geometry,
+                self._scenario.seed,
+                RestartState(control.time, control.angle_degrees, self._reynolds),
+            )
+            state = candidate.export_state()
+            time_matches = math.isclose(
+                state.time, control.time, rel_tol=0.0, abs_tol=1.0e-12
+            )
+            pose_matches = math.isclose(
+                state.angle_degrees,
+                control.angle_degrees,
+                rel_tol=0.0,
+                abs_tol=1.0e-12,
+            )
+            if not time_matches or not pose_matches:
+                return ImportOutcome(
+                    "rejected",
+                    "postcondition_failure",
+                    warnings=("fresh destination disagreed with authoritative time or pose",),
+                )
             candidate.diagnostics()
         except NumericalFailure as error:
             return ImportOutcome(

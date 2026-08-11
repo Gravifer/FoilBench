@@ -272,8 +272,40 @@ def test_tracer_programming_error_pauses_without_solver_recovery(
     try:
         failed = worker.wait_for_revision(1)
         assert model.paused
-        assert failed.failure is not None
-        assert "injected tracer invariant failure" in failed.failure
+        assert failed.failure is None
+        assert failed.phase == "failed"
+        assert "presentation-error=tracer ValueError" in failed.status
+        assert failed.simulation_time == pytest.approx(model.scenario.output_dt)
+        assert model.manager.solver is solver
+        assert model.recovery_count == 0
+    finally:
+        worker.close()
+
+
+def test_diagnostic_numerical_failure_preserves_committed_solver_step(
+    scenario_factory: ScenarioFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ViewerModel.create(
+        scenario_factory(resolution=(32, 16)),
+        "stable-fluids",
+    )
+    solver = model.manager.solver
+    model.presentation.diagnostic_interval = 0.0
+
+    def fail_diagnostics() -> None:
+        raise NumericalFailure("nonfinite_state", "injected diagnostic failure")
+
+    monkeypatch.setattr(solver, "diagnostics", fail_diagnostics)
+    worker = SimulationWorker(model, maximum_steps_per_second=20.0)
+    worker.start()
+    try:
+        failed = worker.wait_for_revision(1)
+        assert model.paused
+        assert failed.failure is None
+        assert failed.phase == "failed"
+        assert "presentation-error=diagnostic NumericalFailure" in failed.status
+        assert failed.simulation_time == pytest.approx(model.scenario.output_dt)
         assert model.manager.solver is solver
         assert model.recovery_count == 0
     finally:
