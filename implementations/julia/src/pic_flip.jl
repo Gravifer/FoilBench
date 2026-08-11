@@ -28,6 +28,8 @@ mutable struct PicFlipSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     projection_iterations::Int
     solid_angle::T
     unsupported_face_fraction::T
+    native_divergence_linf::T
+    native_solid_leakage::T
     revision::Int
 end
 
@@ -54,6 +56,8 @@ function PicFlipSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         0,
         T(NaN),
         zero(T),
+        T(NaN),
+        T(NaN),
         0,
     )
 end
@@ -163,6 +167,8 @@ function initialize!(
     solver.projection_iterations = 0
     solver.revision = 0
     solver.unsupported_face_fraction = zero(T)
+    solver.native_divergence_linf = T(NaN)
+    solver.native_solid_leakage = T(NaN)
     _pic_seed_particles!(solver)
     fallback_u, fallback_v = cell_to_faces(solver.grid_velocity)
     u, v, solver.unsupported_face_fraction = particle_to_faces(
@@ -201,6 +207,8 @@ function restart!(
     _pic_seed_particles!(solver)
     solver.revision = 0
     solver.unsupported_face_fraction = zero(T)
+    solver.native_divergence_linf = T(NaN)
+    solver.native_solid_leakage = T(NaN)
     return nothing
 end
 
@@ -696,6 +704,12 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
         solver.solid[i, j] || push!(fluid_counts, counts[(j - 1) * nx(scenario.domain) + i])
     end
     final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    solver.native_divergence_linf = native_divergence_linf(
+        projected_u, projected_v, scenario.domain, solver.solid,
+    )
+    solver.native_solid_leakage = solid_face_leakage(
+        projected_u, projected_v, solver.solid, final_wall,
+    )
     return StepReport(
         target, target, substeps, final_speed, warnings, solver.revision,
         Dict{String,Any}(
@@ -717,12 +731,8 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
             "viscosity_converged" => true,
             "viscosity_iterations" => viscosity_iterations,
             "viscosity_final_residual" => diffusion_residual,
-            "divergence_linf" => native_divergence_linf(
-                projected_u, projected_v, scenario.domain, solver.solid,
-            ),
-            "solid_leakage" => solid_face_leakage(
-                projected_u, projected_v, solver.solid, final_wall,
-            ),
+            "divergence_linf" => solver.native_divergence_linf,
+            "solid_leakage" => solver.native_solid_leakage,
             "requested_reynolds" => solver.reynolds_value,
             "effective_reynolds" => solver.reynolds_value,
             "degraded_motion" => wall_speed == zero(T) &&
@@ -789,6 +799,8 @@ function import_state!(
         solver.grid_velocity = velocity
         _pic_seed_particles!(solver)
         solver.settling_steps = 1
+        solver.native_divergence_linf = T(NaN)
+        solver.native_solid_leakage = T(NaN)
     catch failure
         solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
             solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
@@ -835,11 +847,10 @@ function diagnostics(solver::PicFlipSolver)
         "kinetic_energy" => Float64(kinetic_energy(solver.grid_velocity)),
         "enstrophy" => Float64(enstrophy(solver.grid_velocity, scenario.domain)),
         "divergence_l2" => Float64(divergence_l2(solver.grid_velocity, scenario.domain)),
-        "solid_leakage" => Float64(solid_leakage(solver.grid_velocity, solver.solid)),
         "particle_count" => Float64(size(solver.positions, 2)),
         "unsupported_face_fraction" => Float64(solver.unsupported_face_fraction),
         "empty_fluid_cell_fraction" => count(==(0), fluid_counts) / length(fluid_counts),
-        "underfilled_fluid_cell_fraction" => count(<(2), fluid_counts) / length(fluid_counts),
+        "underfilled_fluid_cell_fraction" => count(<(4), fluid_counts) / length(fluid_counts),
         "p05_particles_per_fluid_cell" => _pic_percentile(fluid_counts, 0.05),
         "p95_particles_per_fluid_cell" => _pic_percentile(fluid_counts, 0.95),
         "max_particles_per_fluid_cell" => Float64(maximum(fluid_counts)),
@@ -850,6 +861,10 @@ function diagnostics(solver::PicFlipSolver)
         "recirculation_area" => Float64(recirculation_area(solver.grid_velocity, scenario.domain, scenario.foil.pivot[1])),
         "projection_iterations" => Float64(solver.projection_iterations),
     )
+    isfinite(solver.native_divergence_linf) &&
+        (values["divergence_linf"] = Float64(solver.native_divergence_linf))
+    isfinite(solver.native_solid_leakage) &&
+        (values["solid_leakage"] = Float64(solver.native_solid_leakage))
     all(isfinite, Base.values(values)) || throw(NumericalFailure(
         :nonfinite_state,
         "PIC/FLIP produced non-finite diagnostics",

@@ -914,6 +914,15 @@ end
             @test report.evidence["solid_leakage"] <=
                 fixture.limits.mac_maximum_solid_leakage
         end
+        diagnostic_values = diagnostics(solver).values
+        @test isfinite(diagnostic_values["solid_leakage"])
+        if solver_id in ("stable-fluids", "pic-flip")
+            @test isfinite(diagnostic_values["divergence_linf"])
+        else
+            @test !haskey(diagnostic_values, "divergence_linf")
+            @test diagnostic_values["solid_leakage"] == 0.0
+            @test isfinite(diagnostic_values["cut_link_adjacent_normal_speed"])
+        end
 
         mismatch = solver_id == "stable-fluids" ? StableFluidsSolver(T) :
             solver_id == "lbm-d2q9" ? LBMSolver(T) : PicFlipSolver(T)

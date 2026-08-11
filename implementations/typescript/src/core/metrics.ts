@@ -45,8 +45,8 @@ export function fieldDiagnostics(
     kinetic_energy: kineticEnergy / cells,
     energy: kineticEnergy / cells,
     enstrophy: enstrophy / cells,
-    divergence_linf: divergenceLinf,
-    solid_leakage: solidLeakage,
+    reconstructed_divergence_linf: divergenceLinf,
+    solid_cell_speed: solidLeakage,
     wake_width: Number.isFinite(wakeMinimum) ? wakeMaximum - wakeMinimum : 0,
     recirculation_area: recirculationArea,
   };

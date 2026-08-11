@@ -96,6 +96,13 @@ export class StableFluidsSolver implements FlowSolver {
     for (let y = 0; y <= ny; y += 1) for (let x = 0; x < nx; x += 1) { const bottomSolid = y > 0 && this.solid[(y - 1) * nx + x] !== 0; const topSolid = y < ny && this.solid[y * nx + x] !== 0; if (bottomSolid || topSolid) { const px = bx[0] + (x + 0.5) * dx; this.v[y * nx + x] = omega * (px - pivotX); } }
   }
 
+  private solidFaceLeakage(control: ControlState): number {
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); const pivotX = scenario.foil.pivot[0] ?? 0; const pivotY = scenario.foil.pivot[1] ?? 0; const omega = control.angularVelocityDegrees * Math.PI / 180; let maximum = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 1; x < nx; x += 1) { const leftSolid = this.solid[y * nx + x - 1] !== 0; const rightSolid = this.solid[y * nx + x] !== 0; if (leftSolid === rightSolid) continue; const py = by[0] + (y + 0.5) * dy; const wallU = -omega * (py - pivotY); maximum = Math.max(maximum, Math.abs((this.u[y * (nx + 1) + x] ?? 0) - wallU)); }
+    for (let y = 1; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const bottomSolid = this.solid[(y - 1) * nx + x] !== 0; const topSolid = this.solid[y * nx + x] !== 0; if (bottomSolid === topSolid) continue; const px = bx[0] + (x + 0.5) * dx; const wallV = omega * (px - pivotX); maximum = Math.max(maximum, Math.abs((this.v[y * nx + x] ?? 0) - wallV)); }
+    return maximum;
+  }
+
   private backtrace(velocity: FloatArray, px: number, py: number, dt: number): readonly [number, number] {
     const scenario = this.requireScenario(); const first = sampleCell(velocity, scenario.domain, px, py); const midpointX = px - 0.5 * dt * first[0]; const midpointY = py - 0.5 * dt * first[1]; const midpoint = sampleCell(velocity, scenario.domain, midpointX, midpointY); return [px - dt * midpoint[0], py - dt * midpoint[1]];
   }
@@ -191,7 +198,7 @@ export class StableFluidsSolver implements FlowSolver {
 
   private motionEvidence(maxSpeed: number, substepDt: number, control: ControlState, angleDeltaDegrees: number): Readonly<Record<string, number | boolean>> {
     const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const omega = Math.abs(control.angularVelocityDegrees) * Math.PI / 180; const maximumWallSpeed = omega * scenario.foil.chord; const fluidCfl = substepDt * maxSpeed * (1 / dx + 1 / dy); const displacement = substepDt * maxSpeed / Math.min(dx, dy); const boundarySweep = scenario.foil.chord * Math.abs(angleDeltaDegrees) * Math.PI / (180 * Math.min(dx, dy));
-    return {maximum_fluid_speed: maxSpeed, maximum_wall_speed: maximumWallSpeed, maximum_cfl: fluidCfl, maximum_characteristic_displacement: displacement, maximum_boundary_sweep: boundarySweep, pressure_converged: this.lastProjection.converged, pressure_iterations: this.lastProjection.iterations, pressure_relative_residual: this.lastProjection.relativeResidual, divergence_linf: this.lastProjection.divergenceLinf, solid_leakage: 0, viscosity_converged: this.lastViscosity.converged, viscosity_iterations: this.lastViscosity.iterations, viscosity_final_residual: this.lastViscosity.finalResidual, requested_reynolds: this.reynolds, effective_reynolds: this.reynolds, degraded_motion: maximumWallSpeed === 0 && Math.abs(angleDeltaDegrees) > 1e-9};
+    return {maximum_fluid_speed: maxSpeed, maximum_wall_speed: maximumWallSpeed, maximum_cfl: fluidCfl, maximum_characteristic_displacement: displacement, maximum_boundary_sweep: boundarySweep, pressure_converged: this.lastProjection.converged, pressure_iterations: this.lastProjection.iterations, pressure_relative_residual: this.lastProjection.relativeResidual, divergence_linf: this.lastProjection.divergenceLinf, solid_leakage: this.solidFaceLeakage(control), viscosity_converged: this.lastViscosity.converged, viscosity_iterations: this.lastViscosity.iterations, viscosity_final_residual: this.lastViscosity.finalResidual, requested_reynolds: this.reynolds, effective_reynolds: this.reynolds, degraded_motion: maximumWallSpeed === 0 && Math.abs(angleDeltaDegrees) > 1e-9};
   }
 
   public advance(control: ControlState, targetDt: number): StepReport {
@@ -225,5 +232,5 @@ export class StableFluidsSolver implements FlowSolver {
     this.revision += 1;
     return acceptedImport(["pressure history"]);
   }
-  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); return {stateRevision: this.revision, values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), effective_reynolds: this.reynolds}, warnings: []}; }
+  public diagnostics(): Diagnostics { const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing"); const {nx, ny} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); return {stateRevision: this.revision, values: {...fieldDiagnostics(velocity, scenario, foil, this.control.angleDegrees), divergence_linf: this.lastProjection.divergenceLinf, solid_leakage: this.solidFaceLeakage(this.control), effective_reynolds: this.reynolds}, warnings: []}; }
 }

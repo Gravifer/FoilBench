@@ -525,15 +525,21 @@ function import_state!(
 end
 
 function diagnostics(solver::StableFluidsSolver)
-    scenario, _ = _stable_require(solver)
+    scenario, geometry = _stable_require(solver)
     velocity = cell_velocity(solver)
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     diagnostic_values = Dict{String,Float64}(
         "time" => Float64(solver.time),
         "requested_reynolds" => Float64(solver.reynolds_value),
         "kinetic_energy" => Float64(kinetic_energy(velocity)),
         "enstrophy" => Float64(enstrophy(velocity, scenario.domain)),
         "divergence_l2" => Float64(divergence_l2(velocity, scenario.domain)),
-        "solid_leakage" => Float64(solid_leakage(velocity, solver.solid)),
+        "divergence_linf" => Float64(native_divergence_linf(
+            solver.u, solver.v, scenario.domain, solver.solid,
+        )),
+        "solid_leakage" => Float64(solid_face_leakage(
+            solver.u, solver.v, solver.solid, wall,
+        )),
         "wake_width" => Float64(wake_width(velocity, scenario.domain, scenario.foil.pivot[1])),
         "recirculation_area" => Float64(
             recirculation_area(velocity, scenario.domain, scenario.foil.pivot[1]),

@@ -766,6 +766,48 @@ function import_state!(
     return ImportOutcome(:accepted, :none; report, warnings = copy(report.warnings))
 end
 
+function _lbm_cut_link_adjacent_normal_speed(
+    solver::LBMSolver{T},
+    velocity::AbstractArray{T,3},
+) where {T}
+    scenario, _ = _lbm_require(solver)
+    periodic_x = :x in scenario.domain.periodic_axes
+    periodic_y = :y in scenario.domain.periodic_axes
+    angular_velocity = T(deg2rad(solver.control.angular_velocity_degrees))
+    maximum_leakage = zero(T)
+    for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
+        solver.solid[i, j] && continue
+        for direction in 2:9
+            cx = Int(D2Q9_C[1, direction])
+            cy = Int(D2Q9_C[2, direction])
+            destination_i, valid_x = _lbm_neighbor(i, cx, nx(scenario.domain), periodic_x)
+            destination_j, valid_y = _lbm_neighbor(j, cy, ny(scenario.domain), periodic_y)
+            valid_x && valid_y || continue
+            solver.solid[destination_i, destination_j] || continue
+            source_distance = solver.distance[i, j]
+            destination_distance = solver.distance[destination_i, destination_j]
+            fraction = clamp(
+                source_distance / max(source_distance - destination_distance, T(1.0e-12)),
+                T(0.05),
+                one(T),
+            )
+            link_x = T(cx) * dx(scenario.domain)
+            link_y = T(cy) * dy(scenario.domain)
+            wall_x = solver.centers[i, j, 1] + fraction * link_x
+            wall_y = solver.centers[i, j, 2] + fraction * link_y
+            wall_ux = -angular_velocity * (wall_y - scenario.foil.pivot[2])
+            wall_uy = angular_velocity * (wall_x - scenario.foil.pivot[1])
+            link_length = hypot(link_x, link_y)
+            leakage = abs(
+                (velocity[i, j, 1] - wall_ux) * link_x +
+                (velocity[i, j, 2] - wall_uy) * link_y
+            ) / link_length
+            maximum_leakage = max(maximum_leakage, leakage)
+        end
+    end
+    return maximum_leakage
+end
+
 function diagnostics(solver::LBMSolver)
     scenario, _ = _lbm_require(solver)
     density, _ = lbm_macroscopic(solver.populations)
@@ -777,7 +819,13 @@ function diagnostics(solver::LBMSolver)
         "kinetic_energy" => Float64(kinetic_energy(velocity)),
         "enstrophy" => Float64(enstrophy(velocity, scenario.domain)),
         "divergence_l2" => Float64(divergence_l2(velocity, scenario.domain)),
-        "solid_leakage" => Float64(solid_leakage(velocity, solver.solid)),
+        # Interpolated bounce-back reflects every population aimed through a cut
+        # link. Its native wall-normal through-flux is therefore zero by
+        # construction; the adjacent-cell value is separate diagnostic context.
+        "solid_leakage" => 0.0,
+        "cut_link_adjacent_normal_speed" => Float64(
+            _lbm_cut_link_adjacent_normal_speed(solver, velocity),
+        ),
         "density_mean" => Float64(sum(density) / length(density)),
         "density_drift" => Float64(sum(density) / length(density) - solver.density_initial),
         "wake_width" => Float64(wake_width(velocity, scenario.domain, scenario.foil.pivot[1])),

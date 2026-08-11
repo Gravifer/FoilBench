@@ -18,7 +18,6 @@ from foilbench_py.core.metrics import (
     enstrophy,
     kinetic_energy,
     recirculation_area,
-    solid_leakage,
     wake_width,
 )
 from foilbench_py.core.models import (
@@ -142,6 +141,8 @@ class PicFlipSolver:
         self._swept_collisions_last_step: int = 0
         self._revision: int = 0
         self._unsupported_face_fraction: float = 0.0
+        self._native_divergence_linf: float | None = None
+        self._native_solid_leakage: float | None = None
 
     @property
     def reynolds(self) -> float:
@@ -224,6 +225,8 @@ class PicFlipSolver:
         self._reynolds = float(scenario.reynolds)
         self._revision = 0
         self._unsupported_face_fraction = 0.0
+        self._native_divergence_linf = None
+        self._native_solid_leakage = None
         self._last_projection = IterativeReport("relative-l2", 0.0, 0, 0.0, True)
         self._last_viscosity = IterativeReport("update-linf", 0.0, 0, 0.0, True)
         configured_blend = scenario.solver_options.get("pic_flip_blend", 0.95)
@@ -863,6 +866,8 @@ class PicFlipSolver:
             final_solid,
             final_wall,
         )
+        self._native_divergence_linf = native_divergence
+        self._native_solid_leakage = native_leakage
         fluid_counts = counts[~final_solid.reshape(-1)]
         empty_fraction = float(np.count_nonzero(fluid_counts == 0)) / max(
             1,
@@ -965,6 +970,8 @@ class PicFlipSolver:
             self._grid_velocity = velocity
             self._seed_particles(self._grid_velocity)
             self._settling_steps = 1
+            self._native_divergence_linf = None
+            self._native_solid_leakage = None
         except NumericalFailure as failure:
             (
                 self._positions,
@@ -1025,7 +1032,6 @@ class PicFlipSolver:
             "kinetic_energy": kinetic_energy(grid_velocity),
             "enstrophy": enstrophy(grid_velocity, scenario.domain),
             "divergence_l2": divergence_l2(grid_velocity, scenario.domain),
-            "solid_leakage": solid_leakage(grid_velocity, solid),
             "particle_count": float(positions.shape[0]),
             "unsupported_face_fraction": self._unsupported_face_fraction,
             "empty_fluid_cell_fraction": float(np.count_nonzero(fluid_counts == 0))
@@ -1050,6 +1056,10 @@ class PicFlipSolver:
                 grid_velocity, scenario.domain, scenario.foil.pivot[0]
             ),
         }
+        if self._native_divergence_linf is not None:
+            values["divergence_linf"] = self._native_divergence_linf
+        if self._native_solid_leakage is not None:
+            values["solid_leakage"] = self._native_solid_leakage
         if not all(np.isfinite(value) for value in values.values()):
             raise NumericalFailure(
                 "nonfinite_state",

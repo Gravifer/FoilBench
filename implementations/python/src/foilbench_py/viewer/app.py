@@ -713,7 +713,14 @@ class ViewerModel:
         warming = self.metrics_warming or diagnostics is None or report is None
         energy = 0.0 if diagnostics is None else diagnostics.values.get("kinetic_energy", 0.0)
         enstrophy = 0.0 if diagnostics is None else diagnostics.values.get("enstrophy", 0.0)
-        divergence = 0.0 if diagnostics is None else diagnostics.values.get("divergence_l2", 0.0)
+        divergence = (
+            0.0
+            if diagnostics is None
+            else diagnostics.values.get(
+                "divergence_linf",
+                diagnostics.values.get("divergence_l2", 0.0),
+            )
+        )
         leakage = 0.0 if diagnostics is None else diagnostics.values.get("solid_leakage", 0.0)
         paused = "  PAUSED" if self.paused else ""
         control = self.control(self.scenario.output_dt)

@@ -81,6 +81,12 @@ describe("revision-2 solver validity evidence", () => {
       expect(Number(evidence["divergence_linf"])).toBeLessThanOrEqual(fixture.limits["mac_maximum_divergence_linf"] ?? 0);
       expect(Number(evidence["solid_leakage"])).toBeLessThanOrEqual(fixture.limits["mac_maximum_solid_leakage"] ?? 0);
     }
+    for (const solverId of solverIds) {
+      const solver = createSolver(solverId); solver.initialize(scenario, 0); solver.advance({time: fixture.target_dt, angleDegrees: 0, angularVelocityDegrees: 0}, fixture.target_dt); const values = solver.diagnostics().values;
+      expect(Number.isFinite(values["solid_leakage"])).toBe(true);
+      if (solverId === "lbm-d2q9") { expect(values["divergence_linf"]).toBeUndefined(); expect(values["solid_leakage"]).toBe(0); expect(Number.isFinite(values["cut_link_adjacent_normal_speed"])).toBe(true); }
+      else expect(Number.isFinite(values["divergence_linf"])).toBe(true);
+    }
   });
 
   it("classifies a finite pressure solve that exhausts its iteration budget", async () => {

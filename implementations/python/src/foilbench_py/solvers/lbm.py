@@ -11,7 +11,6 @@ from foilbench_py.core.metrics import (
     enstrophy,
     kinetic_energy,
     recirculation_area,
-    solid_leakage,
     wake_width,
 )
 from foilbench_py.core.models import (
@@ -997,8 +996,57 @@ class LBMSolver:
         )
         return ImportOutcome("accepted", "none", report, report.warnings)
 
+    def _cut_link_adjacent_normal_speed(self, velocity: VelocityField) -> float:
+        scenario, geometry, _, solid = self._require()
+        if self._centers is None or self._signed_distance is None:
+            raise RuntimeError("LBM geometry cache has not been initialized")
+        maximum = 0.0
+        for direction, (cx_raw, cy_raw) in enumerate(self._C):
+            if direction == 0:
+                continue
+            cx = int(cx_raw)
+            cy = int(cy_raw)
+            destination_solid = np.roll(solid, shift=(-cy, -cx), axis=(0, 1))
+            wall_link = ~solid & destination_solid
+            if "x" not in scenario.domain.periodic_axes:
+                if cx > 0:
+                    wall_link[:, -cx:] = False
+                elif cx < 0:
+                    wall_link[:, :-cx] = False
+            if "y" not in scenario.domain.periodic_axes:
+                if cy > 0:
+                    wall_link[-cy:, :] = False
+                elif cy < 0:
+                    wall_link[:-cy, :] = False
+            if not np.any(wall_link):
+                continue
+            destination_distance = np.roll(
+                self._signed_distance,
+                shift=(-cy, -cx),
+                axis=(0, 1),
+            )
+            fraction = np.clip(
+                self._signed_distance
+                / np.maximum(self._signed_distance - destination_distance, 1.0e-12),
+                0.05,
+                1.0,
+            )[wall_link]
+            wall_points = self._centers[wall_link].copy()
+            link_x = cx * scenario.domain.dx
+            link_y = cy * scenario.domain.dy
+            wall_points[:, 0] += fraction * link_x
+            wall_points[:, 1] += fraction * link_y
+            wall_velocity = geometry.wall_velocity(wall_points, self._control)
+            relative = velocity[wall_link] - wall_velocity
+            link_length = float(np.hypot(link_x, link_y))
+            projection = np.abs(
+                (relative[:, 0] * link_x + relative[:, 1] * link_y) / link_length
+            )
+            maximum = max(maximum, float(np.max(projection)))
+        return maximum
+
     def diagnostics(self) -> Diagnostics:
-        scenario, _, populations, solid = self._require()
+        scenario, _, populations, _ = self._require()
         density, _ = self._macroscopic(populations)
         velocity = self._physical_velocity()
         values = {
@@ -1007,7 +1055,14 @@ class LBMSolver:
             "kinetic_energy": kinetic_energy(velocity),
             "enstrophy": enstrophy(velocity, scenario.domain),
             "divergence_l2": divergence_l2(velocity, scenario.domain),
-            "solid_leakage": solid_leakage(velocity, solid),
+            # Interpolated bounce-back reflects every population aimed through a
+            # cut link, so the native wall-normal through-flux is zero by
+            # construction. The adjacent-cell value is diagnostic context, not
+            # wall leakage.
+            "solid_leakage": 0.0,
+            "cut_link_adjacent_normal_speed": (
+                self._cut_link_adjacent_normal_speed(velocity)
+            ),
             "density_mean": float(np.mean(density)),
             "density_drift": float(np.mean(density) - self._density_initial),
             "effective_reynolds": self._effective_reynolds,

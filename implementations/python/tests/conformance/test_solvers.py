@@ -209,6 +209,14 @@ def test_shared_revision_3_validity_fixture() -> None:
             assert float(report.evidence["solid_leakage"]) <= fixture["limits"][
                 "mac_maximum_solid_leakage"
             ]
+        diagnostic_values = solver.diagnostics().values
+        assert np.isfinite(diagnostic_values["solid_leakage"])
+        if solver_id in {"stable-fluids", "pic-flip"}:
+            assert np.isfinite(diagnostic_values["divergence_linf"])
+        else:
+            assert "divergence_linf" not in diagnostic_values
+            assert diagnostic_values["solid_leakage"] == 0.0
+            assert np.isfinite(diagnostic_values["cut_link_adjacent_normal_speed"])
 
         mismatch = create_solver(solver_id)
         mismatch.initialize(scenario, geometry, scenario.seed)

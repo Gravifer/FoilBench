@@ -590,7 +590,11 @@ function snapshot(model::ViewerModel{T}) where {T}
         something(model.manual_angle)
     energy = get(solver_diagnostics.values, "kinetic_energy", 0.0)
     enstrophy_value = get(solver_diagnostics.values, "enstrophy", 0.0)
-    divergence = get(solver_diagnostics.values, "divergence_l2", 0.0)
+    divergence = get(
+        solver_diagnostics.values,
+        "divergence_linf",
+        get(solver_diagnostics.values, "divergence_l2", 0.0),
+    )
     leakage = get(solver_diagnostics.values, "solid_leakage", 0.0)
     tuning = interactive_tuning(model.solver)
     tuning_display = tuning === nothing ? "" :

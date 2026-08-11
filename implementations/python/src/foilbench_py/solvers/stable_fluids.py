@@ -24,7 +24,6 @@ from foilbench_py.core.metrics import (
     enstrophy,
     kinetic_energy,
     recirculation_area,
-    solid_leakage,
     wake_width,
 )
 from foilbench_py.core.models import (
@@ -636,15 +635,17 @@ class StableFluidsSolver:
         return ImportOutcome("accepted", "none", report, report.warnings)
 
     def diagnostics(self) -> Diagnostics:
-        scenario, _, _, _, solid = self._require()
+        scenario, _, u, v, solid = self._require()
         velocity = self.cell_velocity()
+        wall = self._wall_grid(self._control)
         values = {
             "time": self._time,
             "requested_reynolds": self._reynolds,
             "kinetic_energy": kinetic_energy(velocity),
             "enstrophy": enstrophy(velocity, scenario.domain),
             "divergence_l2": divergence_l2(velocity, scenario.domain),
-            "solid_leakage": solid_leakage(velocity, solid),
+            "divergence_linf": native_divergence_linf(u, v, scenario.domain, solid),
+            "solid_leakage": solid_face_leakage(u, v, solid, wall),
             "wake_width": wake_width(velocity, scenario.domain, scenario.foil.pivot[0]),
             "recirculation_area": recirculation_area(
                 velocity, scenario.domain, scenario.foil.pivot[0]
