@@ -761,14 +761,14 @@ function _fresh_solver_at_control(
     selected_reynolds::Real = reynolds(model.solver),
 ) where {T}
     incoming = _create_solver(T, solver_id)
-    initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
-    _apply_saved_tuning!(model, incoming)
-    set_reynolds!(incoming, selected_reynolds)
-    fresh_state = _state_at_control(export_state(incoming), control)
-    outcome = import_state!(incoming, fresh_state, control)
-    accepted(outcome) || error(
-        "fresh $solver_id solver rejected its own canonical state: $(outcome.reason)",
+    restart!(
+        incoming,
+        model.scenario,
+        model.geometry,
+        model.scenario.seed,
+        RestartState(T(control.time), T(control.angle_degrees), T(selected_reynolds)),
     )
+    _apply_saved_tuning!(model, incoming)
     return incoming
 end
 
@@ -930,7 +930,7 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
     initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
     _apply_saved_tuning!(model, incoming)
     set_reynolds!(incoming, selected_reynolds)
-    outcome = import_state!(incoming, state, import_control)
+    outcome = import_state!(incoming, _state_at_control(state, import_control), import_control)
     if !accepted(outcome)
         return _reject_or_fallback!(model, solver_id, outcome.reason, outcome.warnings)
     end

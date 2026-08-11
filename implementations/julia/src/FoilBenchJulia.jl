@@ -13,6 +13,7 @@ include("contracts.jl")
 include("schema_validation.jl")
 include("scenario.jl")
 include("state_io.jl")
+include("solver_validation.jl")
 include("geometry_grid.jl")
 include("interpolation.jl")
 include("grid.jl")
@@ -33,6 +34,8 @@ export AbstractFlowSolver
 export ImportOutcome
 export InteractiveTuning
 export NumericalFailure
+export RestartState
+export ReynoldsOutcome
 export accepted
 export CanonicalFlowState
 export ControlKeyframe
@@ -81,6 +84,7 @@ export import_state!
 export implicit_diffuse_scalar
 export implicit_diffuse_velocity
 export initialize!
+export restart!
 export kinetic_energy
 export lbm_equilibrium
 export lbm_macroscopic
@@ -106,6 +110,7 @@ export project_faces!
 export recirculation_area
 export require_supported
 export reynolds
+export state_revision
 export rk2_backtrace
 export sample_scalar
 export sample_staggered_scalar

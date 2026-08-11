@@ -6,6 +6,12 @@ const LBM_D2Q9_INFO = SolverInfo(
     :julia_cpu,
 )
 
+const LBM_LATTICE_SOUND_SPEED = 1 / sqrt(3)
+const LBM_MAXIMUM_MACH = 0.08
+const LBM_MAXIMUM_LATTICE_SPEED = LBM_MAXIMUM_MACH * LBM_LATTICE_SOUND_SPEED
+const LBM_MAXIMUM_SUBSTEPS = 512
+const LBM_MINIMUM_POPULATION = -0.05
+
 mutable struct LBMSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     scenario::Union{Nothing,Scenario{2,T}}
     geometry::Union{Nothing,NacaFoil{2,T}}
@@ -23,6 +29,7 @@ mutable struct LBMSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     scaling::LBMScaling{T}
     solid_angle::T
     density_initial::T
+    revision::Int
 end
 
 function LBMSolver(::Type{T} = Float32) where {T<:AbstractFloat}
@@ -44,11 +51,13 @@ function LBMSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         empty_scaling,
         T(NaN),
         one(T),
+        0,
     )
 end
 
 solver_info(::LBMSolver) = LBM_D2Q9_INFO
 reynolds(solver::LBMSolver) = solver.reynolds_value
+state_revision(solver::LBMSolver) = solver.revision
 
 function _lbm_require(solver::LBMSolver)
     solver.scenario === nothing && throw(ArgumentError("D2Q9 LBM is not initialized"))
@@ -59,9 +68,53 @@ end
 function set_reynolds!(solver::LBMSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
+    previous = solver.reynolds_value
     solver.reynolds_value = T(selected)
-    solver.scenario === nothing || (solver.scaling = lbm_scaling(solver.scenario, selected))
-    return nothing
+    if solver.scenario !== nothing
+        solver.scaling = _lbm_scaling_at_speed(
+            solver.scenario,
+            solver.reynolds_value,
+            solver.scaling.lattice_dt,
+            solver.scaling.lattice_speed,
+        )
+    end
+    previous == solver.reynolds_value || (solver.revision += 1)
+    warnings = solver.scaling.clamped ?
+        ["effective Reynolds clamped to $(round(solver.scaling.effective_reynolds; digits = 1))"] :
+        String[]
+    return ReynoldsOutcome(T(selected), solver.scaling.effective_reynolds, warnings)
+end
+
+function _lbm_scaling_at_speed(
+    scenario::Scenario{2,T},
+    selected_reynolds::Real,
+    lattice_dt::T,
+    lattice_speed::T,
+) where {T}
+    chord_cells = scenario.foil.chord / dx(scenario.domain)
+    requested_viscosity = lattice_speed * chord_cells / T(selected_reynolds)
+    minimum_viscosity = (T(0.52) - T(0.5)) / T(3)
+    viscosity = max(requested_viscosity, minimum_viscosity)
+    clamped = viscosity > requested_viscosity
+    effective_reynolds = lattice_speed * chord_cells / viscosity
+    tau_plus = T(0.5) + T(3) * viscosity
+    tau_minus = T(0.5) + T(3 / 16) / max(tau_plus - T(0.5), T(1.0e-6))
+    omega_plus = inv(tau_plus)
+    omega_minus = inv(tau_minus)
+    zero(T) < omega_plus < T(2) && zero(T) < omega_minus < T(2) ||
+        throw(NumericalFailure(
+            :invalid_relaxation,
+            "TRT relaxation frequency left the interval (0, 2)",
+            :collision,
+            Dict{String,Any}(
+                "omega_plus" => omega_plus,
+                "omega_minus" => omega_minus,
+            ),
+        ))
+    return LBMScaling(
+        lattice_dt, lattice_speed, viscosity, effective_reynolds,
+        omega_plus, omega_minus, clamped,
+    )
 end
 
 function _lbm_distance(
@@ -146,7 +199,16 @@ function initialize!(
     solver.time = zero(T)
     solver.reference_speed = reference_speed(scenario)
     solver.reynolds_value = scenario.reynolds
-    solver.scaling = lbm_scaling(scenario)
+    reference_substeps = max(
+        1,
+        ceil(Int, scenario.output_dt * solver.reference_speed /
+            (T(LBM_MAXIMUM_LATTICE_SPEED) * dx(scenario.domain)) - T(1.0e-12)),
+    )
+    lattice_dt = scenario.output_dt / T(reference_substeps)
+    lattice_speed = solver.reference_speed * lattice_dt / dx(scenario.domain)
+    solver.scaling = _lbm_scaling_at_speed(
+        scenario, solver.reynolds_value, lattice_dt, lattice_speed,
+    )
     solver.centers, velocity = _lbm_initial_velocity(scenario, solver.scaling.lattice_speed)
     density = ones(T, nx(scenario.domain), ny(scenario.domain))
     solver.populations = lbm_equilibrium(density, velocity)
@@ -160,7 +222,84 @@ function initialize!(
     solver.boundary_equilibrium = lbm_equilibrium(density, target)
     solver.sponge = _lbm_sponge(scenario)
     solver.density_initial = one(T)
+    solver.revision = 0
     return nothing
+end
+
+function restart!(
+    solver::LBMSolver{T},
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    seed::Integer,
+    start::RestartState,
+) where {T}
+    validate_restart_state(start)
+    initialize!(solver, scenario, geometry, seed)
+    set_reynolds!(solver, start.reynolds)
+    solver.time = T(start.time)
+    solver.control = ControlState(solver.time, T(start.angle_degrees), zero(T))
+    _lbm_update_solid!(solver, solver.control)
+    solver.revision = 0
+    return nothing
+end
+
+function _lbm_rebuild_boundary_equilibrium!(solver::LBMSolver{T}) where {T}
+    scenario, _ = _lbm_require(solver)
+    density = ones(T, nx(scenario.domain), ny(scenario.domain))
+    target = zeros(T, nx(scenario.domain), ny(scenario.domain), 2)
+    target[:, :, 1] .= scenario.freestream[1] * solver.scaling.lattice_speed /
+        solver.reference_speed
+    target[:, :, 2] .= scenario.freestream[2] * solver.scaling.lattice_speed /
+        solver.reference_speed
+    solver.boundary_equilibrium = lbm_equilibrium(density, target)
+    return nothing
+end
+
+function _lbm_rescale_populations!(solver::LBMSolver{T}, selected_speed::T) where {T}
+    density, old_velocity = lbm_macroscopic(solver.populations)
+    ratio = selected_speed / solver.scaling.lattice_speed
+    new_velocity = old_velocity .* ratio
+    old_equilibrium = lbm_equilibrium(density, old_velocity)
+    new_equilibrium = lbm_equilibrium(density, new_velocity)
+    solver.populations = new_equilibrium .+ ratio .* (solver.populations .- old_equilibrium)
+    solver.outlet = copy(view(solver.populations, :, size(solver.populations, 2), :))
+    return nothing
+end
+
+function _lbm_configure_temporal_scaling!(
+    solver::LBMSolver{T},
+    target_dt::T,
+    maximum_physical_speed::T,
+) where {T}
+    scenario, _ = _lbm_require(solver)
+    selected_maximum = max(maximum_physical_speed, solver.reference_speed)
+    substeps = max(
+        1,
+        ceil(Int, target_dt * selected_maximum /
+            (T(LBM_MAXIMUM_LATTICE_SPEED) * dx(scenario.domain)) - T(1.0e-12)),
+    )
+    substeps <= LBM_MAXIMUM_SUBSTEPS || throw(NumericalFailure(
+        :excessive_velocity,
+        "LBM motion requires too many lattice substeps",
+        Symbol("time-mapping"),
+        Dict{String,Any}(
+            "required_substeps" => substeps,
+            "maximum_substeps" => LBM_MAXIMUM_SUBSTEPS,
+            "maximum_physical_speed" => maximum_physical_speed,
+        ),
+    ))
+    selected_speed = solver.reference_speed * target_dt /
+        (T(substeps) * dx(scenario.domain))
+    abs(selected_speed - solver.scaling.lattice_speed) > eps(T) &&
+        _lbm_rescale_populations!(solver, selected_speed)
+    solver.scaling = _lbm_scaling_at_speed(
+        scenario,
+        solver.reynolds_value,
+        target_dt / T(substeps),
+        selected_speed,
+    )
+    _lbm_rebuild_boundary_equilibrium!(solver)
+    return substeps
 end
 
 function initialize!(
@@ -363,8 +502,9 @@ function _lbm_step!(solver::LBMSolver{T}, control::ControlState) where {T}
     streamed = _lbm_stream!(solver, post, density, control)
     _lbm_apply_boundaries!(solver, streamed)
     all(isfinite, streamed) || throw(NumericalFailure(
-        :nonfinite_state,
+        :invalid_population,
         "D2Q9 LBM produced non-finite populations",
+        :streaming,
     ))
     solver.populations = streamed
     solver.control = ControlState(
@@ -376,31 +516,119 @@ function _lbm_step!(solver::LBMSolver{T}, control::ControlState) where {T}
 end
 
 function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) where {T}
-    _lbm_require(solver)
-    target = T(target_dt)
-    target > zero(T) || throw(ArgumentError("target_dt must be positive"))
-    solver.scaling = lbm_scaling(solver.scenario, solver.reynolds_value)
-    substeps = max(1, ceil(Int, target / solver.scaling.lattice_dt - T(1.0e-12)))
-    for substep in 1:substeps
-        fraction = T(substep) / T(substeps)
-        sub_control = ControlState(
-            solver.time + fraction * target,
-            solver.control.angle_degrees +
-                fraction * (T(control.angle_degrees) - solver.control.angle_degrees),
-            T(control.angular_velocity_degrees),
+    scenario, geometry = _lbm_require(solver)
+    target = validate_advance_request(solver.time, control, target_dt)
+    all(isfinite, solver.populations) || throw(NumericalFailure(
+        :nonfinite_state,
+        "LBM populations are non-finite",
+        :postcondition,
+    ))
+    checkpoint = (
+        copy(solver.populations), copy(solver.outlet), copy(solver.solid),
+        copy(solver.distance), copy(solver.boundary_equilibrium), solver.control,
+        solver.time, solver.scaling, solver.solid_angle, solver.revision,
+    )
+    current_velocity = cell_velocity(solver)
+    current_maximum = _maximum_speed(current_velocity)
+    maximum_radius = geometry.spec.chord
+    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius
+    sweep_speed = abs(deg2rad(T(control.angle_degrees) - solver.control.angle_degrees)) *
+        maximum_radius / target
+    maximum_physical_speed = max(
+        current_maximum, solver.reference_speed, wall_speed, sweep_speed,
+    )
+    substeps = 0
+    density_excursion = zero(T)
+    minimum_population = zero(T)
+    maximum_mach = zero(T)
+    start_time = solver.time
+    start_angle = solver.control.angle_degrees
+    try
+        substeps = _lbm_configure_temporal_scaling!(
+            solver, target, T(1.25) * maximum_physical_speed,
         )
-        _lbm_update_solid!(solver, sub_control)
-        _lbm_step!(solver, sub_control)
+        for substep in 1:substeps
+            fraction = T(substep) / T(substeps)
+            sub_control = ControlState(
+                start_time + fraction * target,
+                start_angle + fraction * (T(control.angle_degrees) - start_angle),
+                T(control.angular_velocity_degrees),
+            )
+            _lbm_update_solid!(solver, sub_control)
+            _lbm_step!(solver, sub_control)
+        end
+        all(isfinite, solver.populations) || throw(NumericalFailure(
+            :invalid_population,
+            "LBM produced non-finite populations",
+            :postcondition,
+        ))
+        minimum_population = minimum(solver.populations)
+        minimum_population >= T(LBM_MINIMUM_POPULATION) || throw(NumericalFailure(
+            :invalid_population,
+            "LBM population left the admissible envelope",
+            :postcondition,
+            Dict{String,Any}(
+                "minimum_population" => minimum_population,
+                "minimum_allowed_population" => LBM_MINIMUM_POPULATION,
+            ),
+        ))
+        density, lattice_velocity = lbm_macroscopic(solver.populations)
+        fluid = .!solver.solid
+        fluid_density = density[fluid]
+        all(isfinite, fluid_density) && all(>(zero(T)), fluid_density) ||
+            throw(NumericalFailure(
+                :invalid_density,
+                "LBM produced non-positive or non-finite fluid density",
+                :postcondition,
+            ))
+        density_excursion = isempty(fluid_density) ? zero(T) : maximum(abs.(fluid_density .- one(T)))
+        density_excursion <= T(0.75) || throw(NumericalFailure(
+            :invalid_density,
+            "LBM density left the admissible envelope",
+            :postcondition,
+            Dict{String,Any}("maximum_density_excursion" => density_excursion),
+        ))
+        maximum_lattice_speed = _maximum_speed(lattice_velocity)
+        maximum_mach = maximum_lattice_speed / T(LBM_LATTICE_SOUND_SPEED)
+        maximum_mach <= T(LBM_MAXIMUM_MACH) * (one(T) + T(1.0e-6)) ||
+            throw(NumericalFailure(
+                :excessive_velocity,
+                "LBM state exceeds its lattice Mach limit",
+                :postcondition,
+                Dict{String,Any}(
+                    "maximum_lattice_mach" => maximum_mach,
+                    "maximum_lattice_mach_limit" => LBM_MAXIMUM_MACH,
+                ),
+            ))
+    catch
+        solver.populations, solver.outlet, solver.solid, solver.distance,
+            solver.boundary_equilibrium, solver.control, solver.time, solver.scaling,
+            solver.solid_angle, solver.revision = checkpoint
+        rethrow()
     end
-    solver.time += target
-    solver.control = ControlState(solver.time, T(control.angle_degrees), T(control.angular_velocity_degrees))
+    solver.time = T(control.time)
+    solver.control = ControlState(
+        solver.time, T(control.angle_degrees), T(control.angular_velocity_degrees),
+    )
+    solver.revision += 1
     velocity = cell_velocity(solver)
     maximum_speed = maximum(hypot(velocity[i, j, 1], velocity[i, j, 2]) for
         i in axes(velocity, 1), j in axes(velocity, 2))
     warnings = solver.scaling.clamped ?
         ["LBM relaxation clamp active: effective Re=$(round(solver.scaling.effective_reynolds; digits = 1))"] :
         String[]
-    return StepReport(target, target, substeps, maximum_speed, warnings)
+    return StepReport(
+        target, target, substeps, maximum_speed, warnings, solver.revision,
+        Dict{String,Any}(
+            "maximum_physical_speed" => maximum_speed,
+            "maximum_wall_speed" => wall_speed,
+            "maximum_lattice_mach" => maximum_mach,
+            "maximum_density_excursion" => density_excursion,
+            "minimum_population" => minimum_population,
+            "omega_plus" => solver.scaling.omega_plus,
+            "omega_minus" => solver.scaling.omega_minus,
+        ),
+    )
 end
 
 function sample_velocity(solver::LBMSolver{T}, points::AbstractMatrix{T}) where {T}
@@ -409,8 +637,16 @@ function sample_velocity(solver::LBMSolver{T}, points::AbstractMatrix{T}) where 
 end
 
 function export_state(solver::LBMSolver{T}) where {T}
-    scenario, _ = _lbm_require(solver)
+    scenario, geometry = _lbm_require(solver)
     density, _ = lbm_macroscopic(solver.populations)
+    velocity = cell_velocity(solver)
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    for index in CartesianIndices(solver.solid)
+        solver.solid[index] || continue
+        velocity[index, 1] = wall[index, 1]
+        velocity[index, 2] = wall[index, 2]
+        density[index] = one(T)
+    end
     canonical_density = Array{T,3}(undef, 1, ny(scenario.domain), nx(scenario.domain))
     for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
         canonical_density[1, j, i] = density[i, j]
@@ -425,7 +661,7 @@ function export_state(solver::LBMSolver{T}) where {T}
         solver.control.angular_velocity_degrees,
         "julia",
         solver_info(solver).id,
-        cell_to_canonical(cell_velocity(solver)),
+        cell_to_canonical(velocity),
         canonical_density,
     )
 end
@@ -436,31 +672,75 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _lbm_require(solver)
-    state.resolution == scenario.domain.resolution || return ImportOutcome(
-        :rejected,
-        :incompatible_domain;
-        warnings = ["warm import requires the same 2D resolution"],
+    checkpoint = (
+        copy(solver.populations), copy(solver.outlet), copy(solver.solid),
+        copy(solver.distance), copy(solver.boundary_equilibrium), solver.control,
+        solver.time, solver.scaling, solver.solid_angle, solver.revision,
     )
-    physical = T.(canonical_to_cell(state))
-    lattice = physical .* (solver.scaling.lattice_speed / solver.reference_speed)
-    density = ones(T, nx(scenario.domain), ny(scenario.domain))
-    if state.density !== nothing
-        for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
-            density[i, j] = T(state.density[1, j, i])
+    try
+        validate_canonical_import(state, scenario, control)
+        physical = T.(canonical_to_cell(state))
+        maximum_speed = _maximum_speed(physical)
+        wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * geometry.spec.chord
+        _lbm_configure_temporal_scaling!(
+            solver, scenario.output_dt, max(maximum_speed, wall_speed, solver.reference_speed),
+        )
+        density = ones(T, nx(scenario.domain), ny(scenario.domain))
+        if state.density !== nothing
+            for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
+                density[i, j] = T(state.density[1, j, i])
+            end
         end
+        all(isfinite, density) && all(>(zero(T)), density) && maximum(abs.(density .- one(T))) <= T(0.75) ||
+            throw(NumericalFailure(
+                :invalid_density,
+                "LBM warm import density is outside the admissible envelope",
+                Symbol("canonical-import"),
+            ))
+        maximum_mach = max(maximum_speed, wall_speed, solver.reference_speed) *
+            solver.scaling.lattice_speed /
+            (solver.reference_speed * T(LBM_LATTICE_SOUND_SPEED))
+        maximum_mach <= T(LBM_MAXIMUM_MACH) * (one(T) + T(1.0e-6)) ||
+            throw(NumericalFailure(
+                :excessive_velocity,
+                "LBM warm import exceeds its Mach limit",
+                Symbol("canonical-import"),
+                Dict{String,Any}(
+                    "maximum_lattice_mach" => maximum_mach,
+                    "maximum_lattice_mach_limit" => LBM_MAXIMUM_MACH,
+                ),
+            ))
+        solver.time = T(state.time)
+        solver.control = ControlState(
+            T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
+        )
+        solver.distance = _lbm_distance(geometry, solver.centers, solver.control.angle_degrees)
+        solver.solid = solver.distance .<= zero(T)
+        solver.solid_angle = solver.control.angle_degrees
+        wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+        for index in CartesianIndices(solver.solid)
+            solver.solid[index] || continue
+            physical[index, 1] = wall[index, 1]
+            physical[index, 2] = wall[index, 2]
+            density[index] = one(T)
+        end
+        lattice = physical .* (solver.scaling.lattice_speed / solver.reference_speed)
+        solver.populations = lbm_equilibrium(density, lattice)
+        solver.outlet = copy(view(solver.populations, :, nx(scenario.domain), :))
+    catch failure
+        solver.populations, solver.outlet, solver.solid, solver.distance,
+            solver.boundary_equilibrium, solver.control, solver.time, solver.scaling,
+            solver.solid_angle, solver.revision = checkpoint
+        failure isa NumericalFailure || rethrow()
+        return ImportOutcome(
+            :rejected,
+            failure.reason;
+            warnings = [sprint(showerror, failure)],
+            stage = failure.stage,
+            evidence = failure.evidence,
+        )
     end
-    all(>(zero(T)), density) || return ImportOutcome(
-        :rejected,
-        :invalid_density;
-        warnings = ["LBM warm import requires positive density"],
-    )
-    solver.populations = lbm_equilibrium(density, lattice)
-    solver.outlet = copy(view(solver.populations, :, nx(scenario.domain), :))
-    solver.time = T(state.time)
-    solver.control = ControlState(T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees))
-    solver.distance = _lbm_distance(geometry, solver.centers, solver.control.angle_degrees)
-    solver.solid = solver.distance .<= zero(T)
-    solver.solid_angle = solver.control.angle_degrees
+    solver.revision += 1
     report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
@@ -494,5 +774,5 @@ function diagnostics(solver::LBMSolver)
     warnings = solver.scaling.clamped ?
         ["LBM relaxation clamp active: effective Re=$(round(solver.scaling.effective_reynolds; digits = 1))"] :
         String[]
-    return Diagnostics(values, warnings)
+    return Diagnostics(values, warnings, solver.revision)
 end

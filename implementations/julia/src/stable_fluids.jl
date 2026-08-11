@@ -20,6 +20,7 @@ mutable struct StableFluidsSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     skew_rk2::Bool
     projection_iterations::Int
     diffusion_iterations::Int
+    revision::Int
 end
 
 function StableFluidsSolver(::Type{T} = Float32) where {T<:AbstractFloat}
@@ -37,11 +38,13 @@ function StableFluidsSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         false,
         0,
         0,
+        0,
     )
 end
 
 solver_info(::StableFluidsSolver) = STABLE_FLUIDS_INFO
 reynolds(solver::StableFluidsSolver) = solver.reynolds_value
+state_revision(solver::StableFluidsSolver) = solver.revision
 
 function stable_transport_mode(solver::StableFluidsSolver)
     solver.skew_rk2 && return "skew-rk2"
@@ -79,7 +82,7 @@ function set_reynolds!(solver::StableFluidsSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
     solver.reynolds_value = T(selected)
-    return nothing
+    return ReynoldsOutcome(T(selected), solver.reynolds_value, String[])
 end
 
 function _stable_require(solver::StableFluidsSolver)
@@ -138,7 +141,36 @@ function initialize!(
     solver.face_advection = option(scenario, "stable_face_advection", false)
     solver.projection_iterations = 0
     solver.diffusion_iterations = 0
+    solver.revision = 0
     _project!(solver, max(scenario.output_dt, T(1.0e-4)))
+    return nothing
+end
+
+function restart!(
+    solver::StableFluidsSolver{T},
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    seed::Integer,
+    start::RestartState,
+) where {T}
+    validate_restart_state(start)
+    initialize!(solver, scenario, geometry, seed)
+    set_reynolds!(solver, start.reynolds)
+    solver.time = T(start.time)
+    solver.control = ControlState(solver.time, T(start.angle_degrees), zero(T))
+    solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
+    velocity = fill(zero(T), nx(scenario.domain), ny(scenario.domain), 2)
+    velocity[:, :, 1] .= scenario.freestream[1]
+    velocity[:, :, 2] .= scenario.freestream[2]
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    for index in CartesianIndices(solver.solid)
+        solver.solid[index] || continue
+        velocity[index, 1] = wall[index, 1]
+        velocity[index, 2] = wall[index, 2]
+    end
+    solver.u, solver.v = cell_to_faces(velocity)
+    _project!(solver, max(scenario.output_dt, T(1.0e-4)))
+    solver.revision = 0
     return nothing
 end
 
@@ -244,77 +276,104 @@ function advance!(
     target_dt::Real,
 ) where {T}
     scenario, geometry = _stable_require(solver)
-    target = T(target_dt)
-    target > zero(T) || throw(ArgumentError("target_dt must be positive"))
+    target = validate_advance_request(solver.time, control, target_dt)
     maximum_speed = max(_maximum_speed(cell_velocity(solver)), abs(scenario.freestream[1]), eps(T))
     cfl = option(scenario, "stable_cfl", T(0.7))
     solver.skew_rk2 && (cfl = min(cfl, T(0.4)))
-    stable_dt = cfl * min(dx(scenario.domain), dy(scenario.domain)) / maximum_speed
-    substeps = max(1, ceil(Int, target / stable_dt))
+    spacing = min(dx(scenario.domain), dy(scenario.domain))
+    maximum_radius = geometry.spec.chord
+    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius
+    sweep_cells = abs(deg2rad(T(control.angle_degrees) - solver.control.angle_degrees)) *
+        maximum_radius / spacing
+    fluid_measure = solver.skew_rk2 ?
+        target * maximum_speed * (inv(dx(scenario.domain)) + inv(dy(scenario.domain))) :
+        target * maximum_speed / spacing
+    required = max(fluid_measure / cfl, target * wall_speed / (cfl * spacing), sweep_cells / cfl)
+    substeps = max(1, ceil(Int, required))
+    substeps <= 512 || throw(NumericalFailure(
+        :stability_limit,
+        "Stable Fluids motion requires too many internal substeps",
+        solver.skew_rk2 ? :advection : :boundary,
+        Dict{String,Any}(
+            "required_substeps" => substeps,
+            "maximum_substeps" => 512,
+            "maximum_fluid_speed" => maximum_speed,
+            "maximum_wall_speed" => wall_speed,
+            "boundary_sweep_cells" => sweep_cells,
+        ),
+    ))
     timestep = target / T(substeps)
     viscosity = reference_speed(scenario) * scenario.foil.chord / solver.reynolds_value
-    for substep in 1:substeps
-        fraction = T(substep) / T(substeps)
-        sub_control = ControlState(
-            solver.time + fraction * target,
-            solver.control.angle_degrees +
-                fraction * (T(control.angle_degrees) - solver.control.angle_degrees),
-            T(control.angular_velocity_degrees),
-        )
-        wall = wall_velocity_grid(geometry, scenario.domain, sub_control)
-        if solver.skew_rk2
-            solver.u, solver.v = advect_faces_skew_rk2(
-                solver.u,
-                solver.v,
-                timestep,
-                scenario.domain,
-                solver.solid,
-                wall,
-                scenario.freestream,
+    checkpoint = (
+        copy(solver.u), copy(solver.v), copy(solver.solid), solver.control, solver.time,
+        solver.projection_iterations, solver.diffusion_iterations, solver.revision,
+    )
+    start_time = solver.time
+    start_angle = solver.control.angle_degrees
+    try
+        for substep in 1:substeps
+            fraction = T(substep) / T(substeps)
+            sub_control = ControlState(
+                start_time + fraction * target,
+                start_angle + fraction * (T(control.angle_degrees) - start_angle),
+                T(control.angular_velocity_degrees),
             )
-            _diffuse_faces!(solver, viscosity, timestep)
-        elseif solver.face_advection
-            solver.u, solver.v = advect_faces(
-                solver.u,
-                solver.v,
-                timestep,
-                scenario.domain;
-                maccormack = solver.maccormack,
-            )
-            _diffuse_faces!(solver, viscosity, timestep)
-        else
-            velocity = advect_velocity(
-                cell_velocity(solver),
-                timestep,
-                scenario.domain;
-                maccormack = solver.maccormack,
-            )
-            velocity, diffusion_iterations, diffusion_converged = implicit_diffuse_velocity(
-                velocity,
-                viscosity,
-                timestep,
-                scenario.domain;
-                tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
-            )
-            diffusion_converged ||
-                throw(NumericalFailure(
+            wall = wall_velocity_grid(geometry, scenario.domain, sub_control)
+            if solver.skew_rk2
+                solver.u, solver.v = advect_faces_skew_rk2(
+                    solver.u, solver.v, timestep, scenario.domain, solver.solid, wall,
+                    scenario.freestream,
+                )
+                _diffuse_faces!(solver, viscosity, timestep)
+            elseif solver.face_advection
+                solver.u, solver.v = advect_faces(
+                    solver.u, solver.v, timestep, scenario.domain;
+                    maccormack = solver.maccormack,
+                )
+                _diffuse_faces!(solver, viscosity, timestep)
+            else
+                velocity = advect_velocity(
+                    cell_velocity(solver), timestep, scenario.domain;
+                    maccormack = solver.maccormack,
+                )
+                velocity, diffusion_iterations, diffusion_converged = implicit_diffuse_velocity(
+                    velocity, viscosity, timestep, scenario.domain;
+                    tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+                )
+                diffusion_converged || throw(NumericalFailure(
                     :projection_failure,
                     "Stable Fluids implicit viscosity did not converge",
+                    :viscosity,
                 ))
-            solver.diffusion_iterations = diffusion_iterations
-            solver.u, solver.v = cell_to_faces(velocity)
+                solver.diffusion_iterations = diffusion_iterations
+                solver.u, solver.v = cell_to_faces(velocity)
+            end
+            solver.control = sub_control
+            solver.solid = solid_mask(geometry, scenario.domain, sub_control.angle_degrees)
+            _project!(solver, timestep)
         end
-        solver.control = sub_control
-        solver.solid = solid_mask(geometry, scenario.domain, sub_control.angle_degrees)
-        _project!(solver, timestep)
+    catch
+        solver.u, solver.v, solver.solid, solver.control, solver.time,
+            solver.projection_iterations, solver.diffusion_iterations, solver.revision = checkpoint
+        rethrow()
     end
-    solver.time += target
+    solver.time = T(control.time)
     solver.control = ControlState(
         solver.time,
         T(control.angle_degrees),
         T(control.angular_velocity_degrees),
     )
-    return StepReport(target, target, substeps, maximum_speed, String[])
+    solver.revision += 1
+    return StepReport(
+        target, target, substeps, maximum_speed, String[], solver.revision,
+        Dict{String,Any}(
+            "maximum_fluid_speed" => maximum_speed,
+            "maximum_wall_speed" => wall_speed,
+            "boundary_sweep_cells" => sweep_cells,
+            "projection_iterations" => solver.projection_iterations,
+            "diffusion_iterations" => solver.diffusion_iterations,
+        ),
+    )
 end
 
 function sample_velocity(
@@ -326,7 +385,14 @@ function sample_velocity(
 end
 
 function export_state(solver::StableFluidsSolver{T}) where {T}
-    scenario, _ = _stable_require(solver)
+    scenario, geometry = _stable_require(solver)
+    velocity = cell_velocity(solver)
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    for index in CartesianIndices(solver.solid)
+        solver.solid[index] || continue
+        velocity[index, 1] = wall[index, 1]
+        velocity[index, 2] = wall[index, 2]
+    end
     return CanonicalFlowState(
         1,
         scenario.domain.bounds,
@@ -337,7 +403,7 @@ function export_state(solver::StableFluidsSolver{T}) where {T}
         solver.control.angular_velocity_degrees,
         "julia",
         solver_info(solver).id,
-        cell_to_canonical(cell_velocity(solver)),
+        cell_to_canonical(velocity),
     )
 end
 
@@ -347,30 +413,39 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _stable_require(solver)
-    state.resolution == scenario.domain.resolution || return ImportOutcome(
-        :rejected,
-        :incompatible_domain;
-        warnings = ["warm import requires the same 2D resolution"],
+    checkpoint = (
+        copy(solver.u), copy(solver.v), copy(solver.solid), solver.control, solver.time,
+        solver.projection_iterations, solver.diffusion_iterations, solver.revision,
     )
-    imported = T.(canonical_to_cell(state))
-    solver.u, solver.v = cell_to_faces(imported)
-    solver.time = T(state.time)
-    solver.control = ControlState(
-        T(control.time),
-        T(control.angle_degrees),
-        T(control.angular_velocity_degrees),
-    )
-    solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
     try
+        validate_canonical_import(state, scenario, control)
+        imported = T.(canonical_to_cell(state))
+        solver.time = T(state.time)
+        solver.control = ControlState(
+            T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
+        )
+        solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
+        wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+        for index in CartesianIndices(solver.solid)
+            solver.solid[index] || continue
+            imported[index, 1] = wall[index, 1]
+            imported[index, 2] = wall[index, 2]
+        end
+        solver.u, solver.v = cell_to_faces(imported)
         _project!(solver, max(scenario.output_dt, T(1.0e-4)))
     catch failure
+        solver.u, solver.v, solver.solid, solver.control, solver.time,
+            solver.projection_iterations, solver.diffusion_iterations, solver.revision = checkpoint
         failure isa NumericalFailure || rethrow()
         return ImportOutcome(
             :rejected,
             failure.reason;
             warnings = [sprint(showerror, failure)],
+            stage = failure.stage,
+            evidence = failure.evidence,
         )
     end
+    solver.revision += 1
     report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
@@ -402,5 +477,5 @@ function diagnostics(solver::StableFluidsSolver)
             :nonfinite_state,
             "Stable Fluids produced non-finite diagnostics",
         ))
-    return Diagnostics(diagnostic_values, String[])
+    return Diagnostics(diagnostic_values, String[], solver.revision)
 end

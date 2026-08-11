@@ -25,6 +25,19 @@ struct CanonicalFlowState{D,T<:AbstractFloat}
         density::Union{Nothing,Array{T,3}} = nothing,
     ) where {D,T<:AbstractFloat}
         D in (2, 3) || throw(ArgumentError("canonical dimension must be two or three"))
+        schema_version == 1 || throw(ArgumentError("unsupported canonical schema version"))
+        all(pair -> all(isfinite, pair) && pair[2] > pair[1], bounds) ||
+            throw(ArgumentError("canonical bounds must be finite and increasing"))
+        all(>(0), resolution) || throw(ArgumentError("canonical resolution must be positive"))
+        allowed_axes = D == 2 ? (:x, :y) : (:x, :y, :z)
+        length(unique(periodic_axes)) == length(periodic_axes) &&
+            all(axis -> axis in allowed_axes, periodic_axes) ||
+            throw(ArgumentError("canonical periodic axes are invalid"))
+        all(isfinite, (time, angle_degrees, angular_velocity_degrees)) ||
+            throw(ArgumentError("canonical time and control values must be finite"))
+        time >= zero(T) || throw(ArgumentError("canonical time cannot be negative"))
+        isempty(source_language) && throw(ArgumentError("canonical source language is required"))
+        isempty(source_solver) && throw(ArgumentError("canonical source solver is required"))
         expected_z = D == 2 ? 1 : resolution[3]
         expected_velocity = (expected_z, resolution[2], resolution[1], D)
         size(velocity) == expected_velocity ||

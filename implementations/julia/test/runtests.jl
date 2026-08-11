@@ -649,6 +649,64 @@ end
     @test all(isfinite, export_state(moving).velocity)
 end
 
+@testset "Revision 2 solver transactions" begin
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (32, 16),
+    )
+    geometry = NacaFoil(scenario.foil)
+    for solver in (StableFluidsSolver(Float32), LBMSolver(Float32), PicFlipSolver(Float32))
+        initialize!(solver, scenario, geometry, scenario.seed)
+        @test state_revision(solver) == 0
+        report = advance!(solver, control_at(scenario, scenario.output_dt), scenario.output_dt)
+        @test report.advanced_dt == scenario.output_dt
+        @test report.state_revision == 1
+        @test diagnostics(solver).state_revision == report.state_revision
+        @test export_state(solver).time == scenario.output_dt
+    end
+
+    shorter = LBMSolver(Float32)
+    longer = LBMSolver(Float32)
+    initialize!(shorter, scenario, geometry, scenario.seed)
+    initialize!(longer, scenario, geometry, scenario.seed)
+    short_report = advance!(shorter, ControlState(0.0075f0, 4.0f0, 0.0f0), 0.0075f0)
+    long_report = advance!(longer, ControlState(0.01f0, 4.0f0, 0.0f0), 0.01f0)
+    @test short_report.advanced_dt == 0.0075f0
+    @test long_report.advanced_dt == 0.01f0
+    @test export_state(shorter).velocity != export_state(longer).velocity
+
+    stable = StableFluidsSolver(Float32)
+    initialize!(stable, scenario, geometry, scenario.seed)
+    stable_before = export_state(stable)
+    excessive_velocity = fill(1.0f6, size(stable_before.velocity))
+    stable_import = CanonicalFlowState(
+        1, stable_before.bounds, stable_before.resolution, stable_before.periodic_axes,
+        0.25f0, 12.0f0, 0.0f0, "julia", "injected", excessive_velocity,
+    )
+    stable_outcome = import_state!(stable, stable_import, ControlState(0.25f0, 12.0f0, 0.0f0))
+    @test !accepted(stable_outcome)
+    @test stable_outcome.reason == :excessive_velocity
+    @test state_revision(stable) == 0
+    @test export_state(stable).time == stable_before.time
+    @test export_state(stable).velocity == stable_before.velocity
+
+    lattice = LBMSolver(Float32)
+    initialize!(lattice, scenario, geometry, scenario.seed)
+    lattice_before = export_state(lattice)
+    invalid_density = fill(2.0f0, size(something(lattice_before.density)))
+    lattice_import = CanonicalFlowState(
+        1, lattice_before.bounds, lattice_before.resolution, lattice_before.periodic_axes,
+        0.25f0, 12.0f0, 0.0f0, "julia", "injected", copy(lattice_before.velocity),
+        invalid_density,
+    )
+    lattice_outcome = import_state!(lattice, lattice_import, ControlState(0.25f0, 12.0f0, 0.0f0))
+    @test !accepted(lattice_outcome)
+    @test lattice_outcome.reason == :invalid_density
+    @test state_revision(lattice) == 0
+    @test export_state(lattice).time == lattice_before.time
+    @test export_state(lattice).velocity == lattice_before.velocity
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
@@ -961,6 +1019,7 @@ end
         0.0,
     )
     advance!(model.solver, pose_control, scenario.output_dt)
+    model.simulation_time += scenario.output_dt
     @test export_state(model.solver).angular_velocity_degrees == 0.0
     release_angle!(model)
     update!(model)

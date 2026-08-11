@@ -27,6 +27,7 @@ mutable struct PicFlipSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     cfl::T
     projection_iterations::Int
     solid_angle::T
+    revision::Int
 end
 
 function PicFlipSolver(::Type{T} = Float32) where {T<:AbstractFloat}
@@ -51,18 +52,22 @@ function PicFlipSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         T(0.75),
         0,
         T(NaN),
+        0,
     )
 end
 
 solver_info(::PicFlipSolver) = PIC_FLIP_INFO
 reynolds(solver::PicFlipSolver) = solver.reynolds_value
+state_revision(solver::PicFlipSolver) = solver.revision
 pic_flip_blend(solver::PicFlipSolver) = solver.blend
 
 function set_reynolds!(solver::PicFlipSolver{T}, selected::Real) where {T}
     isfinite(selected) && selected > 0 ||
         throw(ArgumentError("Reynolds number must be finite and positive"))
+    previous = solver.reynolds_value
     solver.reynolds_value = T(selected)
-    return nothing
+    previous == solver.reynolds_value || (solver.revision += 1)
+    return ReynoldsOutcome(T(selected), solver.reynolds_value, String[])
 end
 
 function set_pic_flip_blend!(solver::PicFlipSolver{T}, selected::Real) where {T}
@@ -145,6 +150,7 @@ function initialize!(
     solver.swept_collisions_last_step = 0
     solver.advance_count = 0
     solver.projection_iterations = 0
+    solver.revision = 0
     _pic_seed_particles!(solver)
     solver.grid_velocity = particle_to_grid(
         solver.positions,
@@ -152,6 +158,33 @@ function initialize!(
         scenario.domain,
         scenario.freestream,
     )
+    return nothing
+end
+
+function restart!(
+    solver::PicFlipSolver{T},
+    scenario::Scenario{2,T},
+    geometry::NacaFoil{2,T},
+    seed::Integer,
+    start::RestartState,
+) where {T}
+    validate_restart_state(start)
+    initialize!(solver, scenario, geometry, seed)
+    set_reynolds!(solver, start.reynolds)
+    solver.time = T(start.time)
+    solver.control = ControlState(solver.time, T(start.angle_degrees), zero(T))
+    solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
+    solver.solid_angle = solver.control.angle_degrees
+    solver.grid_velocity[:, :, 1] .= scenario.freestream[1]
+    solver.grid_velocity[:, :, 2] .= scenario.freestream[2]
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    for index in CartesianIndices(solver.solid)
+        solver.solid[index] || continue
+        solver.grid_velocity[index, 1] = wall[index, 1]
+        solver.grid_velocity[index, 2] = wall[index, 2]
+    end
+    _pic_seed_particles!(solver)
+    solver.revision = 0
     return nothing
 end
 
@@ -433,8 +466,13 @@ end
 
 function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Real) where {T}
     scenario, geometry = _pic_require(solver)
-    target = T(target_dt)
-    target > zero(T) || throw(ArgumentError("target_dt must be positive"))
+    target = validate_advance_request(solver.time, control, target_dt)
+    all(isfinite, solver.positions) && all(isfinite, solver.particle_velocity) &&
+        all(isfinite, solver.grid_velocity) || throw(NumericalFailure(
+            :nonfinite_state,
+            "PIC/FLIP input state is non-finite",
+            :postcondition,
+        ))
     maximum_speed = max(
         maximum(hypot(solver.grid_velocity[i, j, 1], solver.grid_velocity[i, j, 2]) for
             i in axes(solver.grid_velocity, 1), j in axes(solver.grid_velocity, 2)),
@@ -453,52 +491,116 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     transport_speed = max(maximum_speed, wall_speed)
     stable_dt = solver.cfl * min(dx(scenario.domain), dy(scenario.domain)) / max(transport_speed, T(1.0e-6))
     substeps = max(1, ceil(Int, target / stable_dt))
+    substeps <= 512 || throw(NumericalFailure(
+        :stability_limit,
+        "PIC/FLIP motion requires too many internal substeps",
+        Symbol("particle-advection"),
+        Dict{String,Any}(
+            "required_substeps" => substeps,
+            "maximum_substeps" => 512,
+            "maximum_particle_speed" => maximum_speed,
+            "maximum_wall_speed" => wall_speed,
+        ),
+    ))
     timestep = target / T(substeps)
-    solver.reseeded_last_step = 0
-    solver.swept_collisions_last_step = 0
-    for substep in 1:substeps
-        fraction = T(substep) / T(substeps)
-        sub_control = ControlState(
-            solver.time + fraction * target,
-            solver.control.angle_degrees + fraction * (T(control.angle_degrees) - solver.control.angle_degrees),
-            boundary_angular_velocity,
-        )
-        if solver.solid_angle != sub_control.angle_degrees
-            solver.solid = solid_mask(geometry, scenario.domain, sub_control.angle_degrees)
-            solver.solid_angle = sub_control.angle_degrees
+    checkpoint = (
+        copy(solver.positions), copy(solver.particle_velocity), copy(solver.grid_velocity),
+        copy(solver.solid), solver.control, solver.time, solver.settling_steps,
+        solver.rng.state, solver.rng.increment, solver.projection_warning,
+        solver.reseeded_last_step, solver.swept_collisions_last_step,
+        solver.advance_count, solver.projection_iterations, solver.solid_angle, solver.revision,
+    )
+    start_time = solver.time
+    start_angle = solver.control.angle_degrees
+    counts = Int[]
+    try
+        solver.reseeded_last_step = 0
+        solver.swept_collisions_last_step = 0
+        for substep in 1:substeps
+            fraction = T(substep) / T(substeps)
+            sub_control = ControlState(
+                start_time + fraction * target,
+                start_angle + fraction * (T(control.angle_degrees) - start_angle),
+                boundary_angular_velocity,
+            )
+            if solver.solid_angle != sub_control.angle_degrees
+                solver.solid = solid_mask(geometry, scenario.domain, sub_control.angle_degrees)
+                solver.solid_angle = sub_control.angle_degrees
+            end
+            start_control = solver.control
+            _pic_resolve_collisions!(solver, sub_control)
+            transferred = particle_to_grid(
+                solver.positions, solver.particle_velocity, scenario.domain, scenario.freestream,
+            )
+            before_projection = copy(transferred)
+            viscosity = reference_speed(scenario) * scenario.foil.chord / solver.reynolds_value
+            diffused, _, converged = implicit_diffuse_velocity(
+                transferred, viscosity, timestep, scenario.domain;
+                tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+            )
+            converged || throw(NumericalFailure(
+                :projection_failure,
+                "PIC/FLIP implicit viscosity did not converge",
+                :viscosity,
+            ))
+            solver.grid_velocity = _pic_project!(solver, diffused, sub_control, timestep)
+            pic_velocity = grid_to_particle(solver.grid_velocity, solver.positions, scenario.domain)
+            delta = grid_to_particle(
+                solver.grid_velocity .- before_projection, solver.positions, scenario.domain,
+            )
+            blend = solver.settling_steps > 0 ? zero(T) : solver.blend
+            solver.particle_velocity .= (one(T) - blend) .* pic_velocity .+
+                blend .* (solver.particle_velocity .+ delta)
+            solver.control = sub_control
+            _pic_advect_particles!(solver, start_control, sub_control, timestep, pic_velocity)
+            solver.settling_steps > 0 && (solver.settling_steps -= 1)
         end
-        start_control = solver.control
-        _pic_resolve_collisions!(solver, sub_control)
-        transferred = particle_to_grid(solver.positions, solver.particle_velocity, scenario.domain, scenario.freestream)
-        before_projection = copy(transferred)
-        viscosity = reference_speed(scenario) * scenario.foil.chord / solver.reynolds_value
-        diffused, _, converged = implicit_diffuse_velocity(
-            transferred,
-            viscosity,
-            timestep,
-            scenario.domain;
-            tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
-        )
-        converged || throw(NumericalFailure(
-            :projection_failure,
-            "PIC/FLIP implicit viscosity did not converge",
-        ))
-        solver.grid_velocity = _pic_project!(solver, diffused, sub_control, timestep)
-        pic_velocity = grid_to_particle(solver.grid_velocity, solver.positions, scenario.domain)
-        delta = grid_to_particle(solver.grid_velocity .- before_projection, solver.positions, scenario.domain)
-        blend = solver.settling_steps > 0 ? zero(T) : solver.blend
-        solver.particle_velocity .= (one(T) - blend) .* pic_velocity .+
-            blend .* (solver.particle_velocity .+ delta)
-        solver.control = sub_control
-        _pic_advect_particles!(solver, start_control, sub_control, timestep, pic_velocity)
-        solver.settling_steps > 0 && (solver.settling_steps -= 1)
+        solver.advance_count += 1
+        solver.advance_count % solver.population_interval == 0 &&
+            _pic_maintain_population!(solver, control)
+        _pic_resolve_collisions!(solver, control)
+        all(isfinite, solver.positions) && all(isfinite, solver.particle_velocity) &&
+            all(isfinite, solver.grid_velocity) || throw(NumericalFailure(
+                :nonfinite_state,
+                "PIC/FLIP produced non-finite state",
+                :postcondition,
+            ))
+        identifiers = particle_cell_ids(solver.positions, scenario.domain)
+        all((1 .<= identifiers) .&
+            (identifiers .<= nx(scenario.domain) * ny(scenario.domain))) ||
+            throw(NumericalFailure(
+                :postcondition_failure,
+                "PIC/FLIP particle escaped the domain",
+                :postcondition,
+            ))
+        counts = vec(particle_cell_counts(solver.positions, scenario.domain))
+    catch
+        solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
+            solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
+            solver.projection_warning, solver.reseeded_last_step,
+            solver.swept_collisions_last_step, solver.advance_count,
+            solver.projection_iterations, solver.solid_angle, solver.revision = checkpoint
+        solver.rng.state = rng_state
+        solver.rng.increment = rng_increment
+        rethrow()
     end
-    solver.advance_count += 1
-    solver.advance_count % solver.population_interval == 0 && _pic_maintain_population!(solver, control)
-    solver.time += target
-    solver.control = ControlState(solver.time, T(control.angle_degrees), T(control.angular_velocity_degrees))
+    solver.time = T(control.time)
+    solver.control = ControlState(
+        solver.time, T(control.angle_degrees), T(control.angular_velocity_degrees),
+    )
+    solver.revision += 1
     warnings = isempty(solver.projection_warning) ? String[] : [solver.projection_warning]
-    return StepReport(target, target, substeps, transport_speed, warnings)
+    return StepReport(
+        target, target, substeps, transport_speed, warnings, solver.revision,
+        Dict{String,Any}(
+            "maximum_particle_speed" => maximum_speed,
+            "maximum_wall_speed" => wall_speed,
+            "particle_count" => size(solver.positions, 2),
+            "minimum_particles_per_cell" => isempty(counts) ? 0 : minimum(counts),
+            "maximum_particles_per_cell" => isempty(counts) ? 0 : maximum(counts),
+            "projection_iterations" => solver.projection_iterations,
+        ),
+    )
 end
 
 function sample_velocity(solver::PicFlipSolver{T}, points::AbstractMatrix{T}) where {T}
@@ -507,7 +609,14 @@ function sample_velocity(solver::PicFlipSolver{T}, points::AbstractMatrix{T}) wh
 end
 
 function export_state(solver::PicFlipSolver{T}) where {T}
-    scenario, _ = _pic_require(solver)
+    scenario, geometry = _pic_require(solver)
+    velocity = copy(solver.grid_velocity)
+    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    for index in CartesianIndices(solver.solid)
+        solver.solid[index] || continue
+        velocity[index, 1] = wall[index, 1]
+        velocity[index, 2] = wall[index, 2]
+    end
     return CanonicalFlowState(
         1,
         scenario.domain.bounds,
@@ -518,7 +627,7 @@ function export_state(solver::PicFlipSolver{T}) where {T}
         solver.control.angular_velocity_degrees,
         "julia",
         solver_info(solver).id,
-        cell_to_canonical(solver.grid_velocity),
+        cell_to_canonical(velocity),
     )
 end
 
@@ -528,18 +637,45 @@ function import_state!(
     control::ControlState,
 ) where {T,S}
     scenario, geometry = _pic_require(solver)
-    state.resolution == scenario.domain.resolution || return ImportOutcome(
-        :rejected,
-        :incompatible_domain;
-        warnings = ["warm import requires the same 2D resolution"],
+    checkpoint = (
+        copy(solver.positions), copy(solver.particle_velocity), copy(solver.grid_velocity),
+        copy(solver.solid), solver.control, solver.time, solver.settling_steps,
+        solver.rng.state, solver.rng.increment, solver.solid_angle, solver.revision,
     )
-    solver.grid_velocity = T.(canonical_to_cell(state))
-    solver.time = T(state.time)
-    solver.control = ControlState(T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees))
-    solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
-    solver.solid_angle = solver.control.angle_degrees
-    _pic_seed_particles!(solver)
-    solver.settling_steps = 1
+    try
+        validate_canonical_import(state, scenario, control)
+        velocity = T.(canonical_to_cell(state))
+        solver.time = T(state.time)
+        solver.control = ControlState(
+            T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
+        )
+        solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
+        solver.solid_angle = solver.control.angle_degrees
+        wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+        for index in CartesianIndices(solver.solid)
+            solver.solid[index] || continue
+            velocity[index, 1] = wall[index, 1]
+            velocity[index, 2] = wall[index, 2]
+        end
+        solver.grid_velocity = velocity
+        _pic_seed_particles!(solver)
+        solver.settling_steps = 1
+    catch failure
+        solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
+            solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
+            solver.solid_angle, solver.revision = checkpoint
+        solver.rng.state = rng_state
+        solver.rng.increment = rng_increment
+        failure isa NumericalFailure || rethrow()
+        return ImportOutcome(
+            :rejected,
+            failure.reason;
+            warnings = [sprint(showerror, failure)],
+            stage = failure.stage,
+            evidence = failure.evidence,
+        )
+    end
+    solver.revision += 1
     report = ImportReport(
         state.source_solver,
         solver_info(solver).id,
@@ -589,5 +725,5 @@ function diagnostics(solver::PicFlipSolver)
         "PIC/FLIP produced non-finite diagnostics",
     ))
     warnings = isempty(solver.projection_warning) ? String[] : [solver.projection_warning]
-    return Diagnostics(values, warnings)
+    return Diagnostics(values, warnings, solver.revision)
 end
