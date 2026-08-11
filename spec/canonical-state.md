@@ -1,7 +1,7 @@
 # Canonical flow state
 
-Status: proposed revision-2 semantics extend the implemented revision-1
-contract; the file schema remains version 1 because the change is semantic,
+Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+The file schema remains version 1 because the revision-2 change is semantic,
 not structural.
 
 A canonical state is a directory containing `manifest.json`, `velocity.npy`,

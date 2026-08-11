@@ -1,19 +1,22 @@
 # Benchmark methodology
 
-The latest local Phase 1 interactive snapshot is recorded in
-[benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Julia emits
-the same result-schema fields and canonical snapshot semantics for offline
-cross-language comparison.
+The latest historical Phase 1 interactive snapshot is recorded in
+[benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Python,
+Julia, and TypeScript now emit the same result-schema identity and canonical
+snapshot semantics for offline cross-language comparison.
 
 Runs are matched by physical domain, resolution, Reynolds number, control
 history, precision, seed, and simulated duration. Each solver may choose the
 stable internal timestep and number of substeps it needs.
 
-Every result JSON repeats that identity directly: benchmark-matrix and
-scenario IDs, bounds and periodic axes, resolution, Reynolds number,
+Every result JSON identifies the accepted contract with `contract_id` and
+`contract_revision`, then repeats the matched physical identity directly:
+benchmark-matrix and scenario IDs, bounds and periodic axes, resolution, Reynolds number,
 freestream, foil specification, control history, requested and actually
 simulated duration, output interval, precision, and seed. Comparisons therefore
 do not have to infer physical equivalence from a filename or scenario ID.
+Comparers schema-validate their inputs and reject mismatched physical identity
+rather than producing a misleading performance table.
 
 The runner records cold initialization and the first cold solver step
 separately from steady-state work. Initialization-time compilation is therefore
@@ -26,8 +29,21 @@ checks. Julia reports package startup/compilation, initialization, its first
 cold step, and warmed steady-state work separately.
 
 Reported performance includes median and p95 step latency, simulated seconds
-per wall second, update throughput, peak resident memory, and internal
-substeps. Reported diagnostics include energy, enstrophy, divergence, mass or
+per wall second, update throughput, and internal substeps. Memory is paired
+with an explicit measurement meaning: native runners report process RSS,
+browser runners may report a browser estimate, and unavailable measurements
+remain null rather than masquerading as zero. Runtime and worker startup are
+separate nullable fields.
+
+The artifact also records final and diagnostic solver-state revisions plus the
+last completed step report. That report preserves the requested and advanced
+intervals, substeps, maximum speed, revision, warnings, and solver-family
+validity evidence. A successful artifact cannot silently combine stale
+diagnostics with a newer final field. Classified failures use a structured
+kind, reason, stage, message, and evidence object; unexpected failures remain
+distinguishable from numerical rejection.
+
+Reported diagnostics include energy, enstrophy, divergence, mass or
 density drift where meaningful, solid leakage, wake width, and recirculation
 area. FoilBench does not assign an aesthetic score.
 

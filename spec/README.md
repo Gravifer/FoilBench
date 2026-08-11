@@ -46,9 +46,9 @@ contract amendment should:
 4. run conformance in every implemented language; and
 5. record implementation deviations explicitly until they are reconciled.
 
-Phase 2 revision 2 is currently proposed and intentionally precedes its
-implementation reconciliation. Activation requires the language-neutral
-fixtures, schemas, and three existing implementations to identify and satisfy
-the revision. Until then, revision 1 remains the implemented baseline and no
-implementation may claim revision-2 conformance merely because the prose has
-been committed.
+Phase 2 revision 2 was accepted on 2026-08-11 after the language-neutral
+fixtures and schemas were made executable in Python, Julia, and TypeScript,
+all comparable artifacts identified the contract, and the combined root
+verifier passed. Revision 2 is the implemented baseline for Phase 3. Proposed
+future revisions must repeat that activation sequence rather than claiming
+conformance from prose alone.

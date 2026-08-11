@@ -1,13 +1,14 @@
 {
   "contract_id": "foilbench-phase2-v1",
   "revision": 2,
-  "status": "proposed",
-  "implemented_baseline_revision": 1,
-  "activation_requirements": [
-    "commit revision-2 tracer and solver-validity conformance fixtures",
-    "carry contract ID and revision in comparable result and transcript artifacts",
-    "reconcile Python, Julia, and TypeScript implementations",
-    "pass combined cross-language verification"
+  "status": "accepted",
+  "implemented_baseline_revision": 2,
+  "accepted_on": "2026-08-11",
+  "activation_evidence": [
+    "revision-2 tracer and solver-validity fixtures are executable in Python, Julia, and TypeScript",
+    "comparable result and transcript artifacts carry the contract ID and revision",
+    "Python, Julia, and TypeScript implement the revision-2 solver and viewer semantics",
+    "pwsh -NoProfile -File tools/verify.ps1 passes the combined cross-language verification"
   ],
   "compatibility": {
     "breaking_changes_require_new_revision": true,

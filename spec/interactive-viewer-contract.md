@@ -1,8 +1,8 @@
 # Interactive viewer contract
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 2. Drag-resolution
-constants remain user-gated; the other former Phase 2 open decisions are now
-settled below.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+Exact drag-resolution constants and optional visual-closeness criteria remain
+nonblocking follow-up questions; the observable minimums below are accepted.
 
 This document defines the observable semantics shared by FoilBench interactive
 viewers. It intentionally does not require Python's worker design, Julia's

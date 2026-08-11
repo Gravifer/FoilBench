@@ -71,11 +71,11 @@ is recorded in [Phase 2A acceptance](phase2a-acceptance.md).
   component profiling, portable JSON/CSV/snapshot output, and optional
   chaotic-wake sweep and paired-trajectory experiments.
 
-The automated Julia suite contains 577 passing checks. On the development
-machine, the `160 x 96` preview gate measured 19.82 Stable Fluids, 40.41 LBM,
-and 14.60 PIC/FLIP solver steps per second after warm-up. Julia remains a peer:
-it reads shared specifications and writes shared artifacts but never loads
-Python code or Python solvers.
+At Phase 2 closure the Julia suite contains 760 passing assertions. On the
+development machine, the `160 x 96` preview gate measured 19.82 Stable Fluids,
+40.41 LBM, and 14.60 PIC/FLIP solver steps per second after warm-up. Julia
+remains a peer: it reads shared specifications and writes shared artifacts but
+never loads Python code or Python solvers.
 
 ### Post-reconciliation QA queue
 
@@ -119,35 +119,26 @@ The subsequent medium-priority closure pass is also complete:
 The focused closure commits are `4e49007`, `eaf60f9`, `c65c2bf`, and
 `d80974b`.
 
-### User-attention items — temporarily deferred
+### Former user-attention queue
 
-The following policy or experiential work is deliberately deferred until the
-user can participate. Agents must not silently settle these choices. They do
-not reopen Phase 1 or Phase 2A acceptance:
-
-- choose the fresh-fallback policy after rejected warm import, including
-  retry limits, disclosure, telemetry, and pair-specific disablement;
-- choose final drag-resolution constants: angular-velocity cap, smoothing
-  window, and pose-only hysteresis;
-- decide whether diagnostic cadence remains presentation-only or gains a
-  separately exposed every-step diagnostic mode;
-- design shared language-neutral command transcripts for viewer conformance;
-  and
-- perform and record a manual cross-platform GPU interaction stress matrix.
-
-The normative minimums and detailed unanswered questions remain recorded in
-[the interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
-These deferred items should be revisited before claiming full Phase 2B viewer
-parity.
+Revision 2 settled the Phase 2 policy questions that affected observable
+conformance: rejected warm-import fallback is reason-classified and attempted
+at most once; diagnostics remain presentation-cadenced; and a shared
+language-neutral viewer transcript now exercises command barriers. Exact drag
+cap, smoothing, and hysteresis constants remain deliberately unfrozen, while
+the contract fixes their observable safety and pose semantics. Pixel-level
+visual closeness and a broader cross-platform GPU stress matrix remain useful
+future experiential work, not Phase 2 acceptance gates. The remaining scope is
+recorded in [the interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
 
 ## Phase 2B: TypeScript
 
-**Status:** Automated implementation and acceptance revalidated on 2026-08-03,
-with the TypeScript revision 2 contract reconciliation completed on
-2026-08-09; final interactive-policy acceptance remains open.
+**Status:** Completed. Automated implementation and acceptance were revalidated
+on 2026-08-03, TypeScript reconciliation completed on 2026-08-09, and the
+three-language Revision 2 closure was accepted on 2026-08-11.
 
-Phase 2B begins by formalizing the shared solver, scenario, benchmark-matrix,
-canonical-manifest, result, and PCG32 contracts. It then adds an independent
+Phase 2B formalized the shared solver, scenario, benchmark-matrix,
+canonical-manifest, result, and PCG32 contracts. It added an independent
 strict TypeScript implementation with typed-array Stable Fluids, D2Q9 TRT
 LBM, and blended PIC/FLIP solvers; a Web Worker simulation owner; a Three.js
 viewer; and Chromium-native benchmarks. TypeScript shares artifacts and
@@ -194,9 +185,9 @@ resulting corrective sequence is complete:
 - benchmark artifacts now carry a self-contained matched-run identity across
   all three languages (`d304a52`).
 
-The revalidated TypeScript suite contains 100 passing Vitest checks plus the
-live Chromium smoke test. The shared Julia suite contains 577 passing checks
-after adopting the expanded result contract.
+The final Phase 2 verifier records 103 passing TypeScript tests plus the live
+Chromium smoke test, 760 Julia assertions plus the GLMakie environment check,
+and 149 Python tests with strict Ruff and Pyright.
 
 The reproducible preview-gate matrix passed three repetitions for every solver
 at `160 x 96` after the revision 2 validity instrumentation. Observed median
@@ -210,35 +201,35 @@ foil-pose placement; explicit fresh-solver restart semantics; state revisions
 and structured failure evidence; bounded iterative and substep work; exact
 requested-time checks; and solver-family validity evidence for Stable Fluids,
 LBM, and PIC/FLIP. It also includes moving-wall work in stability selection and
-uses the wall-relative response for PIC/FLIP collision handling. Revision 2
-remains proposed repository-wide until shared fixtures and the Python and
-Julia reconciliations are complete.
+uses the wall-relative response for PIC/FLIP collision handling. Python and
+Julia now satisfy the same transaction, validity, tracer, viewer, and artifact
+semantics. The shared solver-validity and tracer-lifecycle fixtures are
+executable in all three languages, so Revision 2 is the accepted baseline.
 
 A coherent alternating vortex street remains sufficient wake behavior. The
 skew-RK2 chaotic-wake sweep and paired-trajectory experiment are optional
 post-acceptance enhancements.
 
-### Phase 2B user-policy gate
+### Phase 2 closure
 
-Core work uses the current normative minimums in the interactive viewer
-contract. Before Phase 2B is marked complete, the user must evaluate and the
-three viewers must reconcile:
+The closure sequence through `389f180` reconciled exact requested-time and
+transactional solver behavior, periodic MAC projection, direct face-centered
+PIC/FLIP transfer, viewer command and recovery semantics, benchmark evidence,
+artifact identity, and executable Revision 2 fixtures. Comparable result and
+transcript artifacts carry `foilbench-phase2-v1` revision 2; comparers validate
+their schemas and reject mismatched physical identities.
 
-- fresh fallback after rejected warm import, including eligible reasons,
-  retries, disclosure, telemetry, and pair disablement;
-- final drag cap, smoothing window, and pose-only hysteresis;
-- whether to expose an every-step diagnostic mode;
-- language-neutral viewer command transcripts; and
-- the manual cross-platform GPU interaction matrix.
-
-These remain decisions, not implementation latitude. Chromium is the required
-Phase 2B browser; Firefox and Safari are compatibility follow-ups.
-
-Consequently, the engineering work is complete but Phase 2B must not be
-relabeled unconditionally **Completed** until the user evaluates this gate.
+On 2026-08-11, `pwsh -NoProfile -File tools/verify.ps1` passed the complete
+Python, Julia, and TypeScript verification path, including GLMakie environment
+loading, the Vite production build, and live Chromium interaction. Chromium is
+the required Phase 2B browser; Firefox, Safari, broader GPU matrices, exact
+drag constants, and visual-closeness criteria are compatibility or tuning
+follow-ups rather than hidden conformance latitude.
 
 ## Phase 3: Rust and WASM
 
-Add `implementations/rust/` after the reference contracts stabilize. One Rust
+**Status:** Ready to begin; not started.
+
+Add `implementations/rust/` against the accepted Revision 2 baseline. One Rust
 core supplies native benchmarks and WASM exports. D3Q19 shallow-periodic 3D is
 considered only after the 2D implementations pass parity.

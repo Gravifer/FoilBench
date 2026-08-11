@@ -1,6 +1,6 @@
 # Solver repertoire contract
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
 
 This contract defines the minimum numerical content represented by the three
 Phase 2 solver identifiers. It prevents an implementation from satisfying the

@@ -1,6 +1,6 @@
 # Flow solver contract
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
 
 This contract defines the language-neutral behavior of a FoilBench solver.
 Implementations are independent and may use native layouts and algorithms.

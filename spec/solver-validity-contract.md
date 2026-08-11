@@ -1,6 +1,6 @@
 # Solver validity contract
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
 
 This contract defines when a FoilBench numerical operation may be reported as
 successful. It applies to ordinary advances, tentative warm-import validation,

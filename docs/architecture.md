@@ -69,12 +69,38 @@ persistent latest-only snapshots with revisions and command acknowledgements.
 Reading does not consume a snapshot, and the task blocks while paused. Visible
 tracers and path histories remain outside the solver so accepted warm swaps
 preserve presentation. A rejected warm import is structured and retains the
-source solver while the automatic fallback policy remains open. Forced
-recovery preserves physical time and visible pose, records a recovery epoch,
-and fully reseeds tracers with explicit path-continuity generations. Repeated
+source solver; eligible numerical reasons permit one fresh-destination attempt
+without retry loops or pair disablement. Forced recovery preserves physical
+time and visible pose, records a recovery epoch, and fully reseeds tracers with
+explicit path-continuity generations. Repeated
 rapid-motion failures temporarily suppress moving-wall angular velocity while
 continuing to track the pointer, then restore normal coupling after release or
 sustained gentle motion.
+
+## TypeScript data flow
+
+TypeScript is a third independent peer. Its solvers own typed-array state and
+use C-order arrays internally, so canonical serialization preserves the shared
+semantic order without adopting Python or Julia runtime code. The browser
+benchmark runner executes the same solver factory in a dedicated worker and
+emits the accepted result and canonical artifact schemas.
+
+The browser viewer's Web Worker is the sole mutable owner of solver, tracer,
+history, recovery, and presentation state. The Three.js main thread sends
+sequenced commands and renders detached snapshots; it never advances or reads
+live numerical arrays. High-rate pointer poses are coalesced before crossing
+the worker boundary, while reset, switch, pause, Reynolds, and shutdown remain
+ordered barriers. At most one transferable snapshot is in flight, later state
+coalesces behind it, and snapshot acknowledgements provide backpressure
+without allowing render latency to grow the simulation queue unboundedly.
+
+Visible tracers remain viewer state and use the same frozen-field midpoint and
+continuity semantics as the native frontends. Warm switching is transactional,
+and the accepted classified fallback/recovery policy preserves the visible
+pose and physical time while making discarded solver-private history explicit.
+Vite supplies the development and production module/worker graph; Playwright
+launches the required Chromium smoke and benchmark paths against a loopback
+server. Neither Vite nor Playwright is part of solver-only timing.
 
 ## Viewer GPU smoke test
 

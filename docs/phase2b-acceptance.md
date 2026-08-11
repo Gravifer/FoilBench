@@ -2,10 +2,9 @@
 
 Phase 2B completed and revalidated its automated engineering acceptance on
 2026-08-03 after an extensive parallel QA and remediation pass. A further
-TypeScript contract-reconciliation pass completed on 2026-08-09. It adds an
-independent strict TypeScript implementation; it does not load Python or Julia
-solvers. Final phase closure remains subject to the user-attention policy gate
-recorded below.
+TypeScript contract-reconciliation pass completed on 2026-08-09, and the
+three-language Revision 2 closure was accepted on 2026-08-11. TypeScript is an
+independent implementation; it does not load Python or Julia solvers.
 
 ## Delivered repertoire
 
@@ -56,7 +55,7 @@ npm --prefix implementations/typescript run gate:preview
 ## Automated evidence
 
 - Strict TypeScript and ESLint pass.
-- All 100 current Vitest checks pass shared RNG, geometry, scenario,
+- All 103 current Vitest checks pass shared RNG, geometry, scenario,
   canonical-layout, solver protocol, fidelity, recovery, and integration
   checks.
 - All six directed solver conversions pass at both `4°` and `25°`, directly
@@ -109,22 +108,23 @@ revision 2 contracts:
 - moving-wall work participates in substep selection, including relative-wall
   PIC/FLIP collision response and LBM wall/sweep scaling.
 
-These changes reconcile TypeScript with revision 2; the revision remains
-proposed repository-wide until its fixtures and the Python and Julia
-reconciliations are complete.
+Python and Julia now implement the same Revision 2 transaction, validity,
+tracer, viewer, and artifact semantics. The shared solver-validity and
+tracer-lifecycle fixtures execute in all three languages, and comparable
+results and transcripts carry the contract ID and revision.
 
-## Open user-policy acceptance
+## Phase 2 closure evidence
 
-The following decisions were deliberately deferred and must not be silently
-settled by an agent:
+The accepted closure command is:
 
-- final fresh fallback policy after a rejected warm import;
-- final drag cap, smoothing window, and pose-only hysteresis;
-- whether to expose an every-step diagnostic mode;
-- language-neutral viewer command transcripts; and
-- the manual cross-platform GPU interaction matrix.
+```powershell
+pwsh -NoProfile -File tools/verify.ps1
+```
 
-Their full questions and current normative minimums remain in the
+On 2026-08-11 it passed 149 Python tests with strict Ruff/Pyright, 760 Julia
+assertions plus the GLMakie environment load, and 103 TypeScript tests plus the
+Vite production build and live Chromium interaction. Exact drag constants,
+pixel-level visual closeness, Firefox/Safari support, and a broader manual GPU
+matrix remain nonblocking follow-up work under the accepted observable
+minimums in the
 [interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
-The code is ready for that evaluation, but the roadmap intentionally keeps
-the final policy gate open.
