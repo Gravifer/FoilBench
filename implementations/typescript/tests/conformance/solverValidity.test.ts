@@ -7,6 +7,15 @@ import {parseScenario} from "../../src/core/scenario.js";
 import {createSolver} from "../../src/solvers/factory.js";
 
 const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
+interface ValidityFixture {
+  readonly contract_id: string;
+  readonly contract_revision: number;
+  readonly scenario: string;
+  readonly resolution: readonly [number, number];
+  readonly target_dt: number;
+  readonly accepted_evidence: Readonly<Record<SolverId, readonly string[]>>;
+  readonly limits: {readonly lbm_maximum_mach: number; readonly lbm_trt_magic: number; readonly pic_maximum_particle_cfl: number};
+}
 
 async function loadScenario(path: string): Promise<Scenario> {
   const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
@@ -46,13 +55,14 @@ describe("revision-2 solver validity evidence", () => {
   });
 
   it("reports family-specific accepted-step evidence", async () => {
-    const scenario = await loadScenario("../../scenarios/validation/uniform.json");
-    const stable = createSolver("stable-fluids"); stable.initialize(scenario, 0); const stableReport = stable.advance({time: 0.02, angleDegrees: 0, angularVelocityDegrees: 0}, 0.02);
-    expect(stableReport.evidence["pressure_converged"]).toBe(true); expect(Number(stableReport.evidence["pressure_relative_residual"])).toBeGreaterThanOrEqual(0);
-    const lbm = createSolver("lbm-d2q9"); lbm.initialize(scenario, 0); const lbmReport = lbm.advance({time: 0.02, angleDegrees: 0, angularVelocityDegrees: 0}, 0.02);
-    expect(Number(lbmReport.evidence["maximum_lattice_mach"])).toBeLessThanOrEqual(0.08 * (1 + 1e-6)); expect(Number(lbmReport.evidence["trt_magic"])).toBeCloseTo(3 / 16, 10);
-    const pic = createSolver("pic-flip"); pic.initialize(scenario, 0); const picReport = pic.advance({time: 0.02, angleDegrees: 0, angularVelocityDegrees: 0}, 0.02);
-    expect(Number(picReport.evidence["maximum_particle_cfl"])).toBeLessThanOrEqual(0.75 * (1 + 1e-6)); expect(Number(picReport.evidence["particle_count"])).toBeGreaterThan(0); expect(Number(picReport.evidence["unsupported_face_fraction"])).toBeGreaterThanOrEqual(0); expect(picReport.evidence["pressure_converged"]).toBe(true);
+    const fixture = JSON.parse(await readFile(resolve("../../spec/conformance/solver-validity.json"), "utf8")) as ValidityFixture;
+    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(2);
+    const scenario = await loadScenario(`../../${fixture.scenario}`);
+    const reports = Object.fromEntries(solverIds.map((solverId) => { const solver = createSolver(solverId); solver.initialize(scenario, 0); return [solverId, solver.advance({time: fixture.target_dt, angleDegrees: 0, angularVelocityDegrees: 0}, fixture.target_dt)]; })) as Record<SolverId, ReturnType<ReturnType<typeof createSolver>["advance"]>>;
+    for (const solverId of solverIds) for (const key of fixture.accepted_evidence[solverId]) expect(reports[solverId].evidence[key]).not.toBeUndefined();
+    expect(reports["stable-fluids"].evidence["pressure_converged"]).toBe(true);
+    expect(Number(reports["lbm-d2q9"].evidence["maximum_lattice_mach"])).toBeLessThanOrEqual(fixture.limits.lbm_maximum_mach * (1 + 1e-6)); expect(Number(reports["lbm-d2q9"].evidence["trt_magic"])).toBeCloseTo(fixture.limits.lbm_trt_magic, 10);
+    expect(Number(reports["pic-flip"].evidence["maximum_particle_cfl"])).toBeLessThanOrEqual(fixture.limits.pic_maximum_particle_cfl * (1 + 1e-6)); expect(Number(reports["pic-flip"].evidence["particle_count"])).toBeGreaterThan(0); expect(Number(reports["pic-flip"].evidence["unsupported_face_fraction"])).toBeGreaterThanOrEqual(0); expect(reports["pic-flip"].evidence["pressure_converged"]).toBe(true);
   });
 
   it("classifies a finite pressure solve that exhausts its iteration budget", async () => {

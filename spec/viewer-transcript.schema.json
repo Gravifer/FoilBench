@@ -4,9 +4,11 @@
   "title": "FoilBench deterministic viewer transcript",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "id", "scenario", "solver", "actions"],
+  "required": ["schema_version", "contract_id", "contract_revision", "id", "scenario", "solver", "actions"],
   "properties": {
     "schema_version": {"const": 1},
+    "contract_id": {"const": "foilbench-phase2-v1"},
+    "contract_revision": {"const": 2},
     "id": {"type": "string", "minLength": 1},
     "scenario": {"type": "string", "minLength": 1},
     "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},

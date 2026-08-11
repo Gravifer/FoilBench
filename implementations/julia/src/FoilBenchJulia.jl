@@ -79,7 +79,9 @@ export enforce_solid_faces!
 export enstrophy
 export export_state
 export face_divergence
+export native_divergence_linf
 export faces_to_cell
+export solid_face_leakage
 export import_state!
 export implicit_diffuse_scalar
 export implicit_diffuse_velocity

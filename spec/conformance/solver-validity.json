@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 2,
+  "scenario": "scenarios/validation/uniform.json",
+  "resolution": [32, 16],
+  "target_dt": 0.02,
+  "changed_reynolds": 350.0,
+  "invalid_completion_time": 1.0,
+  "invalid_completion_reason": "time_contract_failure",
+  "invalid_completion_stage": "time-mapping",
+  "extreme_angular_velocity_degrees": 1000000000.0,
+  "maximum_internal_substeps": 512,
+  "extreme_motion_allowed_reasons": ["stability_limit", "excessive_velocity"],
+  "accepted_evidence": {
+    "stable-fluids": [
+      "maximum_fluid_speed",
+      "maximum_characteristic_displacement",
+      "maximum_boundary_sweep",
+      "pressure_converged",
+      "divergence_linf",
+      "solid_leakage",
+      "requested_reynolds",
+      "effective_reynolds"
+    ],
+    "lbm-d2q9": [
+      "maximum_fluid_speed",
+      "maximum_wall_speed",
+      "maximum_geometry_sweep_speed",
+      "maximum_lattice_mach",
+      "density_excursion",
+      "minimum_population",
+      "trt_magic",
+      "requested_reynolds",
+      "effective_reynolds"
+    ],
+    "pic-flip": [
+      "maximum_particle_cfl",
+      "particle_count",
+      "empty_cell_fraction",
+      "underfilled_cell_fraction",
+      "unresolved_solid_particles",
+      "unsupported_face_fraction",
+      "pressure_converged",
+      "divergence_linf",
+      "solid_leakage",
+      "requested_reynolds",
+      "effective_reynolds"
+    ]
+  },
+  "limits": {
+    "lbm_maximum_mach": 0.08,
+    "lbm_trt_magic": 0.1875,
+    "pic_maximum_particle_cfl": 0.75
+  }
+}

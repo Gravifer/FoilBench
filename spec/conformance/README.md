@@ -14,12 +14,15 @@ implementation must reproduce before solver comparisons are meaningful.
 - `viewer-basic.json` is the first deterministic interactive command
   transcript. All language harnesses consume the same monotonic input and
   compare semantic state rather than renderer text or frame counts.
+- `tracer-lifecycle.json` fixes the frozen-field midpoint trajectory and the
+  observable recycle, pose, continuity, and per-language determinism policy.
+- `solver-validity.json` fixes the shared requested-time, bounded-motion,
+  revision, rollback, and accepted-evidence probes for all three solver IDs.
 
-Revision 2 additionally requires shared tracer-lifecycle and solver-validity
-fixtures. Their normative behavior is already defined by the interactive
-viewer and solver-validity contracts; fixture values will be committed with
-the implementation conformance pass after contract review. Until then,
-implementations must not invent permanent language-local thresholds.
+Revision 2 requires the shared tracer-lifecycle and solver-validity fixtures
+above. Their normative meanings remain defined by the interactive viewer and
+solver-validity contracts; the JSON files supply executable values rather
+than creating another source of policy.
 
 Tracer fixtures assert per-language deterministic replay, exact lifecycle
 semantics, analytic integration tolerances, and statistically comparable

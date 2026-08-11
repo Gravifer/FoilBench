@@ -620,13 +620,23 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
     return StepReport(
         target, target, substeps, maximum_speed, warnings, solver.revision,
         Dict{String,Any}(
+            "maximum_fluid_speed" => maximum_speed,
             "maximum_physical_speed" => maximum_speed,
             "maximum_wall_speed" => wall_speed,
+            "maximum_geometry_sweep_speed" => sweep_speed,
             "maximum_lattice_mach" => maximum_mach,
+            "density_excursion" => density_excursion,
             "maximum_density_excursion" => density_excursion,
             "minimum_population" => minimum_population,
             "omega_plus" => solver.scaling.omega_plus,
             "omega_minus" => solver.scaling.omega_minus,
+            "trt_magic" =>
+                (inv(solver.scaling.omega_plus) - T(0.5)) *
+                (inv(solver.scaling.omega_minus) - T(0.5)),
+            "requested_reynolds" => solver.reynolds_value,
+            "effective_reynolds" => solver.scaling.effective_reynolds,
+            "degraded_motion" => wall_speed == zero(T) &&
+                abs(T(control.angle_degrees) - checkpoint[6].angle_degrees) > T(1.0e-9),
         ),
     )
 end

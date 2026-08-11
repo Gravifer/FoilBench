@@ -337,6 +337,7 @@ def run_matrix(
                 )
                 result: dict[str, object] = {
                     "schema_version": 1,
+                    "contract_id": "foilbench-phase2-v1",
                     "contract_revision": 2,
                     "benchmark_matrix_id": matrix.id,
                     "scenario_id": scenario.id,

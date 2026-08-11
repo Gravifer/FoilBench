@@ -87,6 +87,40 @@ def enforce_solid_faces(
     v[solid_v] = wall_v[solid_v]
 
 
+def native_divergence_linf(
+    u: FaceVelocityX,
+    v: FaceVelocityY,
+    domain: DomainSpec,
+    solid: MaskField,
+) -> float:
+    """Return the maximum native MAC divergence over fluid cells."""
+    divergence = (u[:, 1:] - u[:, :-1]) / domain.dx + (
+        v[1:, :] - v[:-1, :]
+    ) / domain.dy
+    fluid = ~solid
+    return float(np.max(np.abs(divergence[fluid]))) if np.any(fluid) else 0.0
+
+
+def solid_face_leakage(
+    u: FaceVelocityX,
+    v: FaceVelocityY,
+    solid: MaskField,
+    wall_velocity: VelocityField,
+) -> float:
+    """Return maximum wall-relative normal speed on fluid-solid MAC faces."""
+    wall_u, wall_v = cell_to_faces(wall_velocity)
+    interface_u = np.zeros_like(u, dtype=np.bool_)
+    interface_v = np.zeros_like(v, dtype=np.bool_)
+    interface_u[:, 1:-1] = solid[:, :-1] ^ solid[:, 1:]
+    interface_v[1:-1, :] = solid[:-1, :] ^ solid[1:, :]
+    maximum = 0.0
+    if np.any(interface_u):
+        maximum = max(maximum, float(np.max(np.abs(u[interface_u] - wall_u[interface_u]))))
+    if np.any(interface_v):
+        maximum = max(maximum, float(np.max(np.abs(v[interface_v] - wall_v[interface_v]))))
+    return maximum
+
+
 def project_faces(
     u: FaceVelocityX,
     v: FaceVelocityY,

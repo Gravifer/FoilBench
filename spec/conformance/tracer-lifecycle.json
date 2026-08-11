@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 2,
+  "integrator": {
+    "method": "frozen-field-explicit-midpoint",
+    "initial_position": [1.0, 0.0],
+    "target_dt": 0.1,
+    "velocity_field": {
+      "kind": "linear",
+      "matrix": [[0.0, -1.0], [1.0, 0.0]]
+    },
+    "expected_position": [0.995, 0.1],
+    "absolute_tolerance": 0.000001
+  },
+  "lifecycle": {
+    "authoritative_pose_degrees": 30.0,
+    "open_boundary_exit_placement": "inlet",
+    "display_lifetime_placement": "domain",
+    "material_lifetime_placement": "none",
+    "continuity_generation_increment": 1
+  },
+  "determinism": "per-language"
+}

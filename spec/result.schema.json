@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "contract_id",
     "contract_revision",
     "benchmark_matrix_id",
     "scenario_id",
@@ -48,6 +49,7 @@
   ],
   "properties": {
     "schema_version": {"const": 1},
+    "contract_id": {"const": "foilbench-phase2-v1"},
     "contract_revision": {"const": 2},
     "benchmark_matrix_id": {"type": "string", "minLength": 1},
     "scenario_id": {"type": "string"},

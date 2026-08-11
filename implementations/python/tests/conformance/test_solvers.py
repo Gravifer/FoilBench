@@ -1,6 +1,9 @@
-from dataclasses import replace
-
 # pyright: reportPrivateUsage=false
+
+import json
+from dataclasses import replace
+from pathlib import Path
+from typing import TypedDict, cast
 
 import numpy as np
 import pytest
@@ -8,11 +11,43 @@ import pytest
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import CanonicalFlowState, ControlState, NumericalFailure
 from foilbench_py.core.protocol import FlowSolver
+from foilbench_py.core.scenario import load_scenario
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from foilbench_py.solvers.lbm import LBMSolver
 from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.solvers.stable_fluids import StableFluidsSolver
 from tests.helpers import ScenarioFactory
+
+
+class _ValidityFixture(TypedDict):
+    contract_id: str
+    contract_revision: int
+    scenario: str
+    resolution: list[int]
+    target_dt: float
+    changed_reynolds: float
+    invalid_completion_time: float
+    invalid_completion_reason: str
+    invalid_completion_stage: str
+    extreme_angular_velocity_degrees: float
+    maximum_internal_substeps: int
+    extreme_motion_allowed_reasons: list[str]
+    accepted_evidence: dict[str, list[str]]
+    limits: dict[str, float]
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _validity_fixture() -> _ValidityFixture:
+    return cast(
+        _ValidityFixture,
+        json.loads(
+            (_REPOSITORY_ROOT / "spec/conformance/solver-validity.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
 
 
 def _assert_same_canonical_state(
@@ -58,6 +93,74 @@ def test_solver_protocol_and_canonical_export(
     assert state.velocity.shape == (1, scenario.domain.ny, scenario.domain.nx, 2)
     assert all(np.isfinite(value) for value in diagnostics.values.values())
     assert diagnostics.state_revision == report.state_revision
+
+
+def test_shared_revision_2_validity_fixture() -> None:
+    fixture = _validity_fixture()
+    assert fixture["contract_id"] == "foilbench-phase2-v1"
+    assert fixture["contract_revision"] == 2
+    scenario = load_scenario(_REPOSITORY_ROOT / fixture["scenario"])
+    resolution = fixture["resolution"]
+    scenario = replace(
+        scenario,
+        domain=replace(scenario.domain, resolution=(resolution[0], resolution[1])),
+    )
+    geometry = NacaFoil(scenario.foil)
+
+    for solver_id in solver_ids():
+        solver = create_solver(solver_id)
+        solver.initialize(scenario, geometry, scenario.seed)
+        solver.set_reynolds(fixture["changed_reynolds"])
+        report = solver.advance(
+            scenario.control_at(fixture["target_dt"]),
+            fixture["target_dt"],
+        )
+        for key in fixture["accepted_evidence"][solver_id]:
+            assert key in report.evidence
+        assert report.state_revision == solver.state_revision
+        assert solver.diagnostics().state_revision == report.state_revision
+
+        if solver_id == "lbm-d2q9":
+            assert float(report.evidence["maximum_lattice_mach"]) <= (
+                fixture["limits"]["lbm_maximum_mach"] * (1.0 + 1.0e-6)
+            )
+            assert float(report.evidence["trt_magic"]) == pytest.approx(
+                fixture["limits"]["lbm_trt_magic"]
+            )
+        elif solver_id == "pic-flip":
+            assert float(report.evidence["maximum_particle_cfl"]) <= (
+                fixture["limits"]["pic_maximum_particle_cfl"] * (1.0 + 1.0e-6)
+            )
+
+        mismatch = create_solver(solver_id)
+        mismatch.initialize(scenario, geometry, scenario.seed)
+        before = mismatch.export_state()
+        with pytest.raises(NumericalFailure) as captured:
+            mismatch.advance(
+                ControlState(fixture["invalid_completion_time"], 0.0, 0.0),
+                fixture["target_dt"],
+            )
+        assert captured.value.reason == fixture["invalid_completion_reason"]
+        assert captured.value.stage == fixture["invalid_completion_stage"]
+        _assert_same_canonical_state(before, mismatch.export_state())
+
+        extreme = create_solver(solver_id)
+        extreme.initialize(scenario, geometry, scenario.seed)
+        before = extreme.export_state()
+        with pytest.raises(NumericalFailure) as captured:
+            extreme.advance(
+                ControlState(
+                    fixture["target_dt"],
+                    0.0,
+                    fixture["extreme_angular_velocity_degrees"],
+                ),
+                fixture["target_dt"],
+            )
+        assert captured.value.reason in fixture["extreme_motion_allowed_reasons"]
+        assert int(captured.value.evidence["required_substeps"]) > fixture[
+            "maximum_internal_substeps"
+        ]
+        _assert_same_canonical_state(before, extreme.export_state())
 
 
 def test_lbm_distinct_requested_intervals_execute_distinct_physical_updates(

@@ -1,22 +1,36 @@
+import json
 from dataclasses import replace
+from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
 
+from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import (
     ControlState,
     ImportOutcome,
     NumericalFailure,
     StepReport,
 )
+from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.pic_flip import PicFlipSolver
 from foilbench_py.solvers.stable_fluids import StableFluidsSolver
+from foilbench_py.types import PointCloud
 from foilbench_py.viewer.app import (
     ViewerModel,
     viewer_bounds,
     viewer_crop_enabled_by_default,
 )
 from tests.helpers import ScenarioFactory
+
+
+class _RotationSampler(StableFluidsSolver):
+    def sample_velocity(self, points: PointCloud) -> PointCloud:
+        sampled = np.empty_like(points)
+        sampled[:, 0] = -points[:, 1]
+        sampled[:, 1] = points[:, 0]
+        return sampled
 
 
 def test_viewer_bounds_can_crop_only_the_presentation(
@@ -72,6 +86,41 @@ def test_headless_viewer_update_and_switch(
     assert np.count_nonzero(generation_changes) < 0.1 * generation_changes.size
     assert model.time == pytest.approx(2.0 * scenario.output_dt)
     assert "warm-import transient" in model.status()
+
+
+def test_shared_tracer_fixture_uses_frozen_field_midpoint(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    document = cast(
+        dict[str, object],
+        json.loads(
+            (repository_root / "spec/conformance/tracer-lifecycle.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    assert document["contract_id"] == "foilbench-phase2-v1"
+    assert document["contract_revision"] == 2
+    integrator = cast(dict[str, object], document["integrator"])
+    initial = cast(list[float], integrator["initial_position"])
+    expected = cast(list[float], integrator["expected_position"])
+    timestep = cast(float, integrator["target_dt"])
+    tolerance = cast(float, integrator["absolute_tolerance"])
+
+    scenario = scenario_factory(resolution=(32, 16))
+    tracers = TracerSystem.create(
+        scenario.domain,
+        NacaFoil(scenario.foil),
+        count=1,
+        history_length=3,
+        seed=0,
+    )
+    tracers.positions[0] = initial
+    tracers.ages[0] = 0.0
+    tracers.lifetimes[0] = 10.0
+    tracers.update(_RotationSampler(), ControlState(timestep, 0.0, 0.0), timestep)
+    np.testing.assert_allclose(tracers.positions[0], expected, atol=tolerance, rtol=0.0)
 
 
 def test_first_step_after_reset_refreshes_warming_diagnostics(

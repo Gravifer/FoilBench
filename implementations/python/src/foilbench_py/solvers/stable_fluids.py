@@ -13,7 +13,9 @@ from foilbench_py.core.grid import (
     faces_to_cell,
     implicit_diffuse,
     implicit_diffuse_faces,
+    native_divergence_linf,
     project_faces,
+    solid_face_leakage,
 )
 from foilbench_py.core.interpolation import sample_vector
 from foilbench_py.core.metrics import (
@@ -415,6 +417,20 @@ class StableFluidsSolver:
             if self._skew_rk2
             else dt * final_speed / spacing
         )
+        _, _, final_u, final_v, final_solid = self._require()
+        final_wall = self._wall_grid(self._control)
+        native_divergence = native_divergence_linf(
+            final_u,
+            final_v,
+            scenario.domain,
+            final_solid,
+        )
+        native_leakage = solid_face_leakage(
+            final_u,
+            final_v,
+            final_solid,
+            final_wall,
+        )
         return StepReport(
             target_dt,
             target_dt,
@@ -427,8 +443,13 @@ class StableFluidsSolver:
                 "maximum_wall_speed": wall_speed,
                 "maximum_characteristic_displacement": accepted_measure,
                 "maximum_boundary_sweep": sweep_cells / substeps,
+                "pressure_converged": True,
+                "divergence_linf": native_divergence,
+                "solid_leakage": native_leakage,
                 "requested_reynolds": self._reynolds,
                 "effective_reynolds": self._reynolds,
+                "degraded_motion": wall_speed == 0.0
+                and abs(control.angle_degrees - start_angle) > 1.0e-9,
             },
         )
 

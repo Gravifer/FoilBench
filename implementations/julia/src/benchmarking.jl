@@ -387,6 +387,7 @@ function run_benchmark_matrix(
             particle_count = get(diagnostic_values, "particle_count", 0.0)
             result = Dict{String,Any}(
                 "schema_version" => 1,
+                "contract_id" => "foilbench-phase2-v1",
                 "contract_revision" => 2,
                 "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,

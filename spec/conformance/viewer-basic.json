@@ -1,5 +1,7 @@
 {
   "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 2,
   "id": "viewer-basic-controls",
   "scenario": "scenarios/airfoil/default.json",
   "solver": "stable-fluids",

@@ -18,6 +18,7 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     result_files = sorted(output.glob("*.json"))
     assert len(result_files) == 3
     result = cast(dict[str, object], json.loads(result_files[0].read_text(encoding="utf-8")))
+    assert result["contract_id"] == "foilbench-phase2-v1"
     assert result["contract_revision"] == 2
     assert result["resolution"] == [32, 16]
     assert result["memory_measurement"] == "rss"

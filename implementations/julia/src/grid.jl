@@ -103,6 +103,39 @@ function face_divergence(
     return output
 end
 
+function native_divergence_linf(
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+    solid::AbstractMatrix{Bool},
+) where {T<:AbstractFloat}
+    divergence = face_divergence(u, v, domain)
+    maximum_value = zero(T)
+    for index in eachindex(divergence)
+        solid[index] || (maximum_value = max(maximum_value, abs(divergence[index])))
+    end
+    return maximum_value
+end
+
+function solid_face_leakage(
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    solid::AbstractMatrix{Bool},
+    wall_velocity::AbstractArray{T,3},
+) where {T<:AbstractFloat}
+    wall_u, wall_v = cell_to_faces(wall_velocity)
+    maximum_value = zero(T)
+    for j in axes(solid, 2), i in 2:size(u, 1)-1
+        xor(solid[i - 1, j], solid[i, j]) || continue
+        maximum_value = max(maximum_value, abs(u[i, j] - wall_u[i, j]))
+    end
+    for j in 2:size(v, 2)-1, i in axes(solid, 1)
+        xor(solid[i, j - 1], solid[i, j]) || continue
+        maximum_value = max(maximum_value, abs(v[i, j] - wall_v[i, j]))
+    end
+    return maximum_value
+end
+
 function cell_to_canonical(velocity::AbstractArray{T,3}) where {T<:AbstractFloat}
     nx_value, ny_value, dimensions = size(velocity)
     dimensions == 2 || throw(DimensionMismatch("Phase 2A canonical conversion expects 2D"))

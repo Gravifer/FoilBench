@@ -1,3 +1,5 @@
+import {readFile} from "node:fs/promises";
+import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
 import type {
   CanonicalFlowState,
@@ -58,13 +60,15 @@ class SampleSolver implements FlowSolver {
 }
 
 describe("visible tracer contract", () => {
-  it("uses frozen-field explicit midpoint rather than Euler", () => {
+  it("uses the shared frozen-field explicit-midpoint fixture rather than Euler", async () => {
+    const fixture = JSON.parse(await readFile(resolve("../../spec/conformance/tracer-lifecycle.json"), "utf8")) as {contract_id: string; contract_revision: number; integrator: {initial_position: [number, number]; target_dt: number; expected_position: [number, number]; absolute_tolerance: number}};
+    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(2);
     const tracers = new TracerSystem(scenario, 1, 3);
-    tracers.positions[0] = 1; tracers.positions[1] = 0;
+    tracers.positions[0] = fixture.integrator.initial_position[0]; tracers.positions[1] = fixture.integrator.initial_position[1];
     tracers.ages[0] = 0; tracers.lifetimes[0] = 10;
-    tracers.advance(new SampleSolver((x, y) => [-y, x]), 0.1);
-    expect(tracers.positions[0]).toBeCloseTo(0.995, 5);
-    expect(tracers.positions[1]).toBeCloseTo(0.1, 5);
+    tracers.advance(new SampleSolver((x, y) => [-y, x]), fixture.integrator.target_dt);
+    expect(tracers.positions[0]).toBeCloseTo(fixture.integrator.expected_position[0], Math.ceil(-Math.log10(fixture.integrator.absolute_tolerance)));
+    expect(tracers.positions[1]).toBeCloseTo(fixture.integrator.expected_position[1], Math.ceil(-Math.log10(fixture.integrator.absolute_tolerance)));
   });
 
   it("is deterministic within the TypeScript implementation", () => {

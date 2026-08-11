@@ -1,6 +1,6 @@
-from time import perf_counter
-
 # pyright: reportPrivateUsage=false
+
+from time import perf_counter
 
 import numpy as np
 import pytest

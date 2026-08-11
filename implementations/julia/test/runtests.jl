@@ -18,6 +18,18 @@ struct PresentationFailingSolver{T<:AbstractFloat} <: FoilBenchJulia.AbstractFlo
     failure::Symbol
 end
 
+struct RotationTracerSolver{T<:AbstractFloat} <: FoilBenchJulia.AbstractFlowSolver{2,T} end
+
+function FoilBenchJulia.sample_velocity(
+    ::RotationTracerSolver{T},
+    points::AbstractMatrix{T},
+) where {T}
+    sampled = similar(points)
+    sampled[1, :] .= .-points[2, :]
+    sampled[2, :] .= points[1, :]
+    return sampled
+end
+
 FoilBenchJulia.solver_info(solver::PresentationFailingSolver) = solver_info(solver.inner)
 FoilBenchJulia.reynolds(solver::PresentationFailingSolver) = reynolds(solver.inner)
 FoilBenchJulia.state_revision(solver::PresentationFailingSolver) = state_revision(solver.inner)
@@ -746,6 +758,120 @@ end
     @test export_state(lattice).velocity == lattice_before.velocity
 end
 
+@testset "Shared Revision 2 solver-validity fixture" begin
+    fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
+    @test fixture.contract_id == "foilbench-phase2-v1"
+    @test fixture.contract_revision == 2
+    fixture_scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, fixture.scenario)),
+        (Int(fixture.resolution[1]), Int(fixture.resolution[2])),
+    )
+    geometry = NacaFoil(fixture_scenario.foil)
+    T = scalar_type(fixture_scenario)
+    for solver in (
+        StableFluidsSolver(T),
+        LBMSolver(T),
+        PicFlipSolver(T),
+    )
+        solver_id = solver_info(solver).id
+        initialize!(solver, fixture_scenario, geometry, fixture_scenario.seed)
+        set_reynolds!(solver, fixture.changed_reynolds)
+        report = advance!(
+            solver,
+            control_at(fixture_scenario, fixture.target_dt),
+            fixture.target_dt,
+        )
+        for key in fixture.accepted_evidence[solver_id]
+            @test haskey(report.evidence, String(key))
+        end
+        @test report.state_revision == state_revision(solver)
+        @test diagnostics(solver).state_revision == report.state_revision
+        if solver_id == "lbm-d2q9"
+            @test report.evidence["maximum_lattice_mach"] <=
+                fixture.limits.lbm_maximum_mach * (1 + 1.0e-6)
+            @test report.evidence["trt_magic"] ≈ fixture.limits.lbm_trt_magic
+        elseif solver_id == "pic-flip"
+            @test report.evidence["maximum_particle_cfl"] <=
+                fixture.limits.pic_maximum_particle_cfl * (1 + 1.0e-6)
+        end
+
+        mismatch = solver_id == "stable-fluids" ? StableFluidsSolver(T) :
+            solver_id == "lbm-d2q9" ? LBMSolver(T) : PicFlipSolver(T)
+        initialize!(mismatch, fixture_scenario, geometry, fixture_scenario.seed)
+        before = export_state(mismatch)
+        mismatch_failure = try
+            advance!(
+                mismatch,
+                ControlState(T(fixture.invalid_completion_time), zero(T), zero(T)),
+                fixture.target_dt,
+            )
+            nothing
+        catch failure
+            failure
+        end
+        @test mismatch_failure isa NumericalFailure
+        if mismatch_failure isa NumericalFailure
+            @test mismatch_failure.reason == Symbol(fixture.invalid_completion_reason)
+            @test mismatch_failure.stage == Symbol(fixture.invalid_completion_stage)
+        end
+        @test export_state(mismatch).time == before.time
+        @test export_state(mismatch).velocity == before.velocity
+
+        extreme = solver_id == "stable-fluids" ? StableFluidsSolver(T) :
+            solver_id == "lbm-d2q9" ? LBMSolver(T) : PicFlipSolver(T)
+        initialize!(extreme, fixture_scenario, geometry, fixture_scenario.seed)
+        before = export_state(extreme)
+        extreme_failure = try
+            advance!(
+                extreme,
+                ControlState(
+                    T(fixture.target_dt),
+                    zero(T),
+                    T(fixture.extreme_angular_velocity_degrees),
+                ),
+                fixture.target_dt,
+            )
+            nothing
+        catch failure
+            failure
+        end
+        @test extreme_failure isa NumericalFailure
+        if extreme_failure isa NumericalFailure
+            @test String(extreme_failure.reason) in fixture.extreme_motion_allowed_reasons
+            @test extreme_failure.evidence["required_substeps"] >
+                fixture.maximum_internal_substeps
+        end
+        @test export_state(extreme).time == before.time
+        @test export_state(extreme).velocity == before.velocity
+    end
+end
+
+@testset "Shared Revision 2 tracer fixture" begin
+    fixture = JSON3.read(read(joinpath(FIXTURES, "tracer-lifecycle.json"), String))
+    @test fixture.contract_id == "foilbench-phase2-v1"
+    @test fixture.contract_revision == 2
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
+        (32, 16),
+    )
+    geometry = NacaFoil(scenario.foil)
+    T = scalar_type(scenario)
+    tracers = TracerState(scenario, geometry, zero(T); count = 1, history_length = 3)
+    tracers.positions[:, 1] .= T.(fixture.integrator.initial_position)
+    tracers.ages[1] = zero(T)
+    tracers.lifetimes[1] = T(10)
+    advance_tracers!(
+        tracers,
+        RotationTracerSolver{T}(),
+        scenario,
+        geometry,
+        ControlState(T(fixture.integrator.target_dt), zero(T), zero(T)),
+        T(fixture.integrator.target_dt),
+    )
+    @test tracers.positions[:, 1] ≈ T.(fixture.integrator.expected_position) atol =
+        T(fixture.integrator.absolute_tolerance)
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),
@@ -1310,6 +1436,7 @@ end
 
     result = Dict{String,Any}(
         "schema_version" => 1,
+        "contract_id" => "foilbench-phase2-v1",
         "contract_revision" => 2,
         "benchmark_matrix_id" => "test",
         "scenario_id" => "test",
@@ -1400,6 +1527,7 @@ end
             )
             @test document["periodic_axes"] isa Vector
             @test isnothing(validate_benchmark_result(document, schema_path))
+            @test document["contract_id"] == "foilbench-phase2-v1"
             @test document["contract_revision"] == 2
             @test isnothing(document["failure"])
             @test document["final_state_revision"] == document["diagnostic_state_revision"]

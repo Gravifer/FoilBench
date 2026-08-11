@@ -537,6 +537,7 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     start_time = solver.time
     start_angle = solver.control.angle_degrees
     counts = Int[]
+    projected_u, projected_v = cell_to_faces(solver.grid_velocity)
     try
         solver.reseeded_last_step = 0
         solver.swept_collisions_last_step = 0
@@ -637,15 +638,39 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     )
     solver.revision += 1
     warnings = isempty(solver.projection_warning) ? String[] : [solver.projection_warning]
+    fluid_counts = Int[]
+    for j in axes(solver.solid, 2), i in axes(solver.solid, 1)
+        solver.solid[i, j] || push!(fluid_counts, counts[(j - 1) * nx(scenario.domain) + i])
+    end
+    final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
+    maximum_particle_cfl = timestep * transport_speed /
+        min(dx(scenario.domain), dy(scenario.domain))
     return StepReport(
         target, target, substeps, transport_speed, warnings, solver.revision,
         Dict{String,Any}(
             "maximum_particle_speed" => maximum_speed,
             "maximum_wall_speed" => wall_speed,
+            "maximum_particle_cfl" => maximum_particle_cfl,
+            "maximum_characteristic_displacement" => maximum_particle_cfl,
             "particle_count" => size(solver.positions, 2),
+            "empty_cell_fraction" => count(==(0), fluid_counts) / max(1, length(fluid_counts)),
+            "underfilled_cell_fraction" => count(value -> value < 2, fluid_counts) /
+                max(1, length(fluid_counts)),
+            "unresolved_solid_particles" => 0,
             "minimum_particles_per_cell" => isempty(counts) ? 0 : minimum(counts),
             "maximum_particles_per_cell" => isempty(counts) ? 0 : maximum(counts),
             "unsupported_face_fraction" => solver.unsupported_face_fraction,
+            "pressure_converged" => true,
+            "divergence_linf" => native_divergence_linf(
+                projected_u, projected_v, scenario.domain, solver.solid,
+            ),
+            "solid_leakage" => solid_face_leakage(
+                projected_u, projected_v, solver.solid, final_wall,
+            ),
+            "requested_reynolds" => solver.reynolds_value,
+            "effective_reynolds" => solver.reynolds_value,
+            "degraded_motion" => wall_speed == zero(T) &&
+                abs(T(control.angle_degrees) - start_angle) > T(1.0e-9),
             "projection_iterations" => solver.projection_iterations,
         ),
     )

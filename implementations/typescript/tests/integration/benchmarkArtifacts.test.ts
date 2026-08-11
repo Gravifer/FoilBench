@@ -7,6 +7,7 @@ import {compareResults} from "../../src/benchmark/runner.js";
 function result(language: string): Record<string, unknown> {
   return {
     schema_version: 1,
+    contract_id: "foilbench-phase2-v1",
     contract_revision: 2,
     benchmark_matrix_id: "test",
     scenario_id: "default-airfoil",

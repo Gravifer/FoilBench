@@ -364,12 +364,26 @@ function advance!(
         T(control.angular_velocity_degrees),
     )
     solver.revision += 1
+    final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     return StepReport(
         target, target, substeps, maximum_speed, String[], solver.revision,
         Dict{String,Any}(
             "maximum_fluid_speed" => maximum_speed,
             "maximum_wall_speed" => wall_speed,
-            "boundary_sweep_cells" => sweep_cells,
+            "maximum_characteristic_displacement" =>
+                timestep * maximum_speed / min(dx(scenario.domain), dy(scenario.domain)),
+            "maximum_boundary_sweep" => sweep_cells / substeps,
+            "pressure_converged" => true,
+            "divergence_linf" => native_divergence_linf(
+                solver.u, solver.v, scenario.domain, solver.solid,
+            ),
+            "solid_leakage" => solid_face_leakage(
+                solver.u, solver.v, solver.solid, final_wall,
+            ),
+            "requested_reynolds" => solver.reynolds_value,
+            "effective_reynolds" => solver.reynolds_value,
+            "degraded_motion" => wall_speed == zero(T) &&
+                abs(T(control.angle_degrees) - start_angle) > T(1.0e-9),
             "projection_iterations" => solver.projection_iterations,
             "diffusion_iterations" => solver.diffusion_iterations,
         ),

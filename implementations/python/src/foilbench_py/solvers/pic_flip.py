@@ -7,7 +7,9 @@ from foilbench_py.core.grid import (
     cell_to_faces,
     faces_to_cell,
     implicit_diffuse_faces,
+    native_divergence_linf,
     project_faces,
+    solid_face_leakage,
 )
 from foilbench_py.core.interpolation import sample_vector
 from foilbench_py.core.metrics import (
@@ -576,6 +578,9 @@ class PicFlipSolver:
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
+        centers = self._centers
+        if centers is None:
+            raise RuntimeError("PIC/FLIP grid cache has not been initialized")
         validate_advance_request(self._time, control, target_dt, scenario.precision)
         if not (
             np.isfinite(positions).all()
@@ -644,6 +649,7 @@ class PicFlipSolver:
         start_angle = self._control.angle_degrees
         report_speed = 0.0
         counts = np.empty(0, dtype=np.int64)
+        projected_u, projected_v = cell_to_faces(grid_velocity)
         try:
             self._reseeded_last_step = 0
             self._swept_collisions_last_step = 0
@@ -789,6 +795,22 @@ class PicFlipSolver:
         self._revision += 1
         warnings = () if not self._projection_warning else (self._projection_warning,)
         _, _, _, _, _, final_solid = self._require()
+        final_wall = geometry.wall_velocity(
+            centers.reshape(-1, 2),
+            self._control,
+        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+        native_divergence = native_divergence_linf(
+            projected_u,
+            projected_v,
+            scenario.domain,
+            final_solid,
+        )
+        native_leakage = solid_face_leakage(
+            projected_u,
+            projected_v,
+            final_solid,
+            final_wall,
+        )
         fluid_counts = counts[~final_solid.reshape(-1)]
         empty_fraction = float(np.count_nonzero(fluid_counts == 0)) / max(
             1,
@@ -811,11 +833,17 @@ class PicFlipSolver:
                     scenario.domain.dx,
                     scenario.domain.dy,
                 ),
+                "maximum_characteristic_displacement": dt
+                * report_speed
+                / min(scenario.domain.dx, scenario.domain.dy),
                 "particle_count": positions.shape[0],
                 "empty_cell_fraction": empty_fraction,
                 "underfilled_cell_fraction": underfilled_fraction,
                 "unresolved_solid_particles": 0,
                 "unsupported_face_fraction": self._unsupported_face_fraction,
+                "pressure_converged": True,
+                "divergence_linf": native_divergence,
+                "solid_leakage": native_leakage,
                 "requested_reynolds": self._reynolds,
                 "effective_reynolds": self._reynolds,
                 "degraded_motion": wall_speed == 0.0
