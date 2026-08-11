@@ -4,9 +4,13 @@ import {describe, expect, it} from "vitest";
 import {controlAt, parseScenario} from "../../src/core/scenario.js";
 import {NacaFoil} from "../../src/core/geometry.js";
 import {bounds2d, dimensions} from "../../src/core/grid.js";
-import {LbmSolver} from "../../src/solvers/lbm.js";
+import {convectiveOutletPopulation, LbmSolver} from "../../src/solvers/lbm.js";
 
 describe("D2Q9 TRT LBM contract", () => {
+  it("advects outlet populations from their previous boundary state", () => {
+    expect(convectiveOutletPopulation(0.25, 1, 0.08)).toBeCloseTo(0.31, 14);
+    expect(convectiveOutletPopulation(1, 0.25, 0.08)).toBeCloseTo(0.94, 14);
+  });
   it("advances finite populations and canonical fields", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const solver = new LbmSolver(); solver.initialize(scenario, 0); expect(solver.advance(controlAt(scenario, 0.01), 0.01).advancedDt).toBeCloseTo(0.01); expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true); expect(solver.exportState().density?.every(Number.isFinite)).toBe(true); });
   it("classifies invalid density and velocity beyond its bounded adaptive scaling", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const solver = new LbmSolver(); solver.initialize(scenario, 0); const control = controlAt(scenario, 0); const state = solver.exportState(); if (state.density === null) throw new Error("LBM density missing"); const invalidDensity = state.density.slice(); invalidDensity[0] = -1; expect(solver.importState({...state, density: invalidDensity}, control).reason).toBe("invalid_density"); const excessive = state.velocity.slice(); excessive[0] = 100; expect(solver.importState({...state, velocity: excessive}, control).reason).toBe("excessive_velocity"); });
   it("uses exact requested intervals at non-nominal step sizes", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const solver = new LbmSolver(); solver.initialize(scenario, 0); for (const targetDt of [0.007, 0.013, 0.02]) { const before = solver.exportState().time; const report = solver.advance(controlAt(scenario, before + targetDt), targetDt); expect(report.advancedDt).toBe(targetDt); expect(solver.exportState().time).toBeCloseTo(before + targetDt, 12); expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true); } });
