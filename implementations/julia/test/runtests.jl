@@ -1228,6 +1228,23 @@ end
         @test occursin("stable-fluids", comparison)
         @test occursin("julia", comparison)
     end
+
+    mktempdir() do directory
+        output = run_benchmark_matrix(
+            joinpath(REPOSITORY_ROOT, "benchmark-matrices", "test.json"),
+            directory,
+        )
+        artifacts = filter(name -> endswith(name, ".json"), readdir(output))
+        @test length(artifacts) == length(solver_ids())
+        for artifact in artifacts
+            document = JSON3.read(
+                read(joinpath(output, artifact), String),
+                Dict{String,Any},
+            )
+            @test document["periodic_axes"] isa Vector
+            @test isnothing(validate_benchmark_result(document, schema_path))
+        end
+    end
 end
 
 @testset "Julia chaotic-wake experiments" begin

@@ -204,7 +204,7 @@ function run_benchmark_matrix(
                 "precision" => T === Float32 ? "float32" : "float64",
                 "resolution" => collect(resolution),
                 "bounds" => [collect(pair) for pair in scenario.domain.bounds],
-                "periodic_axes" => string.(scenario.domain.periodic_axes),
+                "periodic_axes" => [string(axis) for axis in scenario.domain.periodic_axes],
                 "reynolds" => Float64(scenario.reynolds),
                 "freestream" => collect(scenario.freestream),
                 "foil" => Dict{String,Any}(
