@@ -1310,6 +1310,7 @@ end
 
     result = Dict{String,Any}(
         "schema_version" => 1,
+        "contract_revision" => 2,
         "benchmark_matrix_id" => "test",
         "scenario_id" => "test",
         "language" => "julia",
@@ -1337,9 +1338,24 @@ end
         "cell_updates_per_second" => 10.0,
         "particle_updates_per_second" => 0.0,
         "peak_rss_bytes" => 1,
+        "memory_measurement" => "rss",
+        "runtime_startup_seconds" => nothing,
+        "worker_startup_seconds" => nothing,
         "substeps" => 2,
+        "final_state_revision" => 1,
+        "diagnostic_state_revision" => 1,
+        "last_step" => Dict{String,Any}(
+            "requested_dt" => 0.01,
+            "advanced_dt" => 0.01,
+            "substeps" => 1,
+            "max_speed" => 1.0,
+            "state_revision" => 1,
+            "evidence" => Dict("maximum_fluid_speed" => 1.0),
+            "warnings" => String[],
+        ),
         "diagnostics" => Dict{String,Float64}(),
         "success" => true,
+        "failure" => nothing,
         "warnings" => String[],
     )
     schema_path = joinpath(REPOSITORY_ROOT, "spec", "result.schema.json")
@@ -1384,6 +1400,11 @@ end
             )
             @test document["periodic_axes"] isa Vector
             @test isnothing(validate_benchmark_result(document, schema_path))
+            @test document["contract_revision"] == 2
+            @test isnothing(document["failure"])
+            @test document["final_state_revision"] == document["diagnostic_state_revision"]
+            @test document["final_state_revision"] == document["last_step"]["state_revision"]
+            @test document["diagnostics"]["wake_probe_samples"] >= 8
         end
     end
 end

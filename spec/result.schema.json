@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "contract_revision",
     "benchmark_matrix_id",
     "scenario_id",
     "language",
@@ -33,13 +34,21 @@
     "cell_updates_per_second",
     "particle_updates_per_second",
     "peak_rss_bytes",
+    "memory_measurement",
+    "runtime_startup_seconds",
+    "worker_startup_seconds",
     "substeps",
+    "final_state_revision",
+    "diagnostic_state_revision",
+    "last_step",
     "diagnostics",
     "success",
+    "failure",
     "warnings"
   ],
   "properties": {
     "schema_version": {"const": 1},
+    "contract_revision": {"const": 2},
     "benchmark_matrix_id": {"type": "string", "minLength": 1},
     "scenario_id": {"type": "string"},
     "language": {"type": "string"},
@@ -122,8 +131,103 @@
       ]
     },
     "substeps": {"type": "integer", "minimum": 0},
-    "diagnostics": {"type": "object"},
+    "final_state_revision": {"type": "integer", "minimum": 0},
+    "diagnostic_state_revision": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "last_step": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requested_dt",
+            "advanced_dt",
+            "substeps",
+            "max_speed",
+            "state_revision",
+            "evidence",
+            "warnings"
+          ],
+          "properties": {
+            "requested_dt": {"type": "number", "exclusiveMinimum": 0},
+            "advanced_dt": {"type": "number", "exclusiveMinimum": 0},
+            "substeps": {"type": "integer", "minimum": 1},
+            "max_speed": {"type": "number", "minimum": 0},
+            "state_revision": {"type": "integer", "minimum": 0},
+            "evidence": {"$ref": "#/$defs/evidence"},
+            "warnings": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": {"type": "number"}
+    },
     "success": {"type": "boolean"},
+    "failure": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason", "stage", "message", "evidence"],
+          "properties": {
+            "kind": {"enum": ["numerical", "unexpected"]},
+            "reason": {
+              "anyOf": [
+                {"$ref": "#/$defs/failureReason"},
+                {"type": "null"}
+              ]
+            },
+            "stage": {
+              "anyOf": [
+                {"type": "string", "minLength": 1},
+                {"type": "null"}
+              ]
+            },
+            "message": {"type": "string", "minLength": 1},
+            "evidence": {"$ref": "#/$defs/evidence"}
+          }
+        }
+      ]
+    },
     "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "failureReason": {
+      "enum": [
+        "excessive_velocity",
+        "stability_limit",
+        "nonfinite_state",
+        "convergence_failure",
+        "projection_failure",
+        "invalid_density",
+        "invalid_population",
+        "invalid_relaxation",
+        "transfer_failure",
+        "postcondition_failure",
+        "time_contract_failure",
+        "incompatible_geometry",
+        "incompatible_domain",
+        "unsupported_conversion"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {"type": "number"},
+          {"type": "boolean"},
+          {"type": "string"},
+          {"type": "null"}
+        ]
+      }
+    }
   }
 }

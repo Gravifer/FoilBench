@@ -110,6 +110,123 @@ function _percentile(values::Vector{Float64}, fraction::Float64)
     return (1 - weight) * sorted[lower] + weight * sorted[upper]
 end
 
+function benchmark_recovery_window(scenario::Scenario, duration::Real = scenario.duration)
+    initial_angle = first(scenario.controls).angle_degrees
+    last_angle = last(scenario.controls).angle_degrees
+    isapprox(initial_angle, last_angle; atol = 1.0e-9, rtol = 0) || return nothing
+    changed = findall(
+        control -> !isapprox(
+            control.angle_degrees,
+            initial_angle;
+            atol = 1.0e-9,
+            rtol = 0,
+        ),
+        scenario.controls,
+    )
+    isempty(changed) && return nothing
+    first_changed = first(changed)
+    last_changed = last(changed)
+    (first_changed == 1 || last_changed + 1 > length(scenario.controls)) && return nothing
+    baseline_end = scenario.controls[first_changed - 1].time
+    recovery_start = scenario.controls[last_changed + 1].time
+    (baseline_end >= recovery_start || recovery_start >= duration) && return nothing
+    return (Float64(baseline_end), Float64(recovery_start))
+end
+
+function analyze_benchmark_wake(
+    samples::Vector{Float64},
+    sample_dt::Real,
+    chord::Real,
+    freestream_speed::Real,
+)
+    length(samples) >= 8 || throw(ArgumentError("wake spectrum requires eight samples"))
+    sample_dt > 0 && chord > 0 && freestream_speed > 0 ||
+        throw(ArgumentError("wake spectrum scales must be positive"))
+    all(isfinite, samples) || throw(ArgumentError("wake probe samples must be finite"))
+    count = length(samples)
+    centered = samples .- sum(samples) / count
+    transverse_rms = sqrt(sum(abs2, centered) / count)
+    windowed = [
+        centered[index] * 0.5 * (1 - cos(2pi * (index - 1) / (count - 1)))
+        for index in eachindex(centered)
+    ]
+    total_power = 0.0
+    dominant_power = 0.0
+    dominant_index = 0
+    for frequency_index in 1:fld(count, 2)
+        real_part = 0.0
+        imaginary_part = 0.0
+        for sample_index in 0:(count - 1)
+            phase = 2pi * frequency_index * sample_index / count
+            value = windowed[sample_index + 1]
+            real_part += value * cos(phase)
+            imaginary_part -= value * sin(phase)
+        end
+        power = real_part^2 + imaginary_part^2
+        total_power += power
+        if power > dominant_power
+            dominant_power = power
+            dominant_index = frequency_index
+        end
+    end
+    frequency_resolution = inv(count * Float64(sample_dt))
+    dominant_frequency = total_power <= floatmin(Float64) ?
+        0.0 : dominant_index * frequency_resolution
+    return Dict{String,Float64}(
+        "wake_probe_samples" => count,
+        "wake_frequency_resolution" => frequency_resolution,
+        "wake_transverse_rms" => transverse_rms,
+        "wake_mixing_index" => transverse_rms / Float64(freestream_speed),
+        "wake_dominant_frequency" => dominant_frequency,
+        "wake_strouhal_number" => dominant_frequency * Float64(chord) /
+            Float64(freestream_speed),
+        "wake_dominant_power_fraction" => total_power <= floatmin(Float64) ?
+            0.0 : dominant_power / total_power,
+    )
+end
+
+function _benchmark_evidence(evidence::Dict{String,Any})
+    output = Dict{String,Any}()
+    for (key, value) in evidence
+        (value === nothing || value isa Bool || value isa Real || value isa AbstractString) ||
+            throw(ArgumentError("benchmark evidence $key is not a JSON scalar"))
+        output[key] = value
+    end
+    return output
+end
+
+function _benchmark_step(report::Union{Nothing,StepReport})
+    report === nothing && return nothing
+    return Dict{String,Any}(
+        "requested_dt" => Float64(report.requested_dt),
+        "advanced_dt" => Float64(report.advanced_dt),
+        "substeps" => report.substeps,
+        "max_speed" => Float64(report.max_speed),
+        "state_revision" => report.state_revision,
+        "evidence" => _benchmark_evidence(report.evidence),
+        "warnings" => copy(report.warnings),
+    )
+end
+
+function _benchmark_failure(error)
+    if error isa NumericalFailure
+        return Dict{String,Any}(
+            "kind" => "numerical",
+            "reason" => String(error.reason),
+            "stage" => String(error.stage),
+            "message" => sprint(showerror, error),
+            "evidence" => _benchmark_evidence(error.evidence),
+        )
+    end
+    return Dict{String,Any}(
+        "kind" => "unexpected",
+        "reason" => nothing,
+        "stage" => nothing,
+        "message" => "$(typeof(error)): $(sprint(showerror, error))",
+        "evidence" => Dict{String,Any}(),
+    )
+end
+
 function _git_commit(root::AbstractString)
     try
         return readchomp(Cmd(`git rev-parse HEAD`; dir = root))
@@ -171,23 +288,98 @@ function run_benchmark_matrix(
             warnings = String[]
             success = true
             diagnostic_values = Dict{String,Float64}()
+            diagnostic_revision = nothing
+            last_report = nothing
+            failure = nothing
+            wake_probe = Float64[]
+            recovery_times = benchmark_recovery_window(scenario, matrix.duration)
+            recovery_baseline = nothing
+            recovery_elapsed = nothing
+            probe = reshape(T[
+                min(
+                    scenario.foil.pivot[1] + T(1.5) * scenario.foil.chord,
+                    scenario.domain.bounds[1][2] - T(0.5) * dx(scenario.domain),
+                ),
+                scenario.foil.pivot[2],
+            ], 2, 1)
             try
                 while elapsed_simulated < scenario.duration - T(1.0e-12)
                     timestep = min(scenario.output_dt, scenario.duration - elapsed_simulated)
                     control = control_at(scenario, elapsed_simulated + timestep)
                     started = time_ns()
                     report = advance!(solver, control, timestep)
+                    last_report = report
                     push!(step_seconds, (time_ns() - started) / 1.0e9)
                     elapsed_simulated += report.advanced_dt
                     total_substeps += report.substeps
                     append!(warnings, report.warnings)
+                    elapsed_simulated >= T(0.5) * scenario.duration &&
+                        push!(wake_probe, Float64(sample_velocity(solver, probe)[2, 1]))
+                    if recovery_times !== nothing
+                        baseline_end, recovery_start = recovery_times
+                        crossed_baseline = recovery_baseline === nothing &&
+                            elapsed_simulated >= baseline_end
+                        observing_recovery = recovery_baseline !== nothing &&
+                            recovery_elapsed === nothing &&
+                            elapsed_simulated >= recovery_start
+                        if crossed_baseline || observing_recovery
+                            transient = diagnostics(solver).values
+                            wake = get(transient, "wake_width", 0.0)
+                            recirculation = get(transient, "recirculation_area", 0.0)
+                            if crossed_baseline
+                                recovery_baseline = (wake, recirculation)
+                            else
+                                baseline_wake, baseline_recirculation =
+                                    something(recovery_baseline)
+                                if wake <= max(1.25 * baseline_wake, 2 * dy(scenario.domain)) &&
+                                        recirculation <= max(
+                                            1.25 * baseline_recirculation,
+                                            2 * dx(scenario.domain) * dy(scenario.domain),
+                                        )
+                                    recovery_elapsed = Float64(elapsed_simulated) - recovery_start
+                                end
+                            end
+                        end
+                    end
                 end
                 selected_diagnostics = diagnostics(solver)
+                selected_diagnostics.state_revision == state_revision(solver) ||
+                    error("benchmark diagnostics describe a stale state revision")
+                diagnostic_revision = selected_diagnostics.state_revision
                 diagnostic_values = copy(selected_diagnostics.values)
                 append!(warnings, selected_diagnostics.warnings)
+                if length(wake_probe) >= 8
+                    merge!(
+                        diagnostic_values,
+                        analyze_benchmark_wake(
+                            wake_probe,
+                            scenario.output_dt,
+                            scenario.foil.chord,
+                            max(norm(scenario.freestream), T(1.0e-12)),
+                        ),
+                    )
+                end
+                if recovery_times !== nothing && recovery_baseline !== nothing
+                    baseline_end, recovery_start = recovery_times
+                    observed = recovery_elapsed !== nothing
+                    diagnostic_values["recovery_baseline_time"] = baseline_end
+                    diagnostic_values["recovery_start_time"] = recovery_start
+                    diagnostic_values["recovery_observed"] = Float64(observed)
+                    diagnostic_values["recovery_elapsed"] = something(
+                        recovery_elapsed,
+                        matrix.duration - recovery_start,
+                    )
+                    observed || push!(
+                        warnings,
+                        "wake recovery was not observed; recovery_elapsed is right-censored",
+                    )
+                end
             catch error
                 success = false
                 push!(warnings, "$(typeof(error)): $(sprint(showerror, error))")
+                empty!(diagnostic_values)
+                diagnostic_revision = nothing
+                failure = _benchmark_failure(error)
             end
             total_wall = sum(step_seconds)
             median = _percentile(step_seconds, 0.5)
@@ -195,6 +387,7 @@ function run_benchmark_matrix(
             particle_count = get(diagnostic_values, "particle_count", 0.0)
             result = Dict{String,Any}(
                 "schema_version" => 1,
+                "contract_revision" => 2,
                 "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,
                 "language" => "julia",
@@ -229,9 +422,16 @@ function run_benchmark_matrix(
                 "cell_updates_per_second" => total_wall > 0 ? prod(resolution) * total_substeps / total_wall : 0.0,
                 "particle_updates_per_second" => total_wall > 0 ? particle_count * total_substeps / total_wall : 0.0,
                 "peak_rss_bytes" => max(Int(Sys.maxrss()), 0),
+                "memory_measurement" => "rss",
+                "runtime_startup_seconds" => nothing,
+                "worker_startup_seconds" => nothing,
                 "substeps" => total_substeps,
+                "final_state_revision" => state_revision(solver),
+                "diagnostic_state_revision" => diagnostic_revision,
+                "last_step" => _benchmark_step(last_report),
                 "diagnostics" => diagnostic_values,
                 "success" => success,
+                "failure" => failure,
                 "warnings" => sort!(unique(warnings)),
             )
             validate_benchmark_result(result, schema_path)
@@ -270,6 +470,7 @@ end
 
 function collect_benchmark_results(directory::AbstractString)
     results = Dict{String,Any}[]
+    schema_path = joinpath(find_repository_root(@__DIR__), "spec", "result.schema.json")
     for (root, _, files) in walkdir(directory), file in sort(files)
         endswith(file, ".json") || continue
         value = try
@@ -277,14 +478,49 @@ function collect_benchmark_results(directory::AbstractString)
         catch
             continue
         end
-        get(value, "schema_version", 0) == 1 && haskey(value, "solver") && push!(results, value)
+        if get(value, "schema_version", 0) == 1 && haskey(value, "solver")
+            validate_benchmark_result(value, schema_path)
+            push!(results, value)
+        end
     end
     return results
+end
+
+const _BENCHMARK_IDENTITY_FIELDS = (
+    "bounds",
+    "periodic_axes",
+    "reynolds",
+    "freestream",
+    "foil",
+    "control_history",
+    "requested_duration",
+    "output_dt",
+    "seed",
+)
+
+function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
+    signatures = Dict{NTuple{4,String},String}()
+    for result in results
+        key = (
+            String(result["benchmark_matrix_id"]),
+            String(result["scenario_id"]),
+            String(result["precision"]),
+            JSON3.write(result["resolution"]),
+        )
+        signature = JSON3.write([result[field] for field in _BENCHMARK_IDENTITY_FIELDS])
+        previous = get!(signatures, key, signature)
+        previous == signature || throw(ArgumentError(
+            "benchmark artifacts reuse a matrix/scenario/resolution identity with " *
+            "different physical inputs",
+        ))
+    end
+    return nothing
 end
 
 function format_benchmark_comparison(directory::AbstractString)
     results = collect_benchmark_results(directory)
     isempty(results) && return "No benchmark result JSON files found."
+    _assert_matched_benchmark_identities(results)
     header = rpad("language", 12) * rpad("solver", 20) * lpad("median ms", 12) *
         lpad("p95 ms", 12) * lpad("sim/wall", 12) * lpad("success", 10)
     lines = [header, repeat('-', length(header))]

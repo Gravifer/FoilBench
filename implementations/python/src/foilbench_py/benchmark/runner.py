@@ -17,7 +17,7 @@ import psutil
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.metrics import analyze_wake_probe
-from foilbench_py.core.models import Scenario
+from foilbench_py.core.models import NumericalFailure, Scenario, StepReport
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
@@ -87,6 +87,51 @@ def _percentile_95(values: list[float]) -> float:
     if len(values) == 1:
         return values[0]
     return float(np.percentile(np.asarray(values), 95.0))
+
+
+type JsonScalar = float | int | bool | str | None
+
+
+def _json_scalar(value: object) -> JsonScalar:
+    if isinstance(value, np.generic):
+        return _json_scalar(cast(object, value.item()))
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    raise TypeError(f"benchmark evidence value {value!r} is not a JSON scalar")
+
+
+def _step_artifact(report: StepReport | None) -> dict[str, object] | None:
+    if report is None:
+        return None
+    return {
+        "requested_dt": report.requested_dt,
+        "advanced_dt": report.advanced_dt,
+        "substeps": report.substeps,
+        "max_speed": report.max_speed,
+        "state_revision": report.state_revision,
+        "evidence": {key: _json_scalar(value) for key, value in report.evidence.items()},
+        "warnings": list(report.warnings),
+    }
+
+
+def _failure_artifact(error: Exception) -> dict[str, object]:
+    if isinstance(error, NumericalFailure):
+        return {
+            "kind": "numerical",
+            "reason": error.reason,
+            "stage": error.stage,
+            "message": str(error),
+            "evidence": {
+                key: _json_scalar(value) for key, value in error.evidence.items()
+            },
+        }
+    return {
+        "kind": "unexpected",
+        "reason": None,
+        "stage": None,
+        "message": f"{type(error).__name__}: {error}",
+        "evidence": {},
+    }
 
 
 def recovery_window(scenario: Scenario) -> tuple[float, float] | None:
@@ -162,6 +207,10 @@ def run_matrix(
                 recovery_times = recovery_window(scenario)
                 recovery_baseline: tuple[float, float] | None = None
                 recovery_elapsed: float | None = None
+                last_report: StepReport | None = None
+                diagnostic_revision: int | None = None
+                failure: dict[str, object] | None = None
+                diagnostic_values: dict[str, float] = {}
                 probe_point = np.asarray(
                     [
                         [
@@ -181,6 +230,7 @@ def run_matrix(
                         control = scenario.control_at(elapsed_simulated + dt)
                         started = time.perf_counter()
                         report = solver.advance(control, dt)
+                        last_report = report
                         step_seconds.append(time.perf_counter() - started)
                         elapsed_simulated += report.advanced_dt
                         total_substeps += report.substeps
@@ -220,6 +270,9 @@ def run_matrix(
                                     ):
                                         recovery_elapsed = elapsed_simulated - recovery_start
                     diagnostics = solver.diagnostics()
+                    if diagnostics.state_revision != solver.state_revision:
+                        raise RuntimeError("benchmark diagnostics describe a stale state revision")
+                    diagnostic_revision = diagnostics.state_revision
                     warnings.extend(diagnostics.warnings)
                     diagnostic_values = dict(diagnostics.values)
                     if len(wake_probe) >= 8:
@@ -263,10 +316,12 @@ def run_matrix(
                             warnings.append(
                                 "wake recovery was not observed; recovery_elapsed is right-censored"
                             )
-                except (FloatingPointError, RuntimeError, ValueError) as error:
+                except Exception as error:
                     success = False
                     warnings.append(f"{type(error).__name__}: {error}")
                     diagnostic_values = {}
+                    diagnostic_revision = None
+                    failure = _failure_artifact(error)
 
                 total_wall = sum(step_seconds)
                 median = statistics.median(step_seconds) if step_seconds else 0.0
@@ -282,6 +337,7 @@ def run_matrix(
                 )
                 result: dict[str, object] = {
                     "schema_version": 1,
+                    "contract_revision": 2,
                     "benchmark_matrix_id": matrix.id,
                     "scenario_id": scenario.id,
                     "language": "python",
@@ -318,9 +374,16 @@ def run_matrix(
                     "cell_updates_per_second": cell_updates_per_second,
                     "particle_updates_per_second": particle_updates_per_second,
                     "peak_rss_bytes": peak_rss,
+                    "memory_measurement": "rss",
+                    "runtime_startup_seconds": None,
+                    "worker_startup_seconds": None,
                     "substeps": total_substeps,
+                    "final_state_revision": solver.state_revision,
+                    "diagnostic_state_revision": diagnostic_revision,
+                    "last_step": _step_artifact(last_report),
                     "diagnostics": diagnostic_values,
                     "success": success,
+                    "failure": failure,
                     "warnings": sorted(set(warnings)),
                 }
                 validate_json(result, result_schema)

@@ -18,7 +18,9 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     result_files = sorted(output.glob("*.json"))
     assert len(result_files) == 3
     result = cast(dict[str, object], json.loads(result_files[0].read_text(encoding="utf-8")))
+    assert result["contract_revision"] == 2
     assert result["resolution"] == [32, 16]
+    assert result["memory_measurement"] == "rss"
     assert cast(float, result["cell_updates_per_second"]) > 0.0
     assert cast(float, result["particle_updates_per_second"]) >= 0.0
     assert cast(float, result["initialization_seconds"]) > 0.0
@@ -28,10 +30,27 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     assert diagnostics["wake_frequency_resolution"] > 0.0
     assert diagnostics["wake_dominant_frequency"] >= 0.0
     assert 0.0 <= diagnostics["wake_dominant_power_fraction"] <= 1.0
+    last_step = cast(dict[str, object], result["last_step"])
+    assert result["failure"] is None
+    assert result["success"] is True
+    assert result["final_state_revision"] == result["diagnostic_state_revision"]
+    assert result["final_state_revision"] == last_step["state_revision"]
+    assert cast(dict[str, object], last_step["evidence"])
     comparison = format_comparison(output)
     assert "stable-fluids" in comparison
     assert "lbm-d2q9" in comparison
     assert "pic-flip" in comparison
+
+    first = dict(result)
+    second = dict(result)
+    second["language"] = "julia"
+    second["reynolds"] = cast(float, second["reynolds"]) * 2.0
+    mismatch_directory = root / "results" / "test-artifacts-mismatched"
+    mismatch_directory.mkdir(parents=True, exist_ok=True)
+    (mismatch_directory / "first.json").write_text(json.dumps(first), encoding="utf-8")
+    (mismatch_directory / "second.json").write_text(json.dumps(second), encoding="utf-8")
+    with pytest.raises(ValueError, match="different physical inputs"):
+        format_comparison(mismatch_directory)
 
 
 def test_describe_reports_python_capabilities(capsys: pytest.CaptureFixture[str]) -> None:
