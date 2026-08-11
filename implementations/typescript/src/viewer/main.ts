@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type {SolverId} from "../core/contracts.js";
+import {isSolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
 import type {ViewerCommandInput, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
 
@@ -14,8 +14,10 @@ const overlay = document.createElement("div"); overlay.id = "foilbench-overlay";
 const help = document.createElement("div"); help.id = "foilbench-help"; help.style.cssText = "position:absolute;left:16px;bottom:12px;color:#bbb;font-size:12px;pointer-events:none"; help.textContent = "1/2/3 solver  left-drag foil  Space pause  R reset  +/- Re  0 Re reset  [/] tuning  V vorticity  D diagnostics  T tracers  C crop"; app.append(help);
 
 let sequence = 0; let latest: ViewerSnapshot | null = null; let latestStatus: ViewerStatusEvent | null = null; let statusGeneration = 0; let renderedStatusGeneration = -1; let renderedRevision = -1; let shutdownAcknowledged = false;
+let pendingPose: {readonly sequence: number; readonly kind: "set-angle"; readonly angleDegrees: number; readonly timestamp: number} | null = null; let poseFrame = 0;
 const worker = new Worker(new URL("../worker/simulationWorker.ts", import.meta.url), {type: "module"});
-const send = (command: ViewerCommandInput): void => { sequence += 1; worker.postMessage({...command, sequence}); };
+const flushPose = (): void => { poseFrame = 0; const pose = pendingPose; pendingPose = null; if (pose !== null) worker.postMessage(pose); };
+const send = (command: ViewerCommandInput): void => { flushPose(); sequence += 1; worker.postMessage({...command, sequence}); };
 worker.onmessage = (event: MessageEvent<ViewerEvent>): void => {
   if (event.data.kind === "shutdown-ack") { shutdownAcknowledged = true; return; }
   if (event.data.kind === "status") { latestStatus = event.data; statusGeneration += 1; return; }
@@ -24,7 +26,7 @@ worker.onmessage = (event: MessageEvent<ViewerEvent>): void => {
 worker.onerror = (event): void => { overlay.textContent = `worker failure: ${event.message}`; };
 
 const query = new URLSearchParams(location.search); const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href; const schemaUrl = new URL("../../../../spec/scenario.schema.json", import.meta.url).href;
-const [scenarioDocument, schemaDocument] = await Promise.all([fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>), fetch(schemaUrl).then(async (response) => response.json() as Promise<object>)]); const scenario = parseScenario(scenarioDocument, schemaDocument); const selected = (query.get("solver") ?? "stable-fluids") as SolverId; send({kind: "initialize", scenario, solverId: selected});
+const [scenarioDocument, schemaDocument] = await Promise.all([fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>), fetch(schemaUrl).then(async (response) => response.json() as Promise<object>)]); const scenario = parseScenario(scenarioDocument, schemaDocument); const requestedSolver = query.get("solver") ?? "stable-fluids"; if (!isSolverId(requestedSolver)) throw new Error(`unsupported solver id: ${requestedSolver}`); send({kind: "initialize", scenario, solverId: requestedSolver});
 
 function updateGeometry(geometry: THREE.BufferGeometry, values: Float32Array): void {
   const vertexCount = values.length / 2;
@@ -69,12 +71,11 @@ function draw(): void {
 }
 draw();
 
-let dragging = false; let pendingPose: {readonly angleDegrees: number; readonly timestamp: number} | null = null; let poseFrame = 0;
+let dragging = false;
 const pointerAngle = (event: PointerEvent): number => { const rect = renderer.domElement.getBoundingClientRect(); const worldX = camera.left + (event.clientX - rect.left) / rect.width * (camera.right - camera.left); const worldY = camera.top - (event.clientY - rect.top) / rect.height * (camera.top - camera.bottom); return Math.max(-30, Math.min(30, Math.atan2(worldY - (scenario.foil.pivot[1] ?? 0), worldX - (scenario.foil.pivot[0] ?? 0)) * 180 / Math.PI)); };
-const flushPose = (): void => { poseFrame = 0; const pose = pendingPose; pendingPose = null; if (pose !== null) send({kind: "set-angle", ...pose}); };
-const queuePose = (event: PointerEvent): void => { pendingPose = {angleDegrees: pointerAngle(event), timestamp: performance.now()}; if (poseFrame === 0) poseFrame = requestAnimationFrame(flushPose); };
+const queuePose = (event: PointerEvent): void => { const next = {angleDegrees: pointerAngle(event), timestamp: performance.now()}; if (pendingPose === null) { sequence += 1; pendingPose = {kind: "set-angle", sequence, ...next}; } else pendingPose = {...pendingPose, ...next}; if (poseFrame === 0) poseFrame = requestAnimationFrame(flushPose); };
 const releasePointer = (event: PointerEvent): void => { if (!dragging) return; dragging = false; if (poseFrame !== 0) cancelAnimationFrame(poseFrame); flushPose(); if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId); send({kind: "release-angle"}); };
-renderer.domElement.addEventListener("pointerdown", (event) => { if (event.button !== 0) return; dragging = true; renderer.domElement.setPointerCapture(event.pointerId); pendingPose = {angleDegrees: pointerAngle(event), timestamp: performance.now()}; flushPose(); });
+renderer.domElement.addEventListener("pointerdown", (event) => { if (event.button !== 0) return; dragging = true; renderer.domElement.setPointerCapture(event.pointerId); queuePose(event); flushPose(); });
 renderer.domElement.addEventListener("pointermove", (event) => { if (dragging) queuePose(event); });
 renderer.domElement.addEventListener("pointerup", releasePointer); renderer.domElement.addEventListener("pointercancel", releasePointer); renderer.domElement.addEventListener("lostpointercapture", (event) => { if (dragging) releasePointer(event); });
 

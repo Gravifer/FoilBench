@@ -1,5 +1,10 @@
 export type Precision = "float32" | "float64";
-export type SolverId = "stable-fluids" | "lbm-d2q9" | "pic-flip";
+export const SOLVER_IDS = ["stable-fluids", "lbm-d2q9", "pic-flip"] as const;
+export type SolverId = typeof SOLVER_IDS[number];
+
+export function isSolverId(value: string): value is SolverId {
+  return (SOLVER_IDS as readonly string[]).includes(value);
+}
 export type FloatArray = Float32Array | Float64Array;
 
 export interface DomainSpec {

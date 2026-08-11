@@ -29,6 +29,7 @@ export interface ViewerStatusEvent {
 export interface ViewerSnapshot {
   readonly kind: "snapshot"; readonly revision: number; readonly appliedCommand: number;
   readonly solverEpoch: number; readonly solverStateRevision: number;
+  readonly diagnosticSolverStateRevision: number | null; readonly vorticitySolverStateRevision: number | null;
   readonly solverId: SolverId; readonly time: number; readonly angleDegrees: number; readonly reynolds: number; readonly playbackRate: number;
   readonly paused: boolean; readonly vorticityVisible: boolean; readonly cropEnabled: boolean; readonly tracerMode: "display" | "material";
   readonly stepRate: number | null; readonly simulatedPerWall: number | null; readonly substeps: number;

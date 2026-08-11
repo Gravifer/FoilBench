@@ -94,7 +94,7 @@ describe("interactive recovery semantics", () => {
 
   it("resets an unstable online Reynolds selection before pausing at baseline", async () => {
     const model = new ViewerModel(await scenario(), "stable-fluids"); model.setReynolds(10_000);
-    for (let failure = 0; failure < 3; failure += 1) { model.solver = new FailingSolver(model.solver, numericalFailure()); model.step(); }
+    for (let failure = 0; failure < 2; failure += 1) { model.solver = new FailingSolver(model.solver, numericalFailure()); model.step(); }
     expect(model.solver.reynolds).toBe(model.scenario.reynolds);
     expect(model.paused).toBe(false);
     model.solver = new FailingSolver(model.solver, numericalFailure()); model.step();

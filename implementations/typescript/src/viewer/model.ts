@@ -7,6 +7,13 @@ import {createSolver} from "../solvers/factory.js";
 import type {ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
+const POSE_SAMPLE_WINDOW_MILLISECONDS = 80;
+const POSE_ONLY_RELEASE_SPEED_RATIO = 0.25;
+const POSE_ONLY_RELEASE_STEPS = 2;
+const MAX_RESOLVED_TIP_SPEED_RATIO = 8;
+const FAILURE_WINDOW_MILLISECONDS = 5000;
+const FAILURE_LIMIT = 3;
+
 interface PresentationState {
   vorticityVisible: boolean;
   cropEnabled: boolean;
@@ -51,6 +58,9 @@ export class ViewerModel {
   private angularVelocity = 0;
   private dragging = false;
   private poseSamples: {time: number; angle: number}[] = [];
+  private lastPoseReceivedAt: number | null = null;
+  private poseOnlyReleasePending = false;
+  private poseOnlyCalmSteps = 0;
   private resolvedMotionTrial = false;
   private stepRate: number | null = null;
   private simulatedPerWall: number | null = null;
@@ -58,9 +68,12 @@ export class ViewerModel {
   private failureTimes: number[] = [];
   private diagnosticsReady = false;
   private diagnosticsCache: Readonly<Record<string, number>> = {};
+  private diagnosticsCacheRevision: number | null = null;
   private nextDiagnosticsTime = 0;
   private vorticityCache = new Float32Array();
+  private vorticityCacheRevision: number | null = null;
   private nextVorticityTime = 0;
+  private recoveryPending = false;
   private readonly tuningValues = new Map<SolverId, InteractiveTuningValue>();
   private readonly presentationFoil: NacaFoil;
 
@@ -72,7 +85,7 @@ export class ViewerModel {
     this.presentationFoil = new NacaFoil(scenario.foil);
     this.presentation = {
       vorticityVisible: true,
-      cropEnabled: scenario.solverOptions.viewerCropDefault ?? false,
+      cropEnabled: (scenario.solverOptions.viewerCropCells ?? 0) > 0 && (scenario.solverOptions.viewerCropDefault ?? false),
       status: "warming",
       recoveryEpoch: 0,
       recoveryReason: null,
@@ -85,7 +98,7 @@ export class ViewerModel {
   public get vorticityVisible(): boolean { return this.presentation.vorticityVisible; }
   public set vorticityVisible(value: boolean) { this.presentation.vorticityVisible = value; this.invalidateVorticity(); }
   public get cropEnabled(): boolean { return this.presentation.cropEnabled; }
-  public set cropEnabled(value: boolean) { this.presentation.cropEnabled = value; }
+  public set cropEnabled(value: boolean) { this.presentation.cropEnabled = (this.scenario.solverOptions.viewerCropCells ?? 0) > 0 && value; }
   public get status(): string { return this.presentation.status; }
   public set status(value: string) { this.presentation.status = value; }
 
@@ -98,17 +111,18 @@ export class ViewerModel {
   public setAngle(angle: number, timestamp: number): void {
     const selected = Math.max(-30, Math.min(30, angle));
     this.dragging = true;
-    const previous = this.poseSamples.at(-1); if (previous !== undefined && timestamp - previous.time > 80) { this.poseSamples = []; this.angularVelocity = 0; }
+    this.lastPoseReceivedAt = performance.now();
+    const previous = this.poseSamples.at(-1);
+    if (previous !== undefined && (timestamp <= previous.time || timestamp - previous.time > POSE_SAMPLE_WINDOW_MILLISECONDS)) { this.poseSamples = []; this.angularVelocity = 0; }
     this.poseSamples.push({time: timestamp, angle: selected});
-    const cutoff = timestamp - 80;
+    const cutoff = timestamp - POSE_SAMPLE_WINDOW_MILLISECONDS;
     while (this.poseSamples.length > 2 && (this.poseSamples[1]?.time ?? timestamp) < cutoff) this.poseSamples.shift();
     const first = this.poseSamples[0];
     if (first !== undefined && timestamp > first.time) {
       const reference = Math.max(Math.hypot(this.scenario.freestream[0] ?? 0, this.scenario.freestream[1] ?? 0), 1e-6);
-      const maximum = 8 * reference / this.scenario.foil.chord * 180 / Math.PI;
+      const maximum = MAX_RESOLVED_TIP_SPEED_RATIO * reference / this.scenario.foil.chord * 180 / Math.PI;
       this.angularVelocity = Math.max(-maximum, Math.min(maximum, (selected - first.angle) / ((timestamp - first.time) / 1000)));
     }
-    if (this.presentation.poseOnly && Math.abs(this.angularVelocity) <= 30) { this.presentation.poseOnly = false; this.resolvedMotionTrial = true; }
     this.manualAngle = selected;
     this.status = "manual control";
   }
@@ -117,7 +131,8 @@ export class ViewerModel {
     this.dragging = false;
     this.angularVelocity = 0;
     this.poseSamples = [];
-    if (this.presentation.poseOnly) { this.presentation.poseOnly = false; this.resolvedMotionTrial = true; }
+    this.lastPoseReceivedAt = null;
+    this.poseOnlyReleasePending = this.presentation.poseOnly;
   }
 
   public setReynolds(reynolds: number): void {
@@ -125,6 +140,8 @@ export class ViewerModel {
     this.solver.setReynolds(selected);
     this.playbackRate = Math.max(0.5, Math.min(2, (selected / this.scenario.reynolds) ** Math.log10(1.5)));
     this.status = "Re changed; warming";
+    this.recoveryPending = false;
+    this.failureTimes = [];
     this.clearMeasurements();
   }
 
@@ -172,16 +189,18 @@ export class ViewerModel {
     this.tuningValues.clear();
     this.rememberTuning(this.solver);
     this.time = 0;
+    this.paused = false;
     this.manualAngle = null;
     this.angularVelocity = 0;
     this.dragging = false;
     this.poseSamples = [];
-    this.presentation.poseOnly = false;
-    this.resolvedMotionTrial = false;
+    this.lastPoseReceivedAt = null;
+    this.disablePoseOnly();
     this.presentation.recoveryReason = null;
     this.presentation.recoveryStage = null;
     this.playbackRate = 1;
     this.failureTimes = [];
+    this.recoveryPending = false;
     this.tracers.reseed(this.scenario.controls[0]?.angleDegrees ?? 0, "scenario_reset");
     this.status = "warming";
     this.clearMeasurements();
@@ -251,6 +270,7 @@ export class ViewerModel {
 
   public step(): number {
     if (this.paused) return 0;
+    this.settleIdleDrag(performance.now());
     const dt = this.scenario.outputDt * this.playbackRate;
     let report: StepReport;
     try {
@@ -263,14 +283,23 @@ export class ViewerModel {
     this.lastReport = report;
     this.time += report.advancedDt;
     this.diagnosticsReady = true;
-    if (this.resolvedMotionTrial) { this.resolvedMotionTrial = false; this.status = "motion resolved; running"; }
-    else this.status = "running";
+    const guardedTrial = this.resolvedMotionTrial;
+    if (guardedTrial) this.resolvedMotionTrial = false;
+    this.recoveryPending = false;
+    this.status = guardedTrial ? "motion resolved; running" : "running";
     try {
       this.tracers.advance(this.solver, report.advancedDt);
     } catch (error) {
       this.status = `presentation failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
     }
-    const stableCutoff = performance.now() - 3000;
+    if (this.presentation.poseOnly) {
+      if (this.poseOnlyReleasePending && !this.dragging) this.disablePoseOnly(true);
+      else if (this.requestedTipSpeedRatio() <= POSE_ONLY_RELEASE_SPEED_RATIO) {
+        this.poseOnlyCalmSteps += 1;
+        if (this.poseOnlyCalmSteps >= POSE_ONLY_RELEASE_STEPS) this.disablePoseOnly(true);
+      } else this.poseOnlyCalmSteps = 0;
+    }
+    const stableCutoff = performance.now() - FAILURE_WINDOW_MILLISECONDS;
     this.failureTimes = this.failureTimes.filter((value) => value >= stableCutoff);
     return report.advancedDt;
   }
@@ -285,19 +314,25 @@ export class ViewerModel {
 
   private recover(error: NumericalFailure): void {
     const now = performance.now();
-    if (this.resolvedMotionTrial) { this.resolvedMotionTrial = false; this.paused = true; this.status = `failed resolved-motion trial (${error.reason}); paused`; return; }
-    this.failureTimes = this.failureTimes.filter((value) => value >= now - 3000);
+    if (this.resolvedMotionTrial || (this.presentation.poseOnly && this.poseOnlyReleasePending && !this.dragging)) {
+      this.resolvedMotionTrial = false;
+      this.paused = true;
+      this.status = `failed resolved-motion trial (${error.reason}); paused`;
+      return;
+    }
+    this.failureTimes = this.failureTimes.filter((value) => value >= now - FAILURE_WINDOW_MILLISECONDS);
     this.failureTimes.push(now);
-    const movingRapidly = this.dragging && Math.abs(this.angularVelocity) > 30;
-    if (movingRapidly && this.failureTimes.length >= 2) { this.presentation.poseOnly = true; this.resolvedMotionTrial = false; }
+    const movingRapidly = this.dragging && this.requestedTipSpeedRatio() > 1;
+    const poseOnlyRecovery = this.recoveryPending && movingRapidly && !this.presentation.poseOnly;
+    if (poseOnlyRecovery) this.enablePoseOnly();
     let resetReynolds = false;
-    if (this.failureTimes.length >= 3) {
-      if (Math.abs(this.solver.reynolds - this.scenario.reynolds) > 1e-9) resetReynolds = true;
-      else if (!movingRapidly || this.presentation.poseOnly) {
-        this.paused = true;
-        this.status = `repeated ${error.reason} at baseline Re; paused`;
-        return;
-      }
+    const reynoldsModified = Math.abs(this.solver.reynolds - this.scenario.reynolds) > 1e-9;
+    if (!poseOnlyRecovery && reynoldsModified && (this.recoveryPending || this.failureTimes.length >= FAILURE_LIMIT)) resetReynolds = true;
+    const baselineCircuitBreak = !reynoldsModified && this.failureTimes.length >= FAILURE_LIMIT;
+    if (baselineCircuitBreak || (this.recoveryPending && !resetReynolds && !poseOnlyRecovery)) {
+      this.paused = true;
+      this.status = `repeated ${error.reason} at baseline Re; paused`;
+      return;
     }
     const requestedReynolds = resetReynolds ? this.scenario.reynolds : this.solver.reynolds;
     const angle = this.control(this.time).angleDegrees;
@@ -313,12 +348,15 @@ export class ViewerModel {
       this.manualAngle = angle;
       this.angularVelocity = 0;
       this.poseSamples = [];
+      this.lastPoseReceivedAt = null;
       this.presentation.recoveryEpoch += 1;
       this.presentation.recoveryReason = error.reason;
       this.presentation.recoveryStage = "ordinary-step";
       this.tracers.reseed(angle, "forced_recovery");
       this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=ordinary-step discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
       this.clearMeasurements();
+      this.recoveryPending = true;
+      if (resetReynolds || poseOnlyRecovery) this.failureTimes = [];
     } catch (recoveryError) {
       this.paused = true;
       this.status = `recovery failed after ${error.reason}: ${recoveryError instanceof Error ? recoveryError.name : "unknown"}; paused`;
@@ -330,12 +368,13 @@ export class ViewerModel {
     this.simulatedPerWall = null;
     this.diagnosticsReady = false;
     this.diagnosticsCache = {};
+    this.diagnosticsCacheRevision = null;
     this.nextDiagnosticsTime = this.time;
     this.lastReport = {requestedDt: 0, advancedDt: 0, substeps: 0, maxSpeed: 0, stateRevision: this.solver.stateRevision, evidence: {}, warnings: []};
     this.invalidateVorticity();
   }
 
-  private invalidateVorticity(): void { this.vorticityCache = new Float32Array(); this.nextVorticityTime = this.time; }
+  private invalidateVorticity(): void { this.vorticityCache = new Float32Array(); this.vorticityCacheRevision = null; this.nextVorticityTime = this.time; }
 
   private vorticity(): Float32Array {
     if (!this.vorticityVisible) return new Float32Array();
@@ -349,6 +388,7 @@ export class ViewerModel {
       output[y * nx + x] = dvdx - dudy;
     }
     this.vorticityCache = output;
+    this.vorticityCacheRevision = this.solver.stateRevision;
     this.nextVorticityTime = this.time + 0.1;
     return output;
   }
@@ -357,7 +397,7 @@ export class ViewerModel {
     if (!this.diagnosticsReady) return {};
     if (this.presentation.diagnosticMode === "cadenced" && Object.keys(this.diagnosticsCache).length > 0 && this.time < this.nextDiagnosticsTime) return this.diagnosticsCache;
     try {
-      const report = this.solver.diagnostics(); if (report.stateRevision !== this.solver.stateRevision) throw new Error("stale solver diagnostics revision"); this.diagnosticsCache = report.values;
+      const report = this.solver.diagnostics(); if (report.stateRevision !== this.solver.stateRevision) throw new Error("stale solver diagnostics revision"); this.diagnosticsCache = report.values; this.diagnosticsCacheRevision = report.stateRevision;
       this.nextDiagnosticsTime = this.time + 0.1;
     } catch (error) {
       this.status = `diagnostic failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`;
@@ -407,6 +447,7 @@ export class ViewerModel {
     return {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
       solverEpoch: this.solverEpoch, solverStateRevision: this.solver.stateRevision,
+      diagnosticSolverStateRevision: this.diagnosticsCacheRevision, vorticitySolverStateRevision: this.vorticityCacheRevision,
       solverId: this.solver.info.id, time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds, playbackRate: this.playbackRate,
       paused: this.paused, vorticityVisible: this.vorticityVisible, cropEnabled: this.cropEnabled, tracerMode: this.tracers.mode,
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,
@@ -417,5 +458,31 @@ export class ViewerModel {
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,
       pathSegments, vorticity: vorticityOutput, foilOutline,
     };
+  }
+
+  private settleIdleDrag(now: number): void {
+    if (!this.dragging || this.lastPoseReceivedAt === null || now - this.lastPoseReceivedAt <= POSE_SAMPLE_WINDOW_MILLISECONDS) return;
+    this.angularVelocity = 0;
+    this.poseSamples = [];
+    this.lastPoseReceivedAt = now;
+  }
+
+  private requestedTipSpeedRatio(): number {
+    const reference = Math.max(Math.hypot(this.scenario.freestream[0] ?? 0, this.scenario.freestream[1] ?? 0), 1e-6);
+    return Math.abs(this.angularVelocity) * Math.PI / 180 * this.scenario.foil.chord / reference;
+  }
+
+  private enablePoseOnly(): void {
+    this.presentation.poseOnly = true;
+    this.poseOnlyReleasePending = false;
+    this.poseOnlyCalmSteps = 0;
+    this.resolvedMotionTrial = false;
+  }
+
+  private disablePoseOnly(guardNextFailure = false): void {
+    this.presentation.poseOnly = false;
+    this.poseOnlyReleasePending = false;
+    this.poseOnlyCalmSteps = 0;
+    this.resolvedMotionTrial = guardNextFailure;
   }
 }
