@@ -4,7 +4,8 @@ Phase 2B completed and revalidated its automated engineering acceptance on
 2026-08-03 after an extensive parallel QA and remediation pass. A further
 TypeScript contract-reconciliation pass completed on 2026-08-09, and the
 three-language Revision 2 closure was accepted on 2026-08-11. TypeScript is an
-independent implementation; it does not load Python or Julia solvers.
+independent implementation; it does not load Python or Julia solvers. The
+subsequent three-language Revision 3 QA closure was accepted on 2026-08-12.
 
 ## Delivered repertoire
 
@@ -128,3 +129,16 @@ pixel-level visual closeness, Firefox/Safari support, and a broader manual GPU
 matrix remain nonblocking follow-up work under the accepted observable
 minimums in the
 [interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+
+## Revision 3 closure evidence
+
+Revision 3 keeps the same three-solver repertoire and adds stricter artifact,
+validity, canonical-state, diagnostic, and asynchronous-viewer semantics. It
+also closes the remaining TypeScript LBM outlet-history discrepancy and makes
+fresh Python/Julia recovery retain the declared scenario initial condition.
+
+On 2026-08-12 the same full verification command passed strict Ruff and
+Pyright with 157 Python tests, 873 Julia assertions plus GLMakie environment
+loading, and 113 TypeScript tests plus a production Vite build and live
+Chromium interaction. `spec/contract-version.json` records Revision 3 as the
+accepted and implemented baseline.

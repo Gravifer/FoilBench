@@ -1,5 +1,7 @@
 # Benchmark methodology
 
+Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
+
 The latest historical Phase 1 interactive snapshot is recorded in
 [benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Python,
 Julia, and TypeScript now emit the same result-schema identity and canonical

@@ -1,6 +1,6 @@
 # Flow solver contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
 
 This contract defines the language-neutral behavior of a FoilBench solver.
 Implementations are independent and may use native layouts and algorithms.
@@ -32,7 +32,10 @@ A solver provides these semantic operations:
 2. `restart(scenario, geometry, seed, start)` creates fresh private flow state
    at the supplied nonnegative physical time, visible foil pose, requested
    Reynolds number, and zero solver-facing angular velocity. It does not
-   reconstruct prior flow history.
+   reconstruct prior flow history. It reconstructs the scenario's declared
+   initial-condition family at that pose and time label; recovery must not
+   silently substitute freestream for Taylor–Green, Poiseuille, or another
+   declared initial condition.
 3. `set_reynolds(reynolds)` atomically changes the requested Reynolds number
    and returns requested/effective values plus clamping warnings. Rejection
    leaves the previous selection and solver state unchanged.

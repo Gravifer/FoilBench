@@ -1,6 +1,6 @@
 # Solver repertoire contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
 
 This contract defines the minimum numerical content represented by the three
 Phase 2 solver identifiers. It prevents an implementation from satisfying the
@@ -68,7 +68,8 @@ The `lbm-d2q9` identifier requires:
   shared lattice Mach limit;
 - interpolated moving-wall bounce-back covering both interpolation branches;
 - prescribed-velocity inlet, declared transverse freestream or channel-wall
-  treatment, convective outlet, and the scenario-configured sponge treatment;
+  treatment, a convective outlet retaining prior boundary state, and sponge
+  treatment on declared open boundaries;
 - deterministic equilibrium initialization of cells uncovered by foil
   movement; and
 - canonical import through equilibrium reconstruction with explicit warning

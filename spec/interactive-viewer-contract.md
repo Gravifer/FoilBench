@@ -1,6 +1,6 @@
 # Interactive viewer contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
 Exact drag-resolution constants and optional visual-closeness criteria remain
 nonblocking follow-up questions; the observable minimums below are accepted.
 
@@ -613,6 +613,11 @@ native channels/conditions may be used; the contract does not prescribe one.
 
 Small control-plane events such as failure, recovery, pause, and shutdown
 must remain publishable when a bulk render frame is waiting for a consumer.
+Such an event may replace status fields on an existing physical frame only
+when solver epoch, solver-state revision, and recovery epoch identify that
+same frame. Status for a newer solver state or recovery is displayed as
+pending progress until the matching bulk frame arrives; it must not relabel
+old flow, pose, diagnostics, or recovery state as current.
 Transports that transfer exclusive ownership of bulk storage require
 revision-specific acknowledgements: stale or duplicate acknowledgements must
 not release a newer frame, and failed transfer must restore the producer's

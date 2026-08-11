@@ -1,6 +1,6 @@
 # Solver validity contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 2.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
 
 This contract defines when a FoilBench numerical operation may be reported as
 successful. It applies to ordinary advances, tentative warm-import validation,
@@ -137,6 +137,13 @@ Accepted-step diagnostic meanings are:
 Artifact-level diagnostics reconstructed from canonical cell-centered fields
 remain separately defined by benchmark methodology. They must not be confused
 with the native accepted-step postconditions above.
+
+For LBM, `solid_leakage` is the native through-flux at represented cut links,
+not the wall-normal speed at the adjacent fluid-cell center. Interpolated
+bounce-back reflects every population directed through a handled cut link, so
+its represented through-flux is zero by construction. Implementations may
+report adjacent-cell normal speed under a separate diagnostic name, but must
+not relabel it as wall leakage.
 
 For a 2D MAC grid, the shared skew-RK2 advective CFL is
 `dt * max(|u_face| / dx + |v_face| / dy)` over the represented fluid region.

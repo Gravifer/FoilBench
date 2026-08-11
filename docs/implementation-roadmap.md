@@ -204,7 +204,11 @@ LBM, and PIC/FLIP. It also includes moving-wall work in stability selection and
 uses the wall-relative response for PIC/FLIP collision handling. Python and
 Julia now satisfy the same transaction, validity, tracer, viewer, and artifact
 semantics. The shared solver-validity and tracer-lifecycle fixtures are
-executable in all three languages, so Revision 2 is the accepted baseline.
+executable in all three languages, making Revision 2 the first accepted
+three-language baseline.
+
+The Revision 3 QA closure below supersedes it for new implementation work
+without erasing that historical milestone.
 
 A coherent alternating vortex street remains sufficient wake behavior. The
 skew-RK2 chaotic-wake sweep and paired-trajectory experiment are optional
@@ -226,10 +230,59 @@ the required Phase 2B browser; Firefox, Safari, broader GPU matrices, exact
 drag constants, and visual-closeness criteria are compatibility or tuning
 follow-ups rather than hidden conformance latitude.
 
+### Revision 3 QA closure
+
+**Status:** Accepted on 2026-08-12. Revision 3 is the current implemented
+three-language baseline.
+
+The high-effort closure review found no P0 defect and converted its actionable
+findings into focused repairs:
+
+- artifact comparers now compare decoded numeric meaning rather than JSON
+  number spelling or object order, and successful artifacts bind final fields,
+  reports, and diagnostics to explicit solver-state revisions;
+- shared validity fixtures enforce quantitative limits, bounded iterative
+  solves, exact LBM time mapping, atomic rollback, periodic face diffusion,
+  post-step motion evidence, and representable runtime Reynolds changes;
+- canonical exporters zero solid-cell velocity consistently, LBM importers
+  ignore finite density inside the authoritative solid, and TypeScript validates
+  precision and control pose before import;
+- native MAC diagnostics use face divergence and wall-relative interface
+  leakage, while LBM distinguishes zero cut-link through-flux from adjacent-cell
+  normal speed;
+- TypeScript control-plane status can progress during render backpressure
+  without relabeling an older physical frame, and Python initial tracers honor
+  the authoritative initial foil pose; and
+- fresh Python and Julia recovery retains the scenario's declared initial
+  condition, while TypeScript LBM now retains convective outlet history like
+  its peers.
+
+The final gate passed strict Ruff and Pyright with 157 Python tests, 873 Julia
+assertions plus the GLMakie environment load, and 113 TypeScript tests plus the
+Vite production build and live Chromium interaction. The closure commits begin
+at `ba2d93b` and end at `fdafea6`.
+
+### Deferred Phase 3 contract decisions
+
+Two design questions are deliberately recorded for Phase 3 kickoff rather
+than silently decided by an implementation:
+
+- canonical manifests currently identify domain and pose but not the NACA
+  geometry itself; decide whether cross-geometry import is supported or add a
+  geometry fingerprint before claiming rejection via `incompatible_geometry`;
+- all three LBM implementations provide an outlet/transverse sponge, but its
+  numerical widths and strengths remain implementation constants; decide
+  whether Rust parity needs shared scenario-level sponge parameters before
+  exposing those values as user controls.
+
+Exact drag cap/smoothing constants and cross-renderer visual-closeness criteria
+remain the experiential open decisions already recorded in the
+[interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+
 ## Phase 3: Rust and WASM
 
 **Status:** Ready to begin; not started.
 
-Add `implementations/rust/` against the accepted Revision 2 baseline. One Rust
+Add `implementations/rust/` against the accepted Revision 3 baseline. One Rust
 core supplies native benchmarks and WASM exports. D3Q19 shallow-periodic 3D is
 considered only after the 2D implementations pass parity.
