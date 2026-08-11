@@ -8,7 +8,7 @@ import type {ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
 const POSE_SAMPLE_WINDOW_MILLISECONDS = 80;
-const POSE_ONLY_RELEASE_SPEED_RATIO = 0.25;
+const POSE_ONLY_RELEASE_SPEED_RATIO = 0.5;
 const POSE_ONLY_RELEASE_STEPS = 2;
 const MAX_RESOLVED_TIP_SPEED_RATIO = 8;
 const FAILURE_WINDOW_MILLISECONDS = 5000;

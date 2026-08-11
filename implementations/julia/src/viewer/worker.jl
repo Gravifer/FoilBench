@@ -88,6 +88,10 @@ function _with_revision(
     return ViewerSnapshot(
         revision,
         applied_command,
+        selected.solver_epoch,
+        selected.solver_state_revision,
+        selected.diagnostic_solver_state_revision,
+        selected.vorticity_solver_state_revision,
         selected.time,
         selected.angle_degrees,
         selected.solver_id,
@@ -121,6 +125,10 @@ function _failed_snapshot(selected::ViewerSnapshot{T}, message::AbstractString) 
     return ViewerSnapshot(
         selected.revision,
         selected.applied_command,
+        selected.solver_epoch,
+        selected.solver_state_revision,
+        selected.diagnostic_solver_state_revision,
+        selected.vorticity_solver_state_revision,
         selected.time,
         selected.angle_degrees,
         selected.solver_id,

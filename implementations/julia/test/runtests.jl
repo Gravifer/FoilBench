@@ -12,6 +12,25 @@ FoilBenchJulia.solver_info(solver::FailingStepSolver) = solver_info(solver.inner
 FoilBenchJulia.reynolds(solver::FailingStepSolver) = reynolds(solver.inner)
 FoilBenchJulia.advance!(::FailingStepSolver, ::ControlState, ::Real) =
     throw(NumericalFailure(:excessive_velocity, "injected post-import failure"))
+
+struct PresentationFailingSolver{T<:AbstractFloat} <: FoilBenchJulia.AbstractFlowSolver{2,T}
+    inner::FoilBenchJulia.AbstractFlowSolver{2,T}
+    failure::Symbol
+end
+
+FoilBenchJulia.solver_info(solver::PresentationFailingSolver) = solver_info(solver.inner)
+FoilBenchJulia.reynolds(solver::PresentationFailingSolver) = reynolds(solver.inner)
+FoilBenchJulia.state_revision(solver::PresentationFailingSolver) = state_revision(solver.inner)
+FoilBenchJulia.advance!(solver::PresentationFailingSolver, control::ControlState, target_dt::Real) =
+    advance!(solver.inner, control, target_dt)
+FoilBenchJulia.sample_velocity(solver::PresentationFailingSolver, points::AbstractMatrix) =
+    solver.failure == :tracer ?
+    throw(NumericalFailure(:nonfinite_state, "injected tracer failure")) :
+    sample_velocity(solver.inner, points)
+FoilBenchJulia.diagnostics(solver::PresentationFailingSolver) =
+    solver.failure == :diagnostic ?
+    throw(NumericalFailure(:nonfinite_state, "injected diagnostic failure")) :
+    diagnostics(solver.inner)
 using JSON3
 using StaticArrays
 using Test
@@ -773,6 +792,10 @@ end
     @test all(model.tracers.ages .< model.tracers.lifetimes)
     @test any(model.tracers.ages .> 0)
     @test initial.time == 0.0
+    @test initial.solver_epoch == 0
+    @test initial.solver_state_revision == state_revision(model.solver)
+    @test initial.diagnostic_solver_state_revision == state_revision(model.solver)
+    @test initial.vorticity_solver_state_revision == state_revision(model.solver)
     @test size(initial.tracer_positions) == (2, 32)
     @test size(initial.path_segments) == (2, 2 * 32 * 4)
     @test size(initial.vorticity) == (24, 12)
@@ -941,9 +964,11 @@ end
 
     set_angle!(model, 12.0, 1.0)
     @test model.angular_velocity == 0.0
-    set_angle!(model, 13.0, 1.1)
+    set_angle!(model, 13.0, 1.05)
     @test model.manual_angle == 13.0
     @test 0 < requested_tip_speed_ratio(model) <= 8
+    set_angle!(model, 10.0, 1.04)
+    @test model.angular_velocity == 0.0
     release_angle!(model)
     @test model.angular_velocity == 0.0
     adjust_reynolds!(model, 1.0)
@@ -981,6 +1006,20 @@ end
     @test snapshot(model).diagnostic_mode == Symbol("every-step")
     @test viewer_session_state(model).diagnostic_mode == Symbol("every-step")
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "maccormack"
+
+    for failure in (:tracer, :diagnostic)
+        presentation_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
+        presentation_model.presentation.diagnostic_interval = zero(scalar_type(scenario))
+        wrapped = PresentationFailingSolver(presentation_model.solver, failure)
+        presentation_model.solver = wrapped
+        failed_presentation = update!(presentation_model)
+        @test presentation_model.paused
+        @test failed_presentation.phase == :failed
+        @test presentation_model.solver === wrapped
+        @test presentation_model.recovery_count == 0
+        @test presentation_model.simulation_time == scenario.output_dt
+        @test occursin("presentation error", failed_presentation.status)
+    end
     model.presentation.diagnostic_interval = 10.0
     @test model.metrics_warming
     @test model.presentation.diagnostics.values["time"] == 0.0
