@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from foilbench_py.core.geometry import NacaFoil
-from foilbench_py.core.models import CanonicalFlowState, ControlState, NumericalFailure
+from foilbench_py.core.models import (
+    CanonicalFlowState,
+    ControlState,
+    NumericalFailure,
+    RestartState,
+)
 from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.core.scenario import load_scenario
 from foilbench_py.solvers.factory import create_solver, solver_ids
@@ -70,6 +75,29 @@ def _assert_same_canonical_state(
     else:
         assert second.density is not None
         np.testing.assert_array_equal(first.density, second.density)
+
+
+@pytest.mark.parametrize("solver_type", [StableFluidsSolver, PicFlipSolver])
+def test_fresh_restart_preserves_declared_initial_condition(
+    solver_type: type[StableFluidsSolver] | type[PicFlipSolver],
+) -> None:
+    loaded = load_scenario(_REPOSITORY_ROOT / "scenarios/validation/taylor-green.json")
+    scenario = replace(
+        loaded,
+        domain=replace(loaded.domain, resolution=(32, 32)),
+    )
+    geometry = NacaFoil(scenario.foil)
+    solver = solver_type()
+
+    solver.restart(
+        scenario,
+        geometry,
+        scenario.seed,
+        RestartState(0.5, 0.0, scenario.reynolds),
+    )
+
+    transverse = solver.export_state().velocity[0, :, :, 1]
+    assert float(np.max(np.abs(transverse))) > 0.25
 
 
 @pytest.mark.parametrize("solver_id", solver_ids())

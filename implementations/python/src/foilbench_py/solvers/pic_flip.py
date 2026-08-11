@@ -103,6 +103,23 @@ def _int_option(scenario: Scenario, name: str, default: int) -> int:
     return value
 
 
+def _initial_velocity(scenario: Scenario) -> VelocityField:
+    velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
+    velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
+    initial = str(scenario.solver_options.get("initial_condition", "freestream"))
+    centers = cell_centers(scenario.domain)
+    if initial == "taylor-green":
+        velocity[:, :, 0] = np.sin(centers[:, :, 0]) * np.cos(centers[:, :, 1])
+        velocity[:, :, 1] = -np.cos(centers[:, :, 0]) * np.sin(centers[:, :, 1])
+    elif initial == "poiseuille":
+        y0, y1 = scenario.domain.bounds[1]
+        radius = 0.5 * (y1 - y0)
+        center = 0.5 * (y0 + y1)
+        velocity[:, :, 0] = 1.5 * (1.0 - ((centers[:, :, 1] - center) / radius) ** 2)
+        velocity[:, :, 1] = 0.0
+    return velocity
+
+
 class PicFlipSolver:
     info = SolverInfo(
         id="pic-flip",
@@ -249,20 +266,9 @@ class PicFlipSolver:
         self._rng = PCG32(seed, stream=71)
         self._solid = geometry.mask(scenario.domain, self._control.angle_degrees)
         self._solid_angle = self._control.angle_degrees
-        velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
-        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
-        initial = str(scenario.solver_options.get("initial_condition", "freestream"))
         centers = cell_centers(scenario.domain)
         self._centers = centers
-        if initial == "taylor-green":
-            velocity[:, :, 0] = np.sin(centers[:, :, 0]) * np.cos(centers[:, :, 1])
-            velocity[:, :, 1] = -np.cos(centers[:, :, 0]) * np.sin(centers[:, :, 1])
-        elif initial == "poiseuille":
-            y0, y1 = scenario.domain.bounds[1]
-            radius = 0.5 * (y1 - y0)
-            center = 0.5 * (y0 + y1)
-            velocity[:, :, 0] = 1.5 * (1.0 - ((centers[:, :, 1] - center) / radius) ** 2)
-            velocity[:, :, 1] = 0.0
+        velocity = _initial_velocity(scenario)
         self._grid_velocity = velocity
         self._seed_particles(velocity)
         self._particle_to_grid()
@@ -282,11 +288,13 @@ class PicFlipSolver:
         self._control = ControlState(start.time, start.angle_degrees, 0.0)
         self._solid = geometry.mask(scenario.domain, start.angle_degrees)
         self._solid_angle = start.angle_degrees
-        velocity = np.empty(
-            (scenario.domain.ny, scenario.domain.nx, 2),
-            dtype=scenario.dtype,
-        )
-        velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
+        velocity = _initial_velocity(scenario)
+        centers = cell_centers(scenario.domain)
+        wall = geometry.wall_velocity(
+            centers.reshape(-1, 2),
+            self._control,
+        ).reshape(velocity.shape)
+        velocity[self._solid] = wall[self._solid]
         self._grid_velocity = velocity
         self._seed_particles(velocity)
         self._particle_to_grid()

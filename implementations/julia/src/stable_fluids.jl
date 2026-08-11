@@ -167,9 +167,7 @@ function restart!(
     solver.time = T(start.time)
     solver.control = ControlState(solver.time, T(start.angle_degrees), zero(T))
     solver.solid = solid_mask(geometry, scenario.domain, solver.control.angle_degrees)
-    velocity = fill(zero(T), nx(scenario.domain), ny(scenario.domain), 2)
-    velocity[:, :, 1] .= scenario.freestream[1]
-    velocity[:, :, 2] .= scenario.freestream[2]
+    velocity = _initial_velocity(scenario)
     wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     for index in CartesianIndices(solver.solid)
         solver.solid[index] || continue

@@ -1018,6 +1018,17 @@ end
     @test 0.0 < taylor_diagnostics.values["kinetic_energy"] <= initial_energy
     @test taylor_diagnostics.values["divergence_l2"] < 0.12
 
+    for solver in (StableFluidsSolver(Float64), PicFlipSolver(Float64))
+        restart!(
+            solver,
+            taylor_green,
+            NacaFoil(taylor_green.foil),
+            0,
+            RestartState(0.5, 0.0, taylor_green.reynolds),
+        )
+        @test maximum(abs, view(cell_velocity(solver), :, :, 2)) > 0.25
+    end
+
     chaotic = resized_scenario(
         load_scenario(
             joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "chaotic-experimental.json"),
