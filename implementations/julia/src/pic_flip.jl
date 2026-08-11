@@ -738,13 +738,12 @@ function sample_velocity(solver::PicFlipSolver{T}, points::AbstractMatrix{T}) wh
 end
 
 function export_state(solver::PicFlipSolver{T}) where {T}
-    scenario, geometry = _pic_require(solver)
+    scenario, _ = _pic_require(solver)
     velocity = copy(solver.grid_velocity)
-    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     for index in CartesianIndices(solver.solid)
         solver.solid[index] || continue
-        velocity[index, 1] = wall[index, 1]
-        velocity[index, 2] = wall[index, 2]
+        velocity[index, 1] = zero(T)
+        velocity[index, 2] = zero(T)
     end
     return CanonicalFlowState(
         1,

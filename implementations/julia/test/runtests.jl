@@ -736,7 +736,15 @@ end
         @test report.advanced_dt == scenario.output_dt
         @test report.state_revision == 1
         @test diagnostics(solver).state_revision == report.state_revision
-        @test export_state(solver).time == scenario.output_dt
+        exported = export_state(solver)
+        @test exported.time == scenario.output_dt
+        exported_solid = solid_mask(geometry, scenario.domain, exported.angle_degrees)
+        exported_velocity = canonical_to_cell(exported)
+        @test all(
+            exported_velocity[index, component] == 0
+            for index in CartesianIndices(exported_solid) if exported_solid[index]
+            for component in 1:2
+        )
     end
 
     for solver in (StableFluidsSolver(Float32), LBMSolver(Float32), PicFlipSolver(Float32))
@@ -790,6 +798,47 @@ end
     @test state_revision(lattice) == 0
     @test export_state(lattice).time == lattice_before.time
     @test export_state(lattice).velocity == lattice_before.velocity
+
+    solid_density_source = LBMSolver(Float32)
+    initialize!(solid_density_source, scenario, geometry, scenario.seed)
+    solid_density_state = export_state(solid_density_source)
+    @test solid_density_state.density !== nothing
+    if solid_density_state.density !== nothing
+        modified_density = copy(solid_density_state.density)
+        import_solid = solid_mask(
+            geometry,
+            scenario.domain,
+            solid_density_state.angle_degrees,
+        )
+        for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
+            import_solid[i, j] && (modified_density[1, j, i] = 100.0f0)
+        end
+        modified_state = CanonicalFlowState(
+            solid_density_state.schema_version,
+            solid_density_state.bounds,
+            solid_density_state.resolution,
+            solid_density_state.periodic_axes,
+            solid_density_state.time,
+            solid_density_state.angle_degrees,
+            solid_density_state.angular_velocity_degrees,
+            solid_density_state.source_language,
+            solid_density_state.source_solver,
+            copy(solid_density_state.velocity),
+            modified_density,
+        )
+        solid_density_destination = LBMSolver(Float32)
+        initialize!(solid_density_destination, scenario, geometry, scenario.seed)
+        outcome = import_state!(
+            solid_density_destination,
+            modified_state,
+            ControlState(
+                solid_density_state.time,
+                solid_density_state.angle_degrees,
+                solid_density_state.angular_velocity_degrees,
+            ),
+        )
+        @test accepted(outcome)
+    end
 end
 
 @testset "Shared Revision 3 solver-validity fixture" begin

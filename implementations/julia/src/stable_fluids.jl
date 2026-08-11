@@ -455,13 +455,12 @@ function sample_velocity(
 end
 
 function export_state(solver::StableFluidsSolver{T}) where {T}
-    scenario, geometry = _stable_require(solver)
+    scenario, _ = _stable_require(solver)
     velocity = cell_velocity(solver)
-    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     for index in CartesianIndices(solver.solid)
         solver.solid[index] || continue
-        velocity[index, 1] = wall[index, 1]
-        velocity[index, 2] = wall[index, 2]
+        velocity[index, 1] = zero(T)
+        velocity[index, 2] = zero(T)
     end
     return CanonicalFlowState(
         1,

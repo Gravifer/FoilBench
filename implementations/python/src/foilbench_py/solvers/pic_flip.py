@@ -916,15 +916,9 @@ class PicFlipSolver:
         return sample_vector(grid_velocity, points, scenario.domain)
 
     def export_state(self) -> CanonicalFlowState:
-        scenario, geometry, _, _, grid_velocity, solid = self._require()
+        scenario, _, _, _, grid_velocity, solid = self._require()
         velocity = grid_velocity.copy()
-        if self._centers is None:
-            raise RuntimeError("PIC/FLIP grid cache has not been initialized")
-        wall = geometry.wall_velocity(
-            self._centers.reshape(-1, 2),
-            self._control,
-        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
-        velocity[solid] = wall[solid]
+        velocity[solid] = 0.0
         return CanonicalFlowState(
             schema_version=1,
             dimension=2,

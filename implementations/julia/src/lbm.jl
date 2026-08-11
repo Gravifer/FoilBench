@@ -650,14 +650,13 @@ function sample_velocity(solver::LBMSolver{T}, points::AbstractMatrix{T}) where 
 end
 
 function export_state(solver::LBMSolver{T}) where {T}
-    scenario, geometry = _lbm_require(solver)
+    scenario, _ = _lbm_require(solver)
     density, _ = lbm_macroscopic(solver.populations)
     velocity = cell_velocity(solver)
-    wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     for index in CartesianIndices(solver.solid)
         solver.solid[index] || continue
-        velocity[index, 1] = wall[index, 1]
-        velocity[index, 2] = wall[index, 2]
+        velocity[index, 1] = zero(T)
+        velocity[index, 2] = zero(T)
         density[index] = one(T)
     end
     canonical_density = Array{T,3}(undef, 1, ny(scenario.domain), nx(scenario.domain))
@@ -704,7 +703,11 @@ function import_state!(
                 density[i, j] = T(state.density[1, j, i])
             end
         end
-        all(isfinite, density) && all(>(zero(T)), density) && maximum(abs.(density .- one(T))) <= T(0.75) ||
+        imported_distance = _lbm_distance(geometry, solver.centers, control.angle_degrees)
+        imported_solid = imported_distance .<= zero(T)
+        fluid_density = density[.!imported_solid]
+        all(isfinite, density) && all(>(zero(T)), fluid_density) &&
+            (isempty(fluid_density) || maximum(abs.(fluid_density .- one(T))) <= T(0.75)) ||
             throw(NumericalFailure(
                 :invalid_density,
                 "LBM warm import density is outside the admissible envelope",
@@ -727,8 +730,8 @@ function import_state!(
         solver.control = ControlState(
             T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
         )
-        solver.distance = _lbm_distance(geometry, solver.centers, solver.control.angle_degrees)
-        solver.solid = solver.distance .<= zero(T)
+        solver.distance = imported_distance
+        solver.solid = imported_solid
         solver.solid_angle = solver.control.angle_degrees
         wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
         for index in CartesianIndices(solver.solid)

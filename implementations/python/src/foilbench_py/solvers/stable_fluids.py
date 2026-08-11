@@ -551,8 +551,7 @@ class StableFluidsSolver:
         scenario, _, _, _, _ = self._require()
         velocity_2d = self.cell_velocity().copy()
         _, _, _, _, solid = self._require()
-        wall = self._wall_grid(self._control)
-        velocity_2d[solid] = wall[solid]
+        velocity_2d[solid] = 0.0
         velocity = velocity_2d[None, ...]
         return CanonicalFlowState(
             schema_version=1,

@@ -92,8 +92,37 @@ def test_solver_protocol_and_canonical_export(
     assert sampled.shape == (2, 2)
     assert np.isfinite(sampled).all()
     assert state.velocity.shape == (1, scenario.domain.ny, scenario.domain.nx, 2)
+    solid = geometry.mask(scenario.domain, state.angle_degrees)
+    np.testing.assert_array_equal(state.velocity[0][solid], 0.0)
     assert all(np.isfinite(value) for value in diagnostics.values.values())
     assert diagnostics.state_revision == report.state_revision
+
+
+def test_lbm_import_ignores_finite_solid_density(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(64, 32))
+    geometry = NacaFoil(scenario.foil)
+    source = LBMSolver()
+    source.initialize(scenario, geometry, scenario.seed)
+    state = source.export_state()
+    assert state.density is not None
+    solid = geometry.mask(scenario.domain, state.angle_degrees)
+    density = state.density.copy()
+    density[0][solid] = 100.0
+    destination = LBMSolver()
+    destination.initialize(scenario, geometry, scenario.seed)
+
+    outcome = destination.import_state(
+        replace(state, density=density),
+        ControlState(
+            state.time,
+            state.angle_degrees,
+            state.angular_velocity_degrees,
+        ),
+    )
+
+    assert outcome.status == "accepted"
 
 
 def test_shared_revision_3_validity_fixture() -> None:

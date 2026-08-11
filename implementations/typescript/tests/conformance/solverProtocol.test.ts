@@ -2,6 +2,8 @@ import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
 import type {Scenario, SolverId} from "../../src/core/contracts.js";
+import {NacaFoil} from "../../src/core/geometry.js";
+import {bounds2d, dimensions} from "../../src/core/grid.js";
 import {controlAt, parseScenario} from "../../src/core/scenario.js";
 import {createSolver} from "../../src/solvers/factory.js";
 
@@ -12,6 +14,13 @@ async function uniformScenario(): Promise<Scenario> {
   const document = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
   const scenario = parseScenario(document, schema);
   return {...scenario, domain: {...scenario.domain, resolution: [24, 12]}};
+}
+
+async function airfoilScenario(): Promise<Scenario> {
+  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const document = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown;
+  const scenario = parseScenario(document, schema);
+  return {...scenario, domain: {...scenario.domain, resolution: [64, 32]}};
 }
 
 describe("shared solver protocol", () => {
@@ -59,8 +68,23 @@ describe("shared solver protocol", () => {
     const scenario = await uniformScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0); const state = solver.exportState(); const control = controlAt(scenario, state.time);
     expect(solver.importState({...state, bounds: [[-2, 2], state.bounds[1] ?? [-1, 1]]}, control).reason).toBe("incompatible_domain");
     expect(solver.importState({...state, periodicAxes: []}, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, precision: state.precision === "float32" ? "float64" : "float32"}, control).reason).toBe("incompatible_domain");
     expect(solver.importState({...state, velocity: state.velocity.slice(2)}, control).reason).toBe("incompatible_domain");
     expect(solver.importState({...state, time: Number.NaN}, control).reason).toBe("nonfinite_state");
+    expect(solver.importState({...state, angleDegrees: state.angleDegrees + 1}, control).reason).toBe("time_contract_failure");
+    expect(solver.importState({...state, angularVelocityDegrees: state.angularVelocityDegrees + 1}, control).reason).toBe("time_contract_failure");
     if (state.density !== null) expect(solver.importState({...state, density: state.density.slice(1)}, control).reason).toBe("incompatible_domain");
+  });
+
+  for (const solverId of solverIds) it(`${solverId} exports zero velocity at authoritative solid centers`, async () => {
+    const scenario = await airfoilScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0);
+    const angleDegrees = scenario.controls[0]?.angleDegrees ?? 0;
+    const control = {time: scenario.outputDt, angleDegrees, angularVelocityDegrees: 120};
+    solver.advance(control, scenario.outputDt); const state = solver.exportState(); const foil = new NacaFoil(scenario.foil);
+    const {nx, ny, dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); let solidCells = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) if (foil.signedDistance(bx[0] + (x + 0.5) * dx, by[0] + (y + 0.5) * dy, state.angleDegrees) <= 0) {
+      const cell = y * nx + x; solidCells += 1; expect(state.velocity[2 * cell]).toBe(0); expect(state.velocity[2 * cell + 1]).toBe(0);
+    }
+    expect(solidCells).toBeGreaterThan(0);
   });
 });

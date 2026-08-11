@@ -835,16 +835,10 @@ class LBMSolver:
         return sample_vector(self._physical_velocity(), points, scenario.domain)
 
     def export_state(self) -> CanonicalFlowState:
-        scenario, geometry, populations, solid = self._require()
+        scenario, _, populations, solid = self._require()
         density, _ = self._macroscopic(populations)
         velocity = self._physical_velocity().copy()
-        if self._centers is None:
-            raise RuntimeError("LBM geometry cache has not been initialized")
-        wall = geometry.wall_velocity(
-            self._centers.reshape(-1, 2),
-            self._control,
-        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
-        velocity[solid] = wall[solid]
+        velocity[solid] = 0.0
         density = np.asarray(density, dtype=scenario.dtype).copy()
         density[solid] = 1.0
         return CanonicalFlowState(
@@ -902,10 +896,15 @@ class LBMSolver:
                 if state.density is None
                 else np.asarray(state.density[0], dtype=scenario.dtype).copy()
             )
+            imported_solid = geometry.mask(scenario.domain, control.angle_degrees)
+            fluid_density = density[~imported_solid]
             if (
                 not np.isfinite(density).all()
-                or np.any(density <= 0.0)
-                or float(np.max(np.abs(density - 1.0))) > 0.75
+                or np.any(fluid_density <= 0.0)
+                or (
+                    fluid_density.size > 0
+                    and float(np.max(np.abs(fluid_density - 1.0))) > 0.75
+                )
             ):
                 raise NumericalFailure(
                     "invalid_density",
@@ -929,7 +928,7 @@ class LBMSolver:
                 )
             self._time = state.time
             self._control = control
-            self._solid = geometry.mask(scenario.domain, control.angle_degrees)
+            self._solid = imported_solid
             if self._centers is None:
                 raise RuntimeError("LBM geometry cache has not been initialized")
             wall = geometry.wall_velocity(
