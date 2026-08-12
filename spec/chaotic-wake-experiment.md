@@ -30,5 +30,16 @@ full-duration shared classification fixture, or declares the extension
 unsupported. A completed but overwhelmingly narrow-band result may not be
 reported as parity merely because it validates against the result schema.
 
+The executable classification is:
+
+```text
+foilbench-py chaos-validate SWEEP.json SENSITIVITY.json [...]
+```
+
+It accepts artifacts emitted by any implementation, groups them by declared
+language, requires every sweep case and exactly one paired-sensitivity result,
+and applies the thresholds in `spec/conformance/fullsize-acceptance.json`.
+Missing, duplicate, or below-threshold participation is a hard failure.
+
 No automated result from this extension is a visual-quality score. The raw
 metrics and optional series remain available for human interpretation.

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from foilbench_py import __version__
+from foilbench_py.benchmark.chaos_acceptance import validate_chaos_acceptance
 from foilbench_py.benchmark.compare import format_comparison
 from foilbench_py.benchmark.runner import run_matrix
 from foilbench_py.core.scenario import load_scenario
@@ -32,6 +33,11 @@ def _parser() -> argparse.ArgumentParser:
     compare = subcommands.add_parser("compare", help="compare result artifacts")
     compare.add_argument("results", type=Path)
     compare.add_argument("--require-complete", action="store_true")
+
+    chaos = subcommands.add_parser(
+        "chaos-validate", help="validate optional chaotic-wake result artifacts"
+    )
+    chaos.add_argument("artifacts", nargs="+", type=Path)
     return parser
 
 
@@ -76,6 +82,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(output)
     elif arguments.command == "compare":
         print(format_comparison(arguments.results, require_complete=arguments.require_complete))
+    elif arguments.command == "chaos-validate":
+        print(validate_chaos_acceptance(arguments.artifacts))
     else:
         raise AssertionError(f"unhandled command {arguments.command}")
 
