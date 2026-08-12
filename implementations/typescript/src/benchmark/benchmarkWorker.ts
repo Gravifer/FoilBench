@@ -17,6 +17,7 @@ self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => {
   try {
     const cold = createSolver(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000;
     const coldDt = Math.min(scenario.outputDt, duration); started = performance.now(); cold.advance(controlAt(scenario, coldDt), coldDt); coldStepSeconds = (performance.now() - started) / 1000;
+    for (let step = 2; step <= 20; step += 1) cold.advance(controlAt(scenario, step * coldDt), coldDt);
     solver = createSolver(solverId); solver.initialize(scenario, scenario.seed);
     const wakeProbe: number[] = []; const recovery = recoveryWindow(scenario, duration); let recoveryBaseline: readonly [number, number] | null = null; let recoveryElapsed: number | null = null;
     const {dx, dy} = dimensions(scenario.domain); const xMaximum = scenario.domain.bounds[0]?.[1] ?? 0; const probe = (scenario.precision === "float32" ? new Float32Array(2) : new Float64Array(2)) as FloatArray;
