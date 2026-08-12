@@ -71,15 +71,15 @@ def main() -> None:
     reference.initialize(scenario, geometry, scenario.seed)
     perturbed.initialize(scenario, geometry, scenario.seed)
 
-    control = scenario.control_at(0.0)
+    initial_control = scenario.control_at(0.0)
     reference_state = reference.export_state()
-    reference_outcome = reference.import_state(reference_state, control)
+    reference_outcome = reference.import_state(reference_state, initial_control)
     if reference_outcome.status != "accepted":
         raise RuntimeError(
             "reference reconstruction rejected: "
             f"{reference_outcome.reason} at {reference_outcome.stage}"
         )
-    state = perturbed.export_state()
+    state = reference_state
     positions = cell_centers(scenario.domain)
     x = positions[:, :, 0]
     y = positions[:, :, 1]
@@ -101,7 +101,7 @@ def main() -> None:
     velocity[0] += np.asarray(perturbation, dtype=scenario.dtype)
     perturbed_outcome = perturbed.import_state(
         replace(state, source_solver="deterministic-perturbation", velocity=velocity),
-        control,
+        initial_control,
     )
     if perturbed_outcome.status != "accepted":
         raise RuntimeError(
@@ -184,6 +184,14 @@ def main() -> None:
                 "exponential_fit_r_squared",
                 "exponential_fit_samples",
             )
+        },
+        "initialization": {
+            "reference_import_status": reference_outcome.status,
+            "perturbed_import_status": perturbed_outcome.status,
+            "authoritative_angle_degrees": initial_control.angle_degrees,
+            "requested_epsilon": arguments.epsilon,
+            "realized_post_import_wake_rms_difference": initial_difference,
+            "realized_to_requested_ratio": initial_difference / arguments.epsilon,
         },
         "series": {
             "times": times,

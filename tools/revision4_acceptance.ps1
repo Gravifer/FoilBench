@@ -80,6 +80,7 @@ try {
     }
 
     $chaosArtifacts = @()
+    $chaosPreflightArtifacts = @()
     if ([bool]$fixture.chaotic_extension.participation_required_for_claim) {
         Write-Host '==> Revision 4: three-language chaotic-wake participation'
         $casesPath = Join-Path $repositoryRoot ([string]$fixture.chaotic_extension.fixture)
@@ -91,6 +92,47 @@ try {
         $burnIn = [string]$cases.sweep.burn_in
         $sensitivityDuration = [string]$cases.sensitivity.duration
         $epsilon = [string]$cases.sensitivity.epsilon
+        $preflightDuration = [string]$cases.initialization_preflight.duration
+        $preflightEpsilon = [string]$cases.initialization_preflight.epsilon
+        $preflightCase = $cases.initialization_preflight.case
+        $preflightReynolds = [string]$preflightCase.reynolds
+        $preflightAngle = [string]$preflightCase.angle_degrees
+        $preflightNx = [string]$preflightCase.resolution[0]
+        $preflightNy = [string]$preflightCase.resolution[1]
+        $chaosPreflightArtifacts = @(
+            (Join-Path $chaosDirectory 'python-preflight.json'),
+            (Join-Path $chaosDirectory 'julia-preflight.json'),
+            (Join-Path $chaosDirectory 'typescript-preflight.json')
+        )
+        Write-Host '==> Revision 4: paired-sensitivity initialization preflight'
+        Invoke-Checked uv @(
+            'run', '--project', 'implementations/python', 'python',
+            'experiments/chaos_sensitivity.py', '--scenario', $scenario,
+            '--duration', $preflightDuration, '--epsilon', $preflightEpsilon,
+            '--single', $preflightReynolds, $preflightAngle, $preflightNx, $preflightNy,
+            '--output', $chaosPreflightArtifacts[0]
+        )
+        Invoke-Checked julia @(
+            '--threads=auto', '--startup-file=no', '--history-file=no',
+            '--project=implementations/julia',
+            'implementations/julia/experiments/chaos_sensitivity.jl',
+            $scenario, $chaosPreflightArtifacts[1], $preflightDuration,
+            $preflightEpsilon, $preflightReynolds, $preflightAngle,
+            $preflightNx, $preflightNy
+        )
+        Invoke-Checked npm @(
+            '--prefix', 'implementations/typescript', 'run', 'chaos:preflight', '--',
+            $scenario, $chaosPreflightArtifacts[2]
+        )
+        $preflightValidationArguments = @(
+            'run', '--project', 'implementations/python', 'foilbench-py',
+            'chaos-preflight-validate'
+        )
+        $preflightValidationArguments += $chaosPreflightArtifacts
+        $preflightValidationArguments += @('--require-languages', $roster)
+        Invoke-Checked uv $preflightValidationArguments
+
+        Write-Host '==> Revision 4: full chaotic-wake experiments'
         $chaosArtifacts = @(
             (Join-Path $chaosDirectory 'python-sweep.json'),
             (Join-Path $chaosDirectory 'python-sensitivity.json'),
@@ -152,6 +194,7 @@ try {
         languages = $languages
         benchmark_matrix = [string]$fixture.artifact_interchange.matrix
         benchmark_directories = @($pythonResults, $juliaResults, $typescriptResults)
+        chaos_preflight_artifacts = $chaosPreflightArtifacts
         chaos_artifacts = $chaosArtifacts
     }
     $evidence | ConvertTo-Json -Depth 6 |

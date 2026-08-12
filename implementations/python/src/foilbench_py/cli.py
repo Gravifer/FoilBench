@@ -6,7 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from foilbench_py import __version__
-from foilbench_py.benchmark.chaos_acceptance import validate_chaos_acceptance
+from foilbench_py.benchmark.chaos_acceptance import (
+    validate_chaos_acceptance,
+    validate_chaos_preflight,
+)
 from foilbench_py.benchmark.compare import format_comparison
 from foilbench_py.benchmark.runner import run_matrix
 from foilbench_py.core.scenario import load_scenario
@@ -43,6 +46,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     chaos.add_argument("artifacts", nargs="+", type=Path)
     chaos.add_argument(
+        "--require-languages",
+        help="require an exact comma-separated producer roster",
+    )
+    preflight = subcommands.add_parser(
+        "chaos-preflight-validate",
+        help="validate paired-sensitivity initialization preflights",
+    )
+    preflight.add_argument("artifacts", nargs="+", type=Path)
+    preflight.add_argument(
         "--require-languages",
         help="require an exact comma-separated producer roster",
     )
@@ -109,6 +121,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         print(
             validate_chaos_acceptance(
+                arguments.artifacts, required_languages=required_languages
+            )
+        )
+    elif arguments.command == "chaos-preflight-validate":
+        required_languages = (
+            tuple(str(arguments.require_languages).split(","))
+            if arguments.require_languages
+            else ()
+        )
+        print(
+            validate_chaos_preflight(
                 arguments.artifacts, required_languages=required_languages
             )
         )

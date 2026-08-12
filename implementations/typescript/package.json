@@ -25,6 +25,7 @@
     "compare": "tsx src/cli.ts compare",
     "chaos:sweep": "tsx src/cli.ts chaos-sweep",
     "chaos:paired": "tsx src/cli.ts chaos-paired",
+    "chaos:preflight": "tsx src/cli.ts chaos-preflight",
     "drag:calibration": "tsx src/cli.ts drag-calibration"
   },
   "dependencies": {

@@ -54,18 +54,23 @@ async function main(args: readonly string[]): Promise<void> {
     console.log(await compareResults(args[1] ?? "results/typescript", args.includes("--require-complete"), requiredLanguages));
     return;
   }
-  if (command === "chaos-sweep" || command === "chaos-paired") {
+  if (command === "chaos-sweep" || command === "chaos-paired" || command === "chaos-preflight") {
     const casesDocument = JSON.parse(await readFile(join(repositoryRoot, "spec/conformance/chaotic-wake-cases.json"), "utf8")) as {
       scenario: string;
       sweep: {duration: number; burn_in: number; cases: readonly {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}[]};
       sensitivity: {duration: number; epsilon: number; case: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}};
+      initialization_preflight: {duration: number; epsilon: number; case: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}};
     };
     const scenarioPath = resolve(repositoryRoot, args[1] ?? casesDocument.scenario);
     const scenario = parseScenario(JSON.parse(await readFile(scenarioPath, "utf8")) as unknown, JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object);
     const selected = (value: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}): WakeCase => ({reynolds: value.reynolds, angleDegrees: value.angle_degrees, resolution: value.resolution});
+    const paired = command === "chaos-preflight" ? casesDocument.initialization_preflight : casesDocument.sensitivity;
+    const pairedDuration = args[3] === undefined ? paired.duration : Number(args[3]);
+    const pairedEpsilon = args[4] === undefined ? paired.epsilon : Number(args[4]);
+    if (!(pairedDuration > 0) || !(pairedEpsilon > 0)) throw new RangeError("paired duration and epsilon must be positive");
     const results: readonly ExperimentEnvelope[] = command === "chaos-sweep"
       ? casesDocument.sweep.cases.map((value) => runChaoticWakeCase(scenario, selected(value), casesDocument.sweep.duration, casesDocument.sweep.burn_in))
-      : [runChaosSensitivity(scenario, selected(casesDocument.sensitivity.case), casesDocument.sensitivity.duration, casesDocument.sensitivity.epsilon)];
+      : [runChaosSensitivity(scenario, selected(paired.case), pairedDuration, pairedEpsilon)];
     const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/chaotic-wake-result.schema.json"), "utf8")) as object;
     for (const result of results) validateDocument(result, resultSchema);
     const text = JSON.stringify(command === "chaos-sweep" ? results : results[0], null, 2);

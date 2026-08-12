@@ -195,7 +195,7 @@ function run_chaos_sensitivity(
     accepted(reference_outcome) || throw(ErrorException(
         "reference reconstruction rejected: $(reference_outcome.reason) at $(reference_outcome.stage)",
     ))
-    state = export_state(perturbed)
+    state = reference_state
     velocity = canonical_to_cell(state)
     centers = cell_centers(scenario.domain)
     streamfunction = Matrix{T}(undef, nx(scenario.domain), ny(scenario.domain))
@@ -274,6 +274,15 @@ function run_chaos_sensitivity(
         "exponential_fit_r_squared" => r_squared,
         "exponential_fit_samples" => samples,
         "wall_seconds" => (time_ns() - started) / 1.0e9,
+        "initialization" => Dict{String,Any}(
+            "reference_import_status" => String(reference_outcome.status),
+            "perturbed_import_status" => String(perturbed_outcome.status),
+            "authoritative_angle_degrees" => Float64(initial_control.angle_degrees),
+            "requested_epsilon" => Float64(epsilon),
+            "realized_post_import_wake_rms_difference" => initial_difference,
+            "realized_to_requested_ratio" =>
+                initial_difference / Float64(epsilon),
+        ),
         "times" => times,
         "wake_rms_differences" => differences,
     )

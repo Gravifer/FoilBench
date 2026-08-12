@@ -23,6 +23,12 @@ describe("TypeScript chaotic-wake parity", () => {
     expect(Object.values(sensitivity.metrics).every(Number.isFinite)).toBe(true);
     expect(Number(sensitivity.metrics["initial_wake_rms_difference"])).toBeGreaterThan(2e-6);
     expect(Number(sensitivity.metrics["initial_wake_rms_difference"])).toBeLessThan(2e-5);
+    expect(sensitivity.initialization).toMatchObject({
+      reference_import_status: "accepted",
+      perturbed_import_status: "accepted",
+      authoritative_angle_degrees: 25,
+      requested_epsilon: 1e-4,
+    });
     expect(sensitivity.series?.times.length).toBeGreaterThan(0);
   });
 

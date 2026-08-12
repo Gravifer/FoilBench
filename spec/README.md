@@ -17,6 +17,7 @@ met.
 | Subject | Authoritative document |
 | --- | --- |
 | Solver identifiers, capabilities, operations, reports, and failure vocabulary | [Flow solver contract](solver-contract.md) |
+| Optional skew-RK2 wake and paired-sensitivity evidence | [Chaotic-wake experiment contract](chaotic-wake-contract.md) |
 | Numerical stages required by each named solver family | [Solver repertoire contract](solver-repertoire-contract.md) |
 | Successful-step, import, stability, convergence, and rollback criteria | [Solver validity contract](solver-validity-contract.md) |
 | Interactive commands, ownership, recovery UX, visible tracers, diagnostics, and snapshots | [Interactive viewer contract](interactive-viewer-contract.md) |

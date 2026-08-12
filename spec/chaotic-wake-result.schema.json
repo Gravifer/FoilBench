@@ -47,6 +47,19 @@
         "exponential_fit_samples": {"type": "integer", "minimum": 0}
       }
     },
+    "initialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_import_status", "perturbed_import_status", "authoritative_angle_degrees", "requested_epsilon", "realized_post_import_wake_rms_difference", "realized_to_requested_ratio"],
+      "properties": {
+        "reference_import_status": {"const": "accepted"},
+        "perturbed_import_status": {"const": "accepted"},
+        "authoritative_angle_degrees": {"$ref": "#/$defs/finite"},
+        "requested_epsilon": {"type": "number", "exclusiveMinimum": 0},
+        "realized_post_import_wake_rms_difference": {"type": "number", "exclusiveMinimum": 0},
+        "realized_to_requested_ratio": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
     "series": {
       "type": "object",
       "additionalProperties": false,
@@ -72,7 +85,9 @@
     {
       "if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}},
       "then": {
+        "required": ["initialization"],
         "properties": {
+          "initialization": true,
           "parameters": {"type": "object", "properties": {"epsilon": true}, "required": ["epsilon"]},
           "metrics": {"type": "object", "properties": {"initial_wake_rms_difference": true, "final_wake_rms_difference": true, "maximum_wake_rms_difference": true, "amplification": true, "finite_time_exponent": true, "exponential_fit_r_squared": true, "exponential_fit_samples": true}, "required": ["initial_wake_rms_difference", "final_wake_rms_difference", "maximum_wake_rms_difference", "amplification", "finite_time_exponent", "exponential_fit_r_squared", "exponential_fit_samples"]}
         }

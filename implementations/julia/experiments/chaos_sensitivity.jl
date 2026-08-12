@@ -9,7 +9,10 @@ output_path = length(ARGS) >= 2 ? ARGS[2] : nothing
 duration = length(ARGS) >= 3 ? parse(Float64, ARGS[3]) : 12.0
 epsilon = length(ARGS) >= 4 ? parse(Float64, ARGS[4]) : 1.0e-4
 base = load_scenario(scenario_path)
-selected = WakeSweepCase(10_000.0, 35.0, (160, 96))
+reynolds = length(ARGS) >= 5 ? parse(Float64, ARGS[5]) : 10_000.0
+angle = length(ARGS) >= 6 ? parse(Float64, ARGS[6]) : 35.0
+resolution = length(ARGS) >= 8 ? (parse(Int, ARGS[7]), parse(Int, ARGS[8])) : (160, 96)
+selected = WakeSweepCase(reynolds, angle, resolution)
 raw = run_chaos_sensitivity(base, selected; duration, epsilon)
 metric_names = (
     "initial_wake_rms_difference", "final_wake_rms_difference",
@@ -31,6 +34,7 @@ result = Dict{String,Any}(
         "epsilon" => epsilon,
     ),
     "metrics" => Dict(name => raw[name] for name in metric_names),
+    "initialization" => raw["initialization"],
     "series" => Dict(
         "times" => raw["times"],
         "wake_rms_differences" => raw["wake_rms_differences"],

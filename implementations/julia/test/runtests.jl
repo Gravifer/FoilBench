@@ -1884,6 +1884,9 @@ end
     @test wake["vorticity_small_scale_fraction"] >= 0
     sensitivity = run_chaos_sensitivity(base, selected; duration = 0.1, epsilon = 1.0e-4)
     @test sensitivity["initial_wake_rms_difference"] > 0
+    @test sensitivity["initialization"]["reference_import_status"] == "accepted"
+    @test sensitivity["initialization"]["perturbed_import_status"] == "accepted"
+    @test sensitivity["initialization"]["authoritative_angle_degrees"] == 25.0
     @test sensitivity["amplification"] > 0
     @test length(sensitivity["times"]) == length(sensitivity["wake_rms_differences"])
     @test all(isfinite, sensitivity["wake_rms_differences"])

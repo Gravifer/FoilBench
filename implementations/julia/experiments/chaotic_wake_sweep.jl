@@ -9,7 +9,16 @@ output_path = length(ARGS) >= 2 ? ARGS[2] : nothing
 duration = length(ARGS) >= 3 ? parse(Float64, ARGS[3]) : 12.0
 burn_in = length(ARGS) >= 4 ? parse(Float64, ARGS[4]) : 4.0
 base = load_scenario(scenario_path)
-cases = [WakeSweepCase(reynolds, angle, (160, 96)) for reynolds in (1_000.0, 10_000.0), angle in (25.0, 35.0)]
+cases = if length(ARGS) >= 8
+    [WakeSweepCase(
+        parse(Float64, ARGS[5]),
+        parse(Float64, ARGS[6]),
+        (parse(Int, ARGS[7]), parse(Int, ARGS[8])),
+    )]
+else
+    [WakeSweepCase(reynolds, angle, (160, 96)) for
+        reynolds in (1_000.0, 10_000.0), angle in (25.0, 35.0)]
+end
 function envelope(selected, raw)
     metric_names = (
         "probe_rms", "spectral_entropy", "dominant_power_fraction",
