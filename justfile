@@ -23,6 +23,11 @@ ts-setup:
     npm --prefix implementations/typescript ci
     npm --prefix implementations/typescript run setup:browser
 
+# Validate the contract manifest, specification layout, schemas, and acceptance fixtures.
+verify-spec:
+    uv run --project implementations/python python tools/validate_spec.py
+    uv run --project implementations/python python tools/validate_acceptance_fixtures.py
+
 # Run all Python and Julia checks.
 verify:
     pwsh -NoProfile -File tools/verify.ps1

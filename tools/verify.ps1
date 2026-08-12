@@ -34,11 +34,24 @@ function Invoke-Checked {
 
 Push-Location $repositoryRoot
 try {
+    Write-Host '==> Specification: manifest, layout, schemas, and fixtures'
+    Invoke-Checked uv @(
+        'run', '--project', 'implementations/python', 'python',
+        'tools/validate_spec.py'
+    )
+    Invoke-Checked uv @(
+        'run', '--project', 'implementations/python', 'python',
+        'tools/validate_acceptance_fixtures.py'
+    )
+
     if ($Python) {
         Write-Host '==> Python: Ruff'
         Invoke-Checked uv @(
             'run', '--project', 'implementations/python',
-            'ruff', 'check', 'implementations/python', 'tools/generate_conformance.py'
+            'ruff', 'check', 'implementations/python',
+            'tools/generate_conformance.py',
+            'tools/validate_spec.py',
+            'tools/validate_acceptance_fixtures.py'
         )
         if ($Representative) {
             Write-Host '==> Python: 160x96 startup gate'
