@@ -135,7 +135,10 @@ def solve_masked_poisson(
                 operator,
                 compatible_rhs.ravel(),
                 M=preconditioner,
-                rtol=tolerance,
+                # SciPy stops on its internally accumulated residual. In
+                # Float32 that value can straddle the independently recomputed
+                # contract residual, so leave a small acceptance margin.
+                rtol=0.9 * tolerance,
                 atol=0.0,
                 maxiter=max_iterations,
                 callback=validate_iterate,
