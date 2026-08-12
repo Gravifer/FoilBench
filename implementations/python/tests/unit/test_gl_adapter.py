@@ -39,6 +39,7 @@ def _snapshot(revision: int, status: str, *, cropped: bool) -> ViewerSnapshot:
         diagnostic_mode="cadenced",
         schedule_active=True,
         recovery_epoch=0,
+        tracer_recycle_counters={},
     )
 
 

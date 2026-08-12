@@ -58,7 +58,7 @@ def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
 
     assert report.substeps >= 2
     assert int(report.evidence["stability_retries"]) >= 1
-    assert float(report.evidence["maximum_particle_cfl"]) <= float(
-        scenario.solver_options["pic_cfl"]
-    ) * (1.0 + 1.0e-6)
+    maximum_particle_cfl = cast(float, report.evidence["maximum_particle_cfl"])
+    configured_cfl = cast(float, scenario.solver_options["pic_cfl"])
+    assert maximum_particle_cfl <= configured_cfl * (1.0 + 1.0e-6)
     assert np.isfinite(solver.export_state().velocity).all()

@@ -12,10 +12,10 @@ from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import solver_ids
 
 
-def test_smoke_benchmark_emits_comparable_artifacts() -> None:
+def test_smoke_benchmark_emits_comparable_artifacts(tmp_path: Path) -> None:
     root = find_repo_root(Path(__file__))
     matrix_path = root / "benchmark-matrices" / "test.json"
-    output = run_matrix(matrix_path, root / "results" / "test-artifacts")
+    output = run_matrix(matrix_path, tmp_path / "test-artifacts")
     result_files = sorted(output.glob("*-r1.json"))
     assert len(result_files) == 3
     result = cast(dict[str, object], json.loads(result_files[0].read_text(encoding="utf-8")))
@@ -50,7 +50,7 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
     second = dict(result)
     second["language"] = "julia"
     second["reynolds"] = cast(float, second["reynolds"]) * 2.0
-    mismatch_directory = root / "results" / "test-artifacts-mismatched"
+    mismatch_directory = tmp_path / "test-artifacts-mismatched"
     mismatch_directory.mkdir(parents=True, exist_ok=True)
     (mismatch_directory / "first.json").write_text(json.dumps(first), encoding="utf-8")
     (mismatch_directory / "second.json").write_text(json.dumps(second), encoding="utf-8")
@@ -83,11 +83,11 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
         format_comparison(output)
 
 
-def test_result_semantics_reject_cross_field_contradictions() -> None:
+def test_result_semantics_reject_cross_field_contradictions(tmp_path: Path) -> None:
     root = find_repo_root(Path(__file__))
     output = run_matrix(
         root / "benchmark-matrices" / "test.json",
-        root / "results" / "test-artifacts-semantics",
+        tmp_path / "test-artifacts-semantics",
     )
     result = cast(
         dict[str, object],
