@@ -244,11 +244,14 @@ export class ViewerModel {
     if (!transient) { this.status = `warm import rejected (${reason}); source retained`; return false; }
     const angle = this.control(this.time).angleDegrees;
     const incoming = this.solverFactory(id);
+    const validationDt = this.scenario.outputDt * this.playbackRate;
+    let validationReport: StepReport;
     try {
       incoming.restart(this.scenario, this.scenario.seed, {time: this.time, angleDegrees: angle, reynolds: this.solver.reynolds});
       this.applySavedTuning(incoming);
       const fresh = incoming.exportState();
       if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh destination restart disagrees with requested time or pose");
+      validationReport = incoming.advance({time: this.time + validationDt, angleDegrees: angle, angularVelocityDegrees: 0}, validationDt);
     } catch (error) {
       const detail = error instanceof NumericalFailure ? error.reason : error instanceof Error ? error.name : "unknown";
       this.status = `warm import rejected (${reason}); fresh destination failed (${detail}); source retained`;
@@ -256,6 +259,7 @@ export class ViewerModel {
     }
     this.solver = incoming;
     this.solverEpoch += 1;
+    this.time += validationReport.advancedDt;
     this.manualAngle = angle;
     this.angularVelocity = 0;
     this.poseSamples = [];
@@ -265,6 +269,8 @@ export class ViewerModel {
     this.tracers.reseed(angle, "forced_recovery");
     this.status = `fresh destination reason=${reason}; stage=warm-import-fallback; private-state-discarded`;
     this.clearMeasurements();
+    this.lastReport = validationReport;
+    this.diagnosticsReady = true;
     return true;
   }
 

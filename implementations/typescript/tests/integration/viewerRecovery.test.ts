@@ -114,12 +114,33 @@ describe("interactive recovery semantics", () => {
     const snapshot = model.snapshot();
     expect(destinationCreations).toBe(2);
     expect(snapshot.solverId).toBe("lbm-d2q9");
-    expect(snapshot.time).toBe(completedTime);
+    expect(snapshot.time).toBeCloseTo(completedTime + model.scenario.outputDt, 12);
     expect(snapshot.recoveryEpoch).toBe(1);
     expect(snapshot.recoveryReason).toBe("nonfinite_state");
     expect(snapshot.recoveryStage).toBe("warm-import-fallback");
     expect(snapshot.scheduleActive).toBe(false);
     expect([...model.tracers.positions]).not.toEqual([...tracers]);
+  });
+
+  it("retains the source when a fresh destination cannot complete its tentative step", async () => {
+    let destinationCreations = 0;
+    const factory = (id: SolverId): FlowSolver => {
+      const solver = createSolver(id);
+      if (id !== "lbm-d2q9") return solver;
+      destinationCreations += 1;
+      return destinationCreations === 1
+        ? new RejectingImportSolver(solver, "nonfinite_state")
+        : new FailingSolver(solver, new NumericalFailure("stability_limit", "fresh step rejected"));
+    };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory);
+    model.step();
+    const source = model.solver;
+    const completedTime = model.time;
+    expect(model.switchSolver("lbm-d2q9")).toBe(false);
+    expect(model.solver).toBe(source);
+    expect(model.time).toBe(completedTime);
+    expect(model.snapshot().recoveryEpoch).toBe(0);
+    expect(model.status).toContain("source retained");
   });
 
   it("retains the source and skips fallback for structural import rejection", async () => {

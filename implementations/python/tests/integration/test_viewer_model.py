@@ -146,6 +146,7 @@ def test_first_step_after_reset_refreshes_warming_diagnostics(
     model.reset()
 
     assert model.metrics_warming
+    assert model.tracers.recycle_counters["scenario_reset"] == model.tracers.positions.shape[0]
     assert model.last_diagnostics is not None
     assert model.last_diagnostics.values["time"] == 0.0
 
@@ -236,12 +237,15 @@ def test_transient_warm_rejection_falls_back_once_but_structural_rejection_does_
         return ImportOutcome("rejected", "projection_failure")
 
     monkeypatch.setattr(model.manager, "switch", reject_transient)
+    completed_time = model.time
     outcome = model.switch_solver("lbm-d2q9")
     assert outcome.accepted
     assert calls == 1
     assert model.manager.solver.info.id == "lbm-d2q9"
     assert model.recovery_stage == "warm-import-fallback"
     assert model.recovery_count == 1
+    assert model.time == pytest.approx(completed_time + model.scenario.output_dt)
+    assert model.last_report is not None
 
     model = ViewerModel.create(model.scenario, "stable-fluids")
 
@@ -453,7 +457,14 @@ def test_periodic_tracer_wrap_preserves_lifetime_and_cuts_path(
         domain=replace(scenario.domain, periodic_axes=("x", "y")),
     )
     model = ViewerModel.create(scenario, "stable-fluids")
-    tracers = model.tracers
+    tracers = TracerSystem.create(
+        scenario.domain,
+        NacaFoil(scenario.foil),
+        count=1,
+        history_length=3,
+        seed=0,
+        angle_degrees=0.0,
+    )
     tracer = 0
     x0, x1 = scenario.domain.bounds[0]
     y0, y1 = scenario.domain.bounds[1]
@@ -475,6 +486,49 @@ def test_periodic_tracer_wrap_preserves_lifetime_and_cuts_path(
     assert tracers.lifetimes[tracer] == lifetime
     assert tracers.generations[tracer] == generation + 1
     assert tracers.path_segments().shape == (full_vertex_count - 2, 2)
+    assert tracers.recycle_counters["periodic_wrap"] == 1
+
+
+def test_tracer_overlap_commits_only_lifetime_expiry(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(
+        resolution=(32, 16), periodic_axes=("x", "y"), foil_in_domain=False
+    )
+    model = ViewerModel.create(scenario, "stable-fluids")
+    tracers = TracerSystem.create(
+        scenario.domain,
+        NacaFoil(scenario.foil),
+        count=1,
+        history_length=3,
+        seed=0,
+        angle_degrees=0.0,
+    )
+    tracer = 0
+    x1 = scenario.domain.bounds[0][1]
+    tracers.positions[tracer] = (x1 - 0.0025, 0.0)
+    tracers.ages[tracer] = 1.0
+    tracers.lifetimes[tracer] = 1.0
+    generation = int(tracers.generations[tracer])
+    counters_before = dict(tracers.recycle_counters)
+
+    tracers.update(
+        model.manager.solver,
+        scenario.control_at(scenario.output_dt),
+        scenario.output_dt,
+    )
+
+    assert tracers.generations[tracer] == generation + 1
+    assert (
+        tracers.recycle_counters["lifetime_expiry"]
+        - counters_before["lifetime_expiry"]
+        >= 1
+    )
+    assert (
+        tracers.recycle_counters["periodic_wrap"]
+        - counters_before["periodic_wrap"]
+        == 0
+    )
 
 
 def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(

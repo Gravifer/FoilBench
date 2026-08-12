@@ -19,6 +19,14 @@ from foilbench_py.types import (
 )
 
 type TracerMode = Literal["display", "material"]
+type TracerRecycleReason = Literal[
+    "boundary_exit",
+    "lifetime_expiry",
+    "invalid_collision",
+    "forced_recovery",
+    "scenario_reset",
+    "periodic_wrap",
+]
 
 
 @dataclass(slots=True)
@@ -34,6 +42,7 @@ class TracerSystem:
     generations: ParticleGeneration
     history_generations: ParticleGenerationHistory
     mode: TracerMode
+    recycle_counters: dict[TracerRecycleReason, int]
 
     @classmethod
     def create(
@@ -69,6 +78,14 @@ class TracerSystem:
             generations,
             history_generations,
             mode,
+            {
+                "boundary_exit": 0,
+                "lifetime_expiry": 0,
+                "invalid_collision": 0,
+                "forced_recovery": 0,
+                "scenario_reset": 0,
+                "periodic_wrap": 0,
+            },
         )
         inside = foil.contains(tracers.positions, angle_degrees)
         tracers._respawn(
@@ -87,6 +104,7 @@ class TracerSystem:
         selected: Bool[np.ndarray, " particle"],
         throughout_domain: bool,
         angle_degrees: float,
+        reason: TracerRecycleReason | None = None,
     ) -> None:
         count = int(np.count_nonzero(selected))
         if count == 0:
@@ -101,6 +119,8 @@ class TracerSystem:
         self.ages[selected] = 0.0
         self.lifetimes[selected] = 3.0 + 4.0 * self.rng.random((count,))
         self.generations[selected] += 1
+        if reason is not None:
+            self.recycle_counters[reason] += count
 
         inside = self.foil.contains(self.positions[selected], angle_degrees)
         if np.any(inside):
@@ -119,13 +139,18 @@ class TracerSystem:
             self.ages[:] = self.rng.random(self.ages.shape) * self.lifetimes
         return self.mode
 
-    def reseed_all(self, angle_degrees: float) -> None:
+    def reseed_all(
+        self,
+        angle_degrees: float,
+        reason: Literal["forced_recovery", "scenario_reset"] = "forced_recovery",
+    ) -> None:
         """Redistribute every visible tracer and clear its path memory."""
         selected = np.ones(self.positions.shape[0], dtype=np.bool_)
         self._respawn(
             selected,
             throughout_domain=True,
             angle_degrees=angle_degrees,
+            reason=reason,
         )
         self.ages[:] = self.rng.random(self.ages.shape) * self.lifetimes
         self.history_index = 0
@@ -142,28 +167,40 @@ class TracerSystem:
         outside_x = (self.positions[:, 0] < x0) | (self.positions[:, 0] > x1)
         outside_y = (self.positions[:, 1] < y0) | (self.positions[:, 1] > y1)
         wrapped = np.zeros(self.positions.shape[0], dtype=np.bool_)
+        escaped_x = (
+            outside_x
+            if "x" not in self.domain.periodic_axes
+            else np.zeros_like(outside_x)
+        )
+        escaped_y = (
+            outside_y
+            if "y" not in self.domain.periodic_axes
+            else np.zeros_like(outside_y)
+        )
+        escaped = escaped_x | escaped_y
         if "x" in self.domain.periodic_axes:
-            self.positions[outside_x, 0] = x0 + np.mod(
-                self.positions[outside_x, 0] - x0,
+            selected = outside_x & ~escaped
+            self.positions[selected, 0] = x0 + np.mod(
+                self.positions[selected, 0] - x0,
                 x1 - x0,
             )
-            wrapped |= outside_x
-            outside_x = np.zeros_like(outside_x)
+            wrapped |= selected
         if "y" in self.domain.periodic_axes:
-            self.positions[outside_y, 1] = y0 + np.mod(
-                self.positions[outside_y, 1] - y0,
+            selected = outside_y & ~escaped
+            self.positions[selected, 1] = y0 + np.mod(
+                self.positions[selected, 1] - y0,
                 y1 - y0,
             )
-            wrapped |= outside_y
-            outside_y = np.zeros_like(outside_y)
-        self.generations[wrapped] += 1
-        escaped = outside_x | outside_y
-        self._respawn(escaped, throughout_domain=False, angle_degrees=control.angle_degrees)
-        if self.mode == "display":
-            expired = self.ages >= self.lifetimes
-            self._respawn(expired, throughout_domain=True, angle_degrees=control.angle_degrees)
+            wrapped |= selected
+        self._respawn(
+            escaped,
+            throughout_domain=False,
+            angle_degrees=control.angle_degrees,
+            reason="boundary_exit",
+        )
 
-        inside = self.foil.contains(self.positions, control.angle_degrees)
+        active = ~escaped
+        inside = self.foil.contains(self.positions, control.angle_degrees) & active
         if np.any(inside):
             inside_indices = np.flatnonzero(inside)
             points = self.positions[inside_indices]
@@ -191,7 +228,23 @@ class TracerSystem:
                     respawn,
                     throughout_domain=self.mode == "display",
                     angle_degrees=control.angle_degrees,
+                    reason="invalid_collision",
                 )
+                active &= ~respawn
+
+        if self.mode == "display":
+            expired = (self.ages >= self.lifetimes) & active
+            self._respawn(
+                expired,
+                throughout_domain=True,
+                angle_degrees=control.angle_degrees,
+                reason="lifetime_expiry",
+            )
+            active &= ~expired
+
+        committed_wrap = wrapped & active
+        self.generations[committed_wrap] += 1
+        self.recycle_counters["periodic_wrap"] += int(np.count_nonzero(committed_wrap))
 
         self.history_index = (self.history_index + 1) % self.history.shape[0]
         self.history[self.history_index] = self.positions

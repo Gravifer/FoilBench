@@ -8,6 +8,7 @@ mutable struct TracerState{T<:AbstractFloat}
     history_generations::Matrix{UInt64}
     mode::Symbol
     rng::PCG32
+    recycle_counters::Dict{Symbol,Int}
 end
 
 struct ViewerSnapshot{T<:AbstractFloat}
@@ -34,6 +35,7 @@ struct ViewerSnapshot{T<:AbstractFloat}
     diagnostic_mode::Symbol
     schedule_active::Bool
     recovery_epoch::Int
+    tracer_recycle_counters::Dict{Symbol,Int}
 end
 
 _random_fraction(rng::PCG32, ::Type{T}) where {T<:AbstractFloat} = T(next_float32!(rng))
@@ -99,6 +101,14 @@ function TracerState(
         history_generations,
         mode,
         rng,
+        Dict(
+            :boundary_exit => 0,
+            :lifetime_expiry => 0,
+            :invalid_collision => 0,
+            :forced_recovery => 0,
+            :scenario_reset => 0,
+            :periodic_wrap => 0,
+        ),
     )
 end
 
@@ -117,6 +127,7 @@ function _respawn_tracer!(
     geometry::NacaFoil{2,T},
     angle_degrees::T,
     placement::Symbol,
+    reason::Union{Nothing,Symbol} = nothing,
 ) where {T}
     _seed_position!(
         tracers.positions,
@@ -128,6 +139,7 @@ function _respawn_tracer!(
         placement,
     )
     tracers.generations[index] += 1
+    reason === nothing || (tracers.recycle_counters[reason] += 1)
     _reset_tracer_lifetime!(tracers, index)
     _reset_tracer_history!(tracers, index)
     return nothing
@@ -160,6 +172,18 @@ function advance_tracers!(
     y0, y1 = scenario.domain.bounds[2]
     tracers.history_cursor = mod1(tracers.history_cursor + 1, size(tracers.history, 3))
     for index in axes(tracers.positions, 2)
+        outside_nonperiodic =
+            (:x ∉ scenario.domain.periodic_axes &&
+                !(x0 <= tracers.positions[1, index] <= x1)) ||
+            (:y ∉ scenario.domain.periodic_axes &&
+                !(y0 <= tracers.positions[2, index] <= y1))
+        if outside_nonperiodic
+            _respawn_tracer!(
+                tracers, index, scenario, geometry, control.angle_degrees,
+                :inlet, :boundary_exit,
+            )
+            continue
+        end
         wrapped = false
         if :x in scenario.domain.periodic_axes &&
                 !(x0 <= tracers.positions[1, index] <= x1)
@@ -173,24 +197,12 @@ function advance_tracers!(
                 y0 + mod(tracers.positions[2, index] - y0, y1 - y0)
             wrapped = true
         end
-        wrapped && (tracers.generations[index] += 1)
         tracers.ages[index] += timestep
         point = SVector{2,T}(tracers.positions[:, index])
         expired = tracers.mode == :display && tracers.ages[index] >= tracers.lifetimes[index]
-        outside = _outside_domain(view(tracers.positions, :, index), scenario.domain)
         distance = signed_distance(geometry, point, control.angle_degrees)
         inside_solid = distance <= zero(T)
-        if outside || expired
-            placement = outside || tracers.mode == :material ? :inlet : :domain
-            _respawn_tracer!(
-                tracers,
-                index,
-                scenario,
-                geometry,
-                control.angle_degrees,
-                placement,
-            )
-        elseif inside_solid
+        if inside_solid
             point_matrix = reshape(collect(point), 1, 2)
             normal = vec(normals(geometry, point_matrix, control.angle_degrees))
             normal_norm = sqrt(sum(abs2, normal))
@@ -212,13 +224,26 @@ function advance_tracers!(
                     geometry,
                     control.angle_degrees,
                     placement,
+                    :invalid_collision,
                 )
+                continue
             end
-        else
-            tracers.history[:, index, tracers.history_cursor] = tracers.positions[:, index]
-            tracers.history_generations[index, tracers.history_cursor] =
-                tracers.generations[index]
         end
+        if expired
+            _respawn_tracer!(
+                tracers, index, scenario, geometry, control.angle_degrees,
+                :domain, :lifetime_expiry,
+            )
+            continue
+        end
+        if wrapped
+            tracers.generations[index] += 1
+            tracers.recycle_counters[:periodic_wrap] += 1
+            _reset_tracer_history!(tracers, index)
+        end
+        tracers.history[:, index, tracers.history_cursor] = tracers.positions[:, index]
+        tracers.history_generations[index, tracers.history_cursor] =
+            tracers.generations[index]
     end
     return nothing
 end
@@ -250,6 +275,7 @@ function reseed_tracers!(
     scenario::Scenario{2,T},
     geometry::NacaFoil{2,T},
     angle_degrees::T,
+    reason::Symbol = :forced_recovery,
 ) where {T}
     for tracer in axes(tracers.positions, 2)
         _respawn_tracer!(
@@ -259,6 +285,7 @@ function reseed_tracers!(
             geometry,
             angle_degrees,
             :domain,
+            reason,
         )
         tracers.ages[tracer] =
             _random_fraction(tracers.rng, T) * tracers.lifetimes[tracer]
@@ -669,6 +696,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         model.presentation.diagnostic_mode,
         model.manual_angle === nothing,
         model.recovery_count,
+        copy(model.tracers.recycle_counters),
     )
 end
 
@@ -765,10 +793,29 @@ end
 
 function set_reynolds!(model::ViewerModel{T}, selected::Real) where {T}
     chosen = clamp(T(selected), T(50), T(100_000))
+    previous_revision = state_revision(model.solver)
     set_reynolds!(model.solver, chosen)
+    state_revision(model.solver) == previous_revision || _invalidate_solver_measurements!(model)
     exponent = log10(T(1.5))
     model.playback_rate = clamp((chosen / model.scenario.reynolds)^exponent, T(0.5), T(2))
     return chosen
+end
+
+function _invalidate_solver_measurements!(model::ViewerModel{T}) where {T}
+    model.step_rate = 0.0
+    model.simulated_seconds_per_wall_second = 0.0
+    model.last_substeps = 0
+    model.last_max_speed = zero(T)
+    model.metrics_warming = true
+    model.warm_validation_pending = false
+    model.presentation.diagnostics = Diagnostics(
+        Dict{String,Float64}(),
+        String[],
+        state_revision(model.solver),
+    )
+    model.presentation.diagnostic_elapsed = zero(T)
+    model.presentation.vorticity_solver_state_revision = nothing
+    return nothing
 end
 
 adjust_reynolds!(model::ViewerModel, decades::Real) =
@@ -776,8 +823,6 @@ adjust_reynolds!(model::ViewerModel, decades::Real) =
 reset_reynolds!(model::ViewerModel) = set_reynolds!(model, model.scenario.reynolds)
 
 function reset_viewer!(model::ViewerModel{T}) where {T}
-    tracer_count = size(model.tracers.positions, 2)
-    history_length = size(model.tracers.history, 3)
     tracer_mode = model.tracers.mode
     solver = _create_solver(T, solver_info(model.solver).id)
     initialize!(solver, model.scenario, model.geometry, model.scenario.seed)
@@ -785,13 +830,12 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     model.solver_epoch += 1
     empty!(model.tuning_values)
     _remember_active_tuning!(model)
-    model.tracers = TracerState(
+    reseed_tracers!(
+        model.tracers,
         model.scenario,
         model.geometry,
-        control_at(model.scenario, zero(T)).angle_degrees;
-        count = tracer_count,
-        history_length,
-        mode = tracer_mode,
+        control_at(model.scenario, zero(T)).angle_degrees,
+        :scenario_reset,
     )
     model.presentation.tracer_mode = tracer_mode
     model.paused = false
@@ -967,21 +1011,35 @@ function _reject_or_fallback!(
         control_at(model.scenario, model.simulation_time).angle_degrees,
     )
     control = ControlState(model.simulation_time, angle, zero(T))
-    incoming = try
-        _fresh_solver_at_control(
+    target_dt = model.scenario.output_dt * model.playback_rate
+    validation_control = ControlState(model.simulation_time + target_dt, angle, zero(T))
+    validation_started = time_ns()
+    candidate = try
+        selected = _fresh_solver_at_control(
             model,
             solver_id,
             control;
             selected_reynolds = reynolds(model.solver),
         )
+        validation_report = advance!(selected, validation_control, target_dt)
+        candidate_diagnostics = diagnostics(selected)
+        candidate_diagnostics.state_revision == state_revision(selected) ||
+            throw(NumericalFailure(
+                :postcondition_failure,
+                "fresh destination diagnostics describe a stale state revision",
+            ))
+        (selected, validation_report, candidate_diagnostics)
     catch error
         model.status_message =
             "warm import rejected ($reason); fresh destination failed " *
             "($(classify_viewer_failure(error))); source retained"
         return ImportOutcome(:rejected, reason; warnings = [warnings; sprint(showerror, error)])
     end
+    incoming, validation_report, candidate_diagnostics = candidate
+    validation_elapsed = max((time_ns() - validation_started) / 1.0e9, 1.0e-9)
     model.solver = incoming
     model.solver_epoch += 1
+    model.simulation_time += validation_report.advanced_dt
     model.manual_angle = angle
     model.angular_velocity = zero(T)
     empty!(model.pose_samples)
@@ -990,21 +1048,20 @@ function _reject_or_fallback!(
     model.recovery_count += 1
     model.recovery_reason = reason
     model.recovery_stage = Symbol("warm-import-fallback")
-    model.step_rate = 0.0
-    model.simulated_seconds_per_wall_second = 0.0
-    model.last_substeps = 0
-    model.last_max_speed = zero(T)
-    model.metrics_warming = true
-    model.warm_validation_pending = false
+    model.step_rate = inv(validation_elapsed)
+    model.simulated_seconds_per_wall_second = target_dt / validation_elapsed
+    model.last_substeps = validation_report.substeps
+    model.last_max_speed = validation_report.max_speed
+    model.metrics_warming = false
+    model.warm_validation_pending = true
+    model.presentation.diagnostics = candidate_diagnostics
+    model.presentation.diagnostic_elapsed = zero(T)
+    model.presentation.diagnostic_revision += 1
     model.status_message =
         "fresh destination reason=$reason; stage=warm-import-fallback; " *
         "private-state-discarded; reseeded=$moved"
     model.presentation_failure = nothing
-    try
-        _refresh_presentation!(model; force_vorticity = model.presentation.vorticity_visible)
-    catch error
-        _pause_for_presentation_failure!(model, "diagnostic", error)
-    end
+    _refresh_vorticity!(model; force = model.presentation.vorticity_visible)
     report = ImportReport(
         source_id,
         String(solver_id),
@@ -1117,10 +1174,13 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
 end
 
 function adjust_tuning!(model::ViewerModel, amount::Real)
+    previous_revision = state_revision(model.solver)
     selected = adjust_interactive_tuning!(model.solver, amount < 0 ? -1 : 1)
     if selected !== nothing
         model.tuning_values[solver_info(model.solver).id] = selected.value
         model.status_message = "$(selected.label)=$(selected.display_value)"
+        state_revision(model.solver) == previous_revision ||
+            _invalidate_solver_measurements!(model)
         return true
     end
     model.status_message = "no adjustable tuning for $(solver_info(model.solver).display_name)"

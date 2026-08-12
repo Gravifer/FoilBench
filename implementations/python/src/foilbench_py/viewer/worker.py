@@ -63,6 +63,7 @@ class ViewerSnapshot:
     diagnostic_mode: str
     schedule_active: bool
     recovery_epoch: int
+    tracer_recycle_counters: dict[str, int]
     failure: str | None = None
 
 
@@ -346,6 +347,10 @@ class SimulationWorker:
             diagnostic_mode=session.diagnostic_mode,
             schedule_active=session.schedule_active,
             recovery_epoch=0 if session.recovery is None else session.recovery.epoch,
+            tracer_recycle_counters={
+                str(reason): count
+                for reason, count in self._model.tracers.recycle_counters.items()
+            },
             failure=self._failure,
         )
 

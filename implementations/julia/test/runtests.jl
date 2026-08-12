@@ -1121,7 +1121,8 @@ end
     @test model.tracers.ages[periodic_tracer] ≈ periodic_age + scenario.output_dt
     @test model.tracers.lifetimes[periodic_tracer] == periodic_lifetime
     @test model.tracers.generations[periodic_tracer] == periodic_generation + 1
-    @test size(path_segments(model.tracers), 2) == 2 * 32 * 4 - 2
+    @test size(path_segments(model.tracers), 2) == 2 * 32 * 4
+    @test model.tracers.recycle_counters[:periodic_wrap] == 1
 
     hidden_model = ViewerModel(scenario; tracer_count = 8, history_length = 3)
     diagnostic_type = scalar_type(scenario)
@@ -1693,8 +1694,8 @@ end
         end
         rounded = deepcopy(result)
         rounded["language"] = "typescript"
-        rounded["output_dt"] = Float64(result["output_dt"]) * (1 + 5.0e-7)
-        rounded["effective_reynolds"] = Float64(result["effective_reynolds"]) * (1 - 5.0e-7)
+        rounded["output_dt"] = Float64(result["output_dt"]) * (1 + 5.0e-13)
+        rounded["effective_reynolds"] = Float64(result["effective_reynolds"]) * (1 - 5.0e-13)
         open(joinpath(directory, "rounded.json"), "w") do io
             JSON3.pretty(io, rounded)
         end

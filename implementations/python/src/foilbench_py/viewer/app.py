@@ -456,7 +456,15 @@ class ViewerModel:
         if not outcome.accepted:
             if outcome.reason in _TRANSIENT_IMPORT_FAILURES:
                 fresh_control = ControlState(self.time, current_control.angle_degrees, 0.0)
-                fresh = self.manager.switch_fresh(solver_id, fresh_control)
+                fresh_validation_control = ControlState(
+                    validation_time, current_control.angle_degrees, 0.0
+                )
+                fresh = self.manager.switch_fresh(
+                    solver_id,
+                    fresh_control,
+                    fresh_validation_control,
+                    validation_dt,
+                )
                 if fresh.accepted:
                     self._apply_saved_tuning()
                     self.solver_epoch += 1
@@ -465,7 +473,9 @@ class ViewerModel:
                     self.manual_angular_velocity_degrees = 0.0
                     self.pose_samples.clear()
                     self.last_pose_received_at = None
-                    self.tracers.reseed_all(current_control.angle_degrees)
+                    self.tracers.reseed_all(
+                        current_control.angle_degrees, "forced_recovery"
+                    )
                     self.recovery_count += 1
                     self.recovery_reason = outcome.reason
                     self.recovery_stage = "warm-import-fallback"
@@ -473,19 +483,20 @@ class ViewerModel:
                         f"fresh destination reason={outcome.reason}; "
                         "stage=warm-import-fallback; private-state-discarded"
                     )
-                    self.last_report = None
+                    self.time = validation_time
+                    self.last_report = self.manager.last_validation_report
                     self.last_diagnostics = None
                     self.presentation.diagnostic_elapsed = 0.0
-                    self.solver_steps_per_second = 0.0
-                    self.simulated_seconds_per_wall_second = 0.0
-                    self.metrics_warming = True
-                    self.warm_validation_pending = False
+                    elapsed = self.manager.last_validation_elapsed
+                    self.solver_steps_per_second = 1.0 / elapsed
+                    self.simulated_seconds_per_wall_second = validation_dt / elapsed
+                    self.metrics_warming = False
+                    self.warm_validation_pending = True
                     self.presentation_failure = None
                     try:
                         self._refresh_diagnostics()
                     except Exception as error:
                         self._pause_for_presentation_failure("diagnostic", error)
-                    self.last_diagnostics = None
                     return fresh
                 self.recovery_notice = (
                     f"warm import rejected ({outcome.reason}); fresh destination "
@@ -539,7 +550,7 @@ class ViewerModel:
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
         self.last_pose_received_at = None
-        self.tracers.reseed_all(current_angle)
+        self.tracers.reseed_all(current_angle, "forced_recovery")
         self.last_report = None
         self.last_diagnostics = None
         self.presentation.diagnostic_elapsed = 0.0
@@ -576,11 +587,13 @@ class ViewerModel:
             self.presentation.diagnostic_interval,
         )
         replacement = ViewerModel.create(self.scenario, solver_id)
-        replacement.tracers.mode = tracer_mode
+        self.tracers.mode = tracer_mode
+        self.tracers.reseed_all(
+            self.scenario.control_at(0.0).angle_degrees, "scenario_reset"
+        )
         replacement.presentation = presentation
         self.manager = replacement.manager
         self.solver_epoch += 1
-        self.tracers = replacement.tracers
         self.time = 0.0
         self.paused = False
         self.angle_override = None
@@ -625,20 +638,35 @@ class ViewerModel:
             self.tuning_values[solver.info.id] = tuning.value
         return tuning
 
+    def _invalidate_solver_measurements(self) -> None:
+        self.last_report = None
+        self.last_diagnostics = None
+        self.presentation.diagnostic_elapsed = 0.0
+        self.solver_steps_per_second = 0.0
+        self.simulated_seconds_per_wall_second = 0.0
+        self.metrics_warming = True
+        self.warm_validation_pending = False
+
     def adjust_solver_tuning(self, delta: float) -> bool:
         """Adjust the active solver's pedagogically useful live parameter."""
         solver = self.manager.solver
+        previous_revision = solver.state_revision
         tuning = solver.adjust_interactive_tuning(-1 if delta < 0.0 else 1)
         if tuning is not None:
             self.tuning_values[solver.info.id] = tuning.value
             self.tuning_notice = None
+            if solver.state_revision != previous_revision:
+                self._invalidate_solver_measurements()
             return True
         self.tuning_notice = "no adjustable tuning"
         return False
 
     def set_reynolds(self, reynolds: float) -> None:
         selected = float(np.clip(reynolds, 50.0, 100_000.0))
+        previous_revision = self.manager.solver.state_revision
         self.manager.set_reynolds(selected)
+        if self.manager.solver.state_revision != previous_revision:
+            self._invalidate_solver_measurements()
 
     def adjust_reynolds(self, decades: float) -> None:
         self.set_reynolds(self.manager.reynolds * 10.0**decades)

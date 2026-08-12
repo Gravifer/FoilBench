@@ -186,7 +186,13 @@ class SolverManager:
         self._last_validation_report = None
         self._last_validation_elapsed = 0.0
 
-    def switch_fresh(self, destination: str, control: ControlState) -> ImportOutcome:
+    def switch_fresh(
+        self,
+        destination: str,
+        control: ControlState,
+        validation_control: ControlState,
+        validation_dt: float,
+    ) -> ImportOutcome:
         """Atomically select a fresh destination after a transient warm rejection."""
         source = self._solver.info.id
         try:
@@ -221,6 +227,10 @@ class SolverManager:
                     warnings=("fresh destination disagreed with authoritative time or pose",),
                 )
             candidate.diagnostics()
+            started = perf_counter()
+            validation_report = candidate.advance(validation_control, validation_dt)
+            validation_elapsed = max(perf_counter() - started, 1.0e-9)
+            candidate.diagnostics()
         except NumericalFailure as error:
             return ImportOutcome(
                 "rejected",
@@ -235,6 +245,6 @@ class SolverManager:
         )
         self._solver = candidate
         self._last_import = report
-        self._last_validation_report = None
-        self._last_validation_elapsed = 0.0
+        self._last_validation_report = validation_report
+        self._last_validation_elapsed = validation_elapsed
         return ImportOutcome("accepted", "none", report, report.warnings)
