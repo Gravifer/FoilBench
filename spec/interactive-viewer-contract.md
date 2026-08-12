@@ -1,6 +1,6 @@
 # Interactive viewer contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
+Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
 Exact drag-resolution constants and optional visual-closeness criteria remain
 nonblocking follow-up questions; the observable minimums below are accepted.
 
@@ -327,6 +327,17 @@ A permitted fresh recovery has these baseline semantics:
 - fully reseed visible tracers and invalidate every old path segment;
 - never crossfade away the conversion or recovery transient.
 
+Constructing or restarting a fresh destination is not sufficient evidence
+that the fallback succeeded. Before replacing a still-valid source, the fresh
+destination must tentatively complete one ordinary requested output interval
+under the current pose with zero solver-facing angular velocity. The attempt
+is transactional: failure discards the destination and retains the source;
+success publishes the destination at the newly completed physical time and
+then performs the full tracer reseed at that authoritative pose. Until this
+step commits, the destination must not be reported as active or increment the
+recovery epoch. A recovery with no valid source applies the same bounded
+validation, but pauses if it fails.
+
 The exact policy deciding when a rejected warm import may fall back to fresh
 state is:
 
@@ -572,8 +583,10 @@ elapsed monotonic wall time while playback is active; it includes the
 simulation owner's tracer, diagnostic, publication, and pacing costs. Paused
 time is excluded. A solver-only throughput ratio must use a different label.
 
-After reset, switch, or recovery, old measurements must not be labeled as
-current. Show `warming` or `—` for rates and every solver-derived diagnostic
+After reset, switch, recovery, or any control-plane mutation that advances the
+solver-state revision without completing a physical step, old measurements
+must not be labeled as current. Reynolds and live-tuning changes while paused
+therefore clear rates and solver-derived diagnostics. Show `warming` or `—`
 until each measurement has been recomputed by a successful published step.
 Import warnings remain visible at least through the first rendered destination
 revision and may then be archived in interactive telemetry or history.

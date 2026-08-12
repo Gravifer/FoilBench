@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "contract_id": "foilbench-phase2-v1",
-  "contract_revision": 3,
+  "contract_revision": 4,
   "scenario": "scenarios/validation/uniform.json",
   "resolution": [32, 16],
   "target_dt": 0.02,
@@ -30,6 +30,7 @@
       "effective_reynolds"
     ],
     "lbm-d2q9": [
+      "stability_retries",
       "maximum_fluid_speed",
       "maximum_wall_speed",
       "maximum_geometry_sweep_speed",
@@ -41,6 +42,7 @@
       "effective_reynolds"
     ],
     "pic-flip": [
+      "stability_retries",
       "maximum_particle_cfl",
       "maximum_particle_speed",
       "maximum_characteristic_displacement",
@@ -78,10 +80,18 @@
     "pic_maximum_unsupported_face_fraction": 0.15,
     "pic_maximum_unresolved_solid_particles": 0
   },
-  "stable_retry_case": {
+  "planning_retry_cases": {
+    "stable-fluids": {
     "scenario": "scenarios/airfoil/chaotic-experimental.json",
     "duration": 1.0,
     "expected_steps": 60,
     "minimum_total_stability_retries": 1
+    },
+    "pic-flip": {
+      "scenario": "scenarios/airfoil/default.json",
+      "duration": 0.016666666666666666,
+      "expected_steps": 1,
+      "minimum_total_stability_retries": 1
+    }
   }
 }

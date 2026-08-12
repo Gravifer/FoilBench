@@ -1,13 +1,14 @@
 {
   "contract_id": "foilbench-phase2-v1",
-  "revision": 3,
-  "status": "accepted",
+  "revision": 4,
+  "status": "proposed",
   "implemented_baseline_revision": 3,
-  "accepted_on": "2026-08-12",
+  "proposed_on": "2026-08-12",
   "activation_evidence": [
     "pwsh -NoProfile -File tools/verify.ps1 passed Python, Julia, TypeScript, GLMakie loading, the Vite production build, and live Chromium interaction on 2026-08-12",
     "The TypeScript-only full gate was rerun after the final convective-outlet correction and passed 113 tests, the production build, and live Chromium interaction",
-    "Revision 3 conformance fixtures and artifacts are implemented by all three language peers"
+    "Revision 3 conformance fixtures and artifacts are implemented by all three language peers",
+    "Revision 4 requires representative full-size solver, interchange, fallback, and optional-chaos gates before acceptance"
   ],
   "compatibility": {
     "breaking_changes_require_new_revision": true,

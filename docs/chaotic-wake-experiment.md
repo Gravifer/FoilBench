@@ -7,7 +7,9 @@ transport, and makes no claim of three-dimensional turbulence. Its target is
 deterministic, irregular 2D separated flow with a resolved range of
 interacting scales. The original coherent alternating vortex street remains
 sufficient for solver acceptance; this extension records an overachievement,
-not a new cross-language parity requirement.
+not a requirement for the basic three-solver acceptance bar. Implementations
+that declare support for the optional chaotic-wake extension are nevertheless
+required by Revision 4 to reproduce its shared qualitative classification.
 
 ## What changed
 

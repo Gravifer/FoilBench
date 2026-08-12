@@ -1,6 +1,6 @@
 # Solver validity contract
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
+Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
 
 This contract defines when a FoilBench numerical operation may be reported as
 successful. It applies to ordinary advances, tentative warm-import validation,
@@ -87,10 +87,13 @@ moving-wall physics.
 
 An initial substep count is a prediction made from the last completed state.
 If a tentative finite step later shows that this prediction was too small for
-the active transport or swept-motion envelope, the solver must first treat
-that condition as a recoverable planning miss. It must roll back the tentative
-attempt, deterministically increase the substep count, and retry the same
-requested physical interval and control endpoint within a finite work budget.
+the active transport, particle-transfer, lattice-Mach, or swept-motion
+envelope, the solver must first treat that condition as a recoverable planning
+miss whenever reducing the physical interval per internal step can make the
+same requested interval admissible. It must roll back the tentative attempt,
+deterministically increase the substep count or equivalently reduce its
+per-substep lattice scaling, and retry the same requested physical interval
+and control endpoint within a finite work budget.
 
 Every discarded attempt restores all public and private solver state,
 including time, control, fields, particles, populations, iterative-solver
@@ -99,6 +102,12 @@ once and reports the total substeps used by the accepted attempt plus
 `stability_retries`, the number of discarded planning attempts. The retry may
 not damp the requested pose or angular velocity, shorten the requested
 interval, or publish an intermediate revision.
+
+This is a repertoire-wide rule, not a Stable-Fluids-only behavior. Stable
+Fluids, LBM, and PIC/FLIP reports all expose `stability_retries`, including
+zero on the ordinary path. A family may decline a retry only when the failure
+cannot be improved by a finer temporal plan, and its evidence must make that
+distinction observable.
 
 The operation may still fail atomically with `stability_limit` when the
 increased plan exceeds the declared internal-substep ceiling or retry budget.
@@ -128,7 +137,11 @@ For cross-language evidence, an algebraic relative residual means
 `||b - A x||_2 / max(||b||_2, epsilon)` with the declared precision-scaled
 `epsilon`; an implementation may also report its native convergence norm.
 Shared fixtures set the maximum accepted residual and physical postcondition.
-An implementation may enforce stricter bounds, never looser ones.
+An implementation may enforce stricter bounds, never looser ones. A pressure
+solver may use update size or an implementation-native norm as an early-stop
+hint, but `pressure_converged=true` requires the shared algebraic relative
+residual and any fixture-owned physical postcondition to pass. Computing that
+residual after termination without using it for acceptance is nonconforming.
 
 ## Common accepted-step evidence
 

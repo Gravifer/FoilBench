@@ -1,6 +1,6 @@
 # Benchmark methodology
 
-Status: accepted normative component of `foilbench-phase2-v1`, revision 3.
+Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
 
 The latest historical Phase 1 interactive snapshot is recorded in
 [benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Python,
@@ -21,8 +21,15 @@ actually simulated duration, output interval, precision, and seed. Comparisons t
 do not have to infer physical equivalence from a filename or scenario ID.
 Comparers schema-validate their inputs, apply cross-field semantic validation,
 and compare decoded numeric structures rather than JSON spelling or object-key
-order. They reject mismatched physical identity rather than producing a
-misleading performance table.
+order. Declared scenario inputs are recorded from the schema-validated source
+document before solver-precision narrowing. Derived floating-point identity
+fields, including effective Reynolds number, are compared with a tolerance
+owned by the declared precision; discrete fields and identifiers remain exact.
+Comparers reject materially mismatched physical identity rather than producing
+a misleading performance table. Revision acceptance requires combining one
+matrix independently emitted by every implementation and successfully reading
+that directory through every comparer; cloned or synthetically respelled
+artifacts are insufficient interchange evidence.
 
 The runner records cold initialization and the first cold solver step
 separately from steady-state work. Initialization-time compilation is therefore

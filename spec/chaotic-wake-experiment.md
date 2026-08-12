@@ -1,6 +1,7 @@
 # Chaotic-wake experiment contract
 
-Status: normative optional extension of `foilbench-phase2-v1`.
+Status: proposed normative optional extension of `foilbench-phase2-v1`,
+revision 4.
 
 The Phase 2 acceptance bar remains a visibly unsteady vortex street. These
 experiments are an overachievement track for deterministic numerical 2D
@@ -23,7 +24,11 @@ to one canonical velocity field. It reports wake RMS separation, maximum
 amplification, and a finite-time exponential fit. Float precision and solver
 details can make exact trajectories diverge; parity means identical setup and
 metric definitions, finite schema-valid output, deterministic repetition
-within one implementation, and the same qualitative classification.
+within one implementation, and the same qualitative classification. An
+implementation either declares participation in this extension and passes the
+full-duration shared classification fixture, or declares the extension
+unsupported. A completed but overwhelmingly narrow-band result may not be
+reported as parity merely because it validates against the result schema.
 
 No automated result from this extension is a visual-quality score. The raw
 metrics and optional series remain available for human interpretation.

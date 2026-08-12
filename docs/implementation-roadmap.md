@@ -265,6 +265,35 @@ assertions plus the GLMakie environment load, and 113 TypeScript tests plus the
 Vite production build and live Chromium interaction. The closure commits begin
 at `ba2d93b` and end at `fdafea6`.
 
+### Revision 4 representative-parity closure
+
+**Status:** Proposed on 2026-08-12; Revision 3 remains the implemented
+baseline until every Revision 4 gate passes.
+
+Revision 4 follows a full-size review which showed that tiny uniform and short
+startup substitutes could pass while advertised solver and interchange paths
+failed. It requires:
+
+- solver-family-wide transactional retry of recoverable temporal planning
+  misses, including PIC/FLIP and admissible LBM rescaling;
+- pressure acceptance against the shared algebraic relative residual rather
+  than an implementation-private update-size proxy;
+- an independently emitted three-language benchmark matrix accepted by every
+  comparer under declared-precision identity semantics;
+- fresh switch fallback validation through one tentative destination step
+  before the valid source is replaced;
+- full-size startup, scheduled 14- and 25-degree checkpoints, preview gates,
+  and evolved warm-switch/fallback coverage; and
+- explicit participation and full-duration qualitative classification for the
+  optional skew-RK2 chaotic-wake extension.
+
+Revision 4 also closes viewer observability gaps around typed failure reasons,
+metric invalidation after paused solver mutations, and tracer lifecycle
+counters and precedence. The shared representative gate is
+`spec/conformance/fullsize-acceptance.json`. The root verifier may keep a fast
+default tier, but contract acceptance must run and record the representative
+tier separately rather than implying that the fast tier covered it.
+
 ### Deferred Phase 3 contract decisions
 
 Two design questions are deliberately recorded for Phase 3 kickoff rather
@@ -286,6 +315,7 @@ remain the experiential open decisions already recorded in the
 
 **Status:** Ready to begin; not started.
 
-Add `implementations/rust/` against the accepted Revision 3 baseline. One Rust
+Add `implementations/rust/` only after Revision 4 becomes the accepted
+three-language baseline. One Rust
 core supplies native benchmarks and WASM exports. D3Q19 shallow-periodic 3D is
 considered only after the 2D implementations pass parity.

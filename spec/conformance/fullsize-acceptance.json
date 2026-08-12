@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 4,
+  "startup": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "steps": 1,
+    "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"]
+  },
+  "scheduled_checkpoints": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "times": [5.0, 10.0, 22.0],
+    "fast_gate_times": [5.0, 10.0]
+  },
+  "warm_switch": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "angles_degrees": [14.0, 25.0],
+    "require_all_directed_pairs": true,
+    "validate_fresh_fallback_first_step": true
+  },
+  "preview": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "minimum_warmed_solver_steps_per_second": 10.0,
+    "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"]
+  },
+  "artifact_interchange": {
+    "matrix": "benchmark-matrices/smoke.json",
+    "languages": ["python", "julia", "typescript"],
+    "require_every_comparer": true
+  },
+  "chaotic_extension": {
+    "fixture": "spec/conformance/chaotic-wake-cases.json",
+    "participation_required_for_claim": true,
+    "minimum_probe_rms": 0.05,
+    "minimum_spectral_entropy": 0.1,
+    "minimum_broadband_power_fraction": 0.05,
+    "minimum_enstrophy_coefficient_of_variation": 0.05,
+    "maximum_dominant_power_fraction": 0.9
+  }
+}

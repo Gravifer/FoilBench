@@ -5,8 +5,9 @@ is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 2A is complete with an independent Julia implementation. Phase 2B and the
 three-language Revision 3 contract closure are complete and revalidated after
-extensive QA. Revision 3 is now the accepted baseline for the Rust/WASM work
-that follows in Phase 3.
+extensive QA. Revision 4 representative-parity closure is proposed; Revision 3
+remains the implemented baseline until its full-size gates pass. Rust/WASM work
+follows only after that closure.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
