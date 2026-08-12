@@ -142,3 +142,13 @@ Pyright with 157 Python tests, 873 Julia assertions plus GLMakie environment
 loading, and 113 TypeScript tests plus a production Vite build and live
 Chromium interaction. `spec/contract-version.json` records Revision 3 as the
 accepted and implemented baseline.
+
+## Revision 4 representative closure
+
+Revision 4 superseded Revision 3 as the implemented baseline on 2026-08-13.
+The authoritative `just verify-representative` run exercised all full-size
+solver, viewer, warm-switch, fresh-fallback, artifact-interchange, and optional
+chaotic-wake gates in Python, Julia, and TypeScript. The paired-sensitivity
+experiment now requires symmetric canonical reconstruction and passes an exact
+three-language 0.1-second preflight before any full-duration trajectory. Full
+evidence is recorded in [Revision 4 acceptance](revision4-acceptance.md).

@@ -51,7 +51,8 @@ Phase 2 revision 2 was accepted on 2026-08-11 after the language-neutral
 fixtures and schemas were made executable in Python, Julia, and TypeScript,
 all comparable artifacts identified the contract, and the combined root
 verifier passed. Revision 3 subsequently became the implemented baseline.
-Revision 4 is now proposed as the Phase 3 baseline and must pass its
-representative full-size, interchange, fallback, and optional-extension gates
-before it can replace Revision 3. Proposed revisions must repeat that activation
-sequence rather than claiming conformance from prose alone.
+Revision 4 became the accepted Phase 3 baseline on 2026-08-13 after its
+representative full-size, interchange, fallback, paired-initialization, and
+optional-extension gates passed in Python, Julia, and TypeScript. Future
+proposed revisions must repeat that activation sequence rather than claiming
+conformance from prose alone.

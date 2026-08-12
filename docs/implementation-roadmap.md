@@ -232,8 +232,7 @@ follow-ups rather than hidden conformance latitude.
 
 ### Revision 3 QA closure
 
-**Status:** Accepted on 2026-08-12. Revision 3 is the current implemented
-three-language baseline.
+**Status:** Accepted on 2026-08-12 and superseded by Revision 4 on 2026-08-13.
 
 The high-effort closure review found no P0 defect and converted its actionable
 findings into focused repairs:
@@ -267,8 +266,8 @@ at `ba2d93b` and end at `fdafea6`.
 
 ### Revision 4 representative-parity closure
 
-**Status:** Proposed on 2026-08-12; Revision 3 remains the implemented
-baseline until every Revision 4 gate passes.
+**Status:** Accepted on 2026-08-13; Revision 4 is the implemented
+three-language baseline for Phase 3.
 
 Revision 4 follows a full-size review which showed that tiny uniform and short
 startup substitutes could pass while advertised solver and interchange paths
@@ -294,6 +293,15 @@ counters and precedence. The shared representative gate is
 default tier, but contract acceptance must run and record the representative
 tier separately rather than implying that the fast tier covered it.
 
+The authoritative `just verify-representative` run passed at implementation
+commit `3eba1818566e07a1dfa34f44194c95f2faf794ca`. It included the exact
+Python/Julia/TypeScript producer roster, all native comparers, all directed
+warm-switch and fresh-fallback transactions at 14 and 25 degrees, and all
+declared full-duration chaotic-wake cases. A new full-resolution 0.1-second
+preflight first proved symmetric canonical reconstruction: the three realized
+initial wake RMS separations were all approximately `8.326e-6` for requested
+epsilon `1e-4`. See [Revision 4 acceptance](revision4-acceptance.md).
+
 ### Deferred Phase 3 contract decisions
 
 Two design questions are deliberately recorded for Phase 3 kickoff rather
@@ -313,9 +321,9 @@ remain the experiential open decisions already recorded in the
 
 ## Phase 3: Rust and WASM
 
-**Status:** Ready to begin; not started.
+**Status:** Ready to begin against accepted Revision 4; not started.
 
-Add `implementations/rust/` only after Revision 4 becomes the accepted
-three-language baseline. One Rust
+Add `implementations/rust/` against the accepted Revision 4 three-language
+baseline. One Rust
 core supplies native benchmarks and WASM exports. D3Q19 shallow-periodic 3D is
 considered only after the 2D implementations pass parity.

@@ -1,6 +1,6 @@
 # Chaotic-wake experiment contract
 
-Status: proposed normative component of FoilBench contract Revision 4.
+Status: accepted normative component of FoilBench contract Revision 4.
 
 This document specifies the optional two-dimensional skew-RK2 chaotic-wake
 claim. It defines evidence semantics, not an assertion of three-dimensional

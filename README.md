@@ -4,10 +4,10 @@ FoilBench is a solver-swappable, inspectable airfoil-flow benchmark. Phase 1
 is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 2A is complete with an independent Julia implementation. Phase 2B and the
-three-language Revision 3 contract closure are complete and revalidated after
-extensive QA. Revision 4 representative-parity closure is proposed; Revision 3
-remains the implemented baseline until its full-size gates pass. Rust/WASM work
-follows only after that closure.
+three-language contract closure are complete and revalidated after extensive
+QA. Revision 4 is the accepted implemented baseline after full-size,
+interchange, fallback, and chaotic-extension acceptance. Rust/WASM work may now
+begin against that baseline.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -104,6 +104,7 @@ git show f71d1fb:particle_airfoil_stall.py
 See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-acceptance.md),
 [Phase 2A acceptance](docs/phase2a-acceptance.md),
 [Phase 2B acceptance](docs/phase2b-acceptance.md),
+[Revision 4 acceptance](docs/revision4-acceptance.md),
 [benchmark methodology](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
