@@ -19,6 +19,7 @@
     "describe": "tsx src/cli.ts describe",
     "bench": "tsx src/cli.ts bench",
     "gate:preview": "tsx src/benchmark/previewGate.ts",
+    "gate:warm-switch": "tsx src/benchmark/warmSwitchGate.ts",
     "compare": "tsx src/cli.ts compare",
     "chaos:sweep": "tsx src/cli.ts chaos-sweep",
     "chaos:paired": "tsx src/cli.ts chaos-paired",

@@ -26,7 +26,7 @@ ts-setup:
 verify:
     pwsh -NoProfile -File tools/verify.ps1
 
-# Run all checks plus the representative 160x96 preview gates.
+# Run all checks plus the representative 160x96 preview and warm-switch gates.
 verify-representative:
     pwsh -NoProfile -File tools/verify.ps1 -Representative
 
@@ -65,6 +65,18 @@ ts-preview-gate:
 # Run the Python 160x96 double-digit warmed-step acceptance gate.
 py-preview-gate:
     uv run --project implementations/python python implementations/python/benchmark/preview_gate.py
+
+# Run the Python Revision 4 full-resolution directed warm-switch gate.
+py-switch-gate:
+    uv run --project implementations/python python implementations/python/benchmark/warm_switch_gate.py
+
+# Run the Julia Revision 4 full-resolution directed warm-switch gate.
+jl-switch-gate:
+    julia --threads=auto --project=implementations/julia implementations/julia/benchmark/warm_switch_gate.jl
+
+# Run the TypeScript Revision 4 full-resolution directed warm-switch gate.
+ts-switch-gate:
+    npm --prefix implementations/typescript run gate:warm-switch
 
 # Compare TypeScript result artifacts.
 ts-compare results="results/typescript":
