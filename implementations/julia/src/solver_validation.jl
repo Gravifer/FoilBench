@@ -46,6 +46,11 @@ function validate_canonical_import(
     scenario::Scenario{ScenarioD,T},
     control::ControlState,
 ) where {StateD,ScenarioD,S,T<:AbstractFloat}
+    state.schema_version == 1 || throw(NumericalFailure(
+        :incompatible_domain,
+        "canonical schema version is unsupported",
+        Symbol("canonical-import"),
+    ))
     StateD == ScenarioD || throw(NumericalFailure(
         :incompatible_domain,
         "canonical dimension does not match the scenario",
@@ -66,6 +71,22 @@ function validate_canonical_import(
         "canonical precision does not match the scenario",
         Symbol("canonical-import"),
     ))
+    expected_z = StateD == 2 ? 1 : state.resolution[3]
+    expected_velocity = (expected_z, state.resolution[2], state.resolution[1], StateD)
+    size(state.velocity) == expected_velocity &&
+        (state.density === nothing || size(state.density) == expected_velocity[1:3]) ||
+        throw(NumericalFailure(
+            :incompatible_domain,
+            "canonical array shape does not match metadata",
+            Symbol("canonical-import"),
+        ))
+    all(isfinite, state.velocity) &&
+        (state.density === nothing || all(isfinite, state.density)) ||
+        throw(NumericalFailure(
+            :nonfinite_state,
+            "canonical arrays must be finite at import time",
+            Symbol("canonical-import"),
+        ))
     tolerance = precision_tolerance(T, Iterators.flatten(state.bounds)..., Iterators.flatten(scenario.domain.bounds)...)
     all(
         abs(state.bounds[axis][side] - scenario.domain.bounds[axis][side]) <= tolerance

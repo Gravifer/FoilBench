@@ -69,6 +69,12 @@ def validate_canonical_import(
     scenario: Scenario,
     control: ControlState,
 ) -> None:
+    if state.schema_version != 1:
+        raise NumericalFailure(
+            "incompatible_domain",
+            "canonical schema version is unsupported",
+            "canonical-import",
+        )
     if state.dimension != scenario.domain.dimension:
         raise NumericalFailure(
             "incompatible_domain",
@@ -91,6 +97,39 @@ def validate_canonical_import(
         raise NumericalFailure(
             "incompatible_domain",
             "canonical precision does not match the scenario",
+            "canonical-import",
+        )
+    expected_z = 1 if state.dimension == 2 else state.resolution[2]
+    expected_velocity_shape = (
+        expected_z,
+        state.resolution[1],
+        state.resolution[0],
+        state.dimension,
+    )
+    expected_density_shape = expected_velocity_shape[:-1]
+    expected_dtype = np.dtype(state.precision)
+    if (
+        state.velocity.shape != expected_velocity_shape
+        or state.velocity.dtype != expected_dtype
+        or (
+            state.density is not None
+            and (
+                state.density.shape != expected_density_shape
+                or state.density.dtype != expected_dtype
+            )
+        )
+    ):
+        raise NumericalFailure(
+            "incompatible_domain",
+            "canonical array shape or dtype does not match metadata",
+            "canonical-import",
+        )
+    if not np.isfinite(state.velocity).all() or (
+        state.density is not None and not np.isfinite(state.density).all()
+    ):
+        raise NumericalFailure(
+            "nonfinite_state",
+            "canonical arrays must be finite at import time",
             "canonical-import",
         )
     state_bounds = np.asarray(state.bounds, dtype=np.float64)

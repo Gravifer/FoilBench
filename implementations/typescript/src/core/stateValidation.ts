@@ -1,10 +1,10 @@
-import type {CanonicalFlowState, ControlState, ImportOutcome, Scenario} from "./contracts.js";
+import {NumericalFailure, type CanonicalFlowState, type ControlState, type ImportOutcome, type Scenario} from "./contracts.js";
 import {rejectedImport} from "./outcomes.js";
 
 const rejected = (reason: Exclude<ImportOutcome["reason"], "none">): ImportOutcome => rejectedImport(reason, "canonical-import");
 
-function sameNumbers(left: readonly number[], right: readonly number[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function sameNumbers(left: readonly number[], right: readonly number[], tolerance = 0): boolean {
+  return left.length === right.length && left.every((value, index) => Math.abs(value - (right[index] ?? Number.NaN)) <= tolerance);
 }
 
 function sameAxes(left: readonly string[], right: readonly string[]): boolean {
@@ -18,15 +18,26 @@ export function validateCanonicalState(
   scenario: Scenario,
   control: ControlState,
 ): ImportOutcome | null {
+  const runtimeSchemaVersion: unknown = Reflect.get(state, "schemaVersion");
   const expectedVelocity = scenario.domain.resolution.reduce((total, size) => total * size, 2);
   const expectedDensity = expectedVelocity / 2;
+  const tolerance = (scenario.precision === "float32" ? 1e-6 : 1e-12) * Math.max(
+    1,
+    ...state.bounds.flatMap((bound) => bound.map(Math.abs)),
+    ...scenario.domain.bounds.flatMap((bound) => bound.map(Math.abs)),
+  );
+  const correctArrayType = scenario.precision === "float32"
+    ? state.velocity instanceof Float32Array && (state.density === null || state.density instanceof Float32Array)
+    : state.velocity instanceof Float64Array && (state.density === null || state.density instanceof Float64Array);
   if (
-    state.dimension !== scenario.domain.dimension
+    runtimeSchemaVersion !== 1
+    || state.dimension !== scenario.domain.dimension
     || !sameNumbers(state.resolution, scenario.domain.resolution)
     || state.bounds.length !== scenario.domain.bounds.length
-    || !state.bounds.every((bounds, index) => sameNumbers(bounds, scenario.domain.bounds[index] ?? []))
+    || !state.bounds.every((bounds, index) => sameNumbers(bounds, scenario.domain.bounds[index] ?? [], tolerance))
     || !sameAxes(state.periodicAxes, scenario.domain.periodicAxes)
     || state.precision !== scenario.precision
+    || !correctArrayType
     || state.velocity.length !== expectedVelocity
     || (state.density !== null && state.density.length !== expectedDensity)
   ) return rejected("incompatible_domain");
@@ -43,7 +54,7 @@ export function validateCanonicalState(
     || !Number.isFinite(control.angleDegrees)
     || !Number.isFinite(control.angularVelocityDegrees)
   ) return rejected("time_contract_failure");
-  const tolerance = (scenario.precision === "float32" ? 1e-6 : 1e-12) * Math.max(
+  const controlTolerance = (scenario.precision === "float32" ? 1e-6 : 1e-12) * Math.max(
     1,
     Math.abs(state.time),
     Math.abs(control.time),
@@ -53,9 +64,15 @@ export function validateCanonicalState(
     Math.abs(control.angularVelocityDegrees),
   );
   if (
-    Math.abs(state.time - control.time) > tolerance
-    || Math.abs(state.angleDegrees - control.angleDegrees) > tolerance
-    || Math.abs(state.angularVelocityDegrees - control.angularVelocityDegrees) > tolerance
+    Math.abs(state.time - control.time) > controlTolerance
+    || Math.abs(state.angleDegrees - control.angleDegrees) > controlTolerance
+    || Math.abs(state.angularVelocityDegrees - control.angularVelocityDegrees) > controlTolerance
   ) return rejected("time_contract_failure");
   return null;
+}
+
+export function requireFiniteControl(control: ControlState): void {
+  if (!Number.isFinite(control.time) || !Number.isFinite(control.angleDegrees) || !Number.isFinite(control.angularVelocityDegrees)) {
+    throw new NumericalFailure("time_contract_failure", "control state must be finite", "time-mapping");
+  }
 }

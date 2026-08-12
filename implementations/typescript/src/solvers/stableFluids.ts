@@ -5,7 +5,7 @@ import {allocate, bounds2d, cellToFaces, cellVelocity, dimensions, divergence, p
 import type {ProjectionReport} from "../core/grid.js";
 import {fieldDiagnostics} from "../core/metrics.js";
 import {acceptedImport, rejectedImport} from "../core/outcomes.js";
-import {validateCanonicalState} from "../core/stateValidation.js";
+import {requireFiniteControl, validateCanonicalState} from "../core/stateValidation.js";
 
 type TransportMode = "maccormack" | "semi-lagrangian" | "skew-rk2";
 
@@ -251,6 +251,7 @@ export class StableFluidsSolver implements FlowSolver {
   }
 
   private requireCompletionTime(control: ControlState, targetDt: number): void {
+    requireFiniteControl(control);
     const expected = this.time + targetDt; const tolerance = this.requireScenario().precision === "float32" ? 1e-6 : 1e-12;
     if (!Number.isFinite(control.time) || Math.abs(control.time - expected) > tolerance * Math.max(1, Math.abs(expected))) throw new NumericalFailure("time_contract_failure", "control completion time disagrees with target interval", "time-mapping", {expected_time: expected, control_time: control.time, target_dt: targetDt});
   }

@@ -1,7 +1,7 @@
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
-import type {Scenario, SolverId} from "../../src/core/contracts.js";
+import {NumericalFailure, type CanonicalFlowState, type Scenario, type SolverId} from "../../src/core/contracts.js";
 import {NacaFoil} from "../../src/core/geometry.js";
 import {bounds2d, dimensions} from "../../src/core/grid.js";
 import {controlAt, parseScenario} from "../../src/core/scenario.js";
@@ -74,6 +74,34 @@ describe("shared solver protocol", () => {
     expect(solver.importState({...state, angleDegrees: state.angleDegrees + 1}, control).reason).toBe("time_contract_failure");
     expect(solver.importState({...state, angularVelocityDegrees: state.angularVelocityDegrees + 1}, control).reason).toBe("time_contract_failure");
     if (state.density !== null) expect(solver.importState({...state, density: state.density.slice(1)}, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, schemaVersion: 2} as unknown as CanonicalFlowState, control).reason).toBe("incompatible_domain");
+    const wrongVelocityType = state.velocity instanceof Float32Array
+      ? new Float64Array(state.velocity)
+      : new Float32Array(state.velocity);
+    expect(solver.importState({...state, velocity: wrongVelocityType}, control).reason).toBe("incompatible_domain");
+    if (state.density !== null) {
+      const wrongDensityType = state.density instanceof Float32Array
+        ? new Float64Array(state.density)
+        : new Float32Array(state.density);
+      expect(solver.importState({...state, density: wrongDensityType}, control).reason).toBe("incompatible_domain");
+    }
+  });
+
+  for (const solverId of solverIds) it(`${solverId} rejects non-finite pose controls without mutation`, async () => {
+    const scenario = await uniformScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0);
+    const before = solver.exportState(); const revision = solver.stateRevision;
+    for (const control of [
+      {time: scenario.outputDt, angleDegrees: Number.NaN, angularVelocityDegrees: 0},
+      {time: scenario.outputDt, angleDegrees: 0, angularVelocityDegrees: Number.POSITIVE_INFINITY},
+    ]) {
+      let failure: unknown;
+      try { solver.advance(control, scenario.outputDt); } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(NumericalFailure);
+      expect((failure as NumericalFailure).reason).toBe("time_contract_failure");
+      expect((failure as NumericalFailure).stage).toBe("time-mapping");
+      expect(solver.stateRevision).toBe(revision);
+      expect([...solver.exportState().velocity]).toEqual([...before.velocity]);
+    }
   });
 
   for (const solverId of solverIds) it(`${solverId} exports zero velocity at authoritative solid centers`, async () => {

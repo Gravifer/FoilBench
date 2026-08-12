@@ -818,6 +818,50 @@ end
         @test export_state(solver).velocity == previous_state.velocity
     end
 
+    for solver_type in (StableFluidsSolver, LBMSolver, PicFlipSolver)
+        source = solver_type(Float32)
+        initialize!(source, scenario, geometry, scenario.seed)
+        corrupted = export_state(source)
+        corrupted.velocity[1, 1, 1, 1] = NaN32
+        destination = solver_type(Float32)
+        initialize!(destination, scenario, geometry, scenario.seed)
+        outcome = import_state!(
+            destination,
+            corrupted,
+            ControlState(
+                corrupted.time,
+                corrupted.angle_degrees,
+                corrupted.angular_velocity_degrees,
+            ),
+        )
+        @test !accepted(outcome)
+        @test outcome.reason == :nonfinite_state
+        @test state_revision(destination) == 0
+        @test all(isfinite, export_state(destination).velocity)
+    end
+
+    density_source = LBMSolver(Float32)
+    initialize!(density_source, scenario, geometry, scenario.seed)
+    corrupted_density = export_state(density_source)
+    @test corrupted_density.density !== nothing
+    if corrupted_density.density !== nothing
+        corrupted_density.density[1, 1, 1] = NaN32
+        density_destination = LBMSolver(Float32)
+        initialize!(density_destination, scenario, geometry, scenario.seed)
+        outcome = import_state!(
+            density_destination,
+            corrupted_density,
+            ControlState(
+                corrupted_density.time,
+                corrupted_density.angle_degrees,
+                corrupted_density.angular_velocity_degrees,
+            ),
+        )
+        @test !accepted(outcome)
+        @test outcome.reason == :nonfinite_state
+        @test state_revision(density_destination) == 0
+    end
+
     shorter = LBMSolver(Float32)
     longer = LBMSolver(Float32)
     initialize!(shorter, scenario, geometry, scenario.seed)

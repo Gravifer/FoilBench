@@ -4,7 +4,7 @@ import {NacaFoil} from "../core/geometry.js";
 import {allocate, bounds2d, dimensions, sampleCell} from "../core/grid.js";
 import {fieldDiagnostics} from "../core/metrics.js";
 import {acceptedImport, rejectedImport} from "../core/outcomes.js";
-import {validateCanonicalState} from "../core/stateValidation.js";
+import {requireFiniteControl, validateCanonicalState} from "../core/stateValidation.js";
 
 const CX = [0, 1, 0, -1, 0, 1, -1, -1, 1] as const;
 const CY = [0, 0, 1, 0, -1, 1, 1, -1, -1] as const;
@@ -101,6 +101,7 @@ export class LbmSolver implements FlowSolver {
 
   private advanceOnce(control: ControlState, targetDt: number, minimumSubsteps: number, stabilityRetries: number): StepReport {
     if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive");
+    requireFiniteControl(control);
     const scenario = this.requireScenario(); const expectedTime = this.time + targetDt; const timeTolerance = scenario.precision === "float32" ? 1e-6 : 1e-12;
     if (!Number.isFinite(control.time) || Math.abs(control.time - expectedTime) > timeTolerance * Math.max(1, Math.abs(expectedTime))) throw new NumericalFailure("time_contract_failure", "control completion time disagrees with target interval", "time-mapping", {expected_time: expectedTime, control_time: control.time, target_dt: targetDt});
     if (this.rollbackPopulations.length !== this.populations.length) this.rollbackPopulations = allocate(this.requireScenario().precision, this.populations.length);

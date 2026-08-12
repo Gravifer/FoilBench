@@ -153,6 +153,55 @@ def test_lbm_import_ignores_finite_solid_density(
     assert outcome.status == "accepted"
 
 
+@pytest.mark.parametrize("solver_id", solver_ids())
+def test_import_revalidates_mutated_canonical_arrays(
+    solver_id: str,
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    geometry = NacaFoil(scenario.foil)
+    source = create_solver(solver_id)
+    source.initialize(scenario, geometry, scenario.seed)
+    state = source.export_state()
+    state.velocity[0, 0, 0, 0] = np.nan
+    destination = create_solver(solver_id)
+    destination.initialize(scenario, geometry, scenario.seed)
+    before = destination.export_state()
+
+    outcome = destination.import_state(
+        state,
+        ControlState(state.time, state.angle_degrees, state.angular_velocity_degrees),
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.reason == "nonfinite_state"
+    assert destination.state_revision == 0
+    _assert_same_canonical_state(destination.export_state(), before)
+
+
+def test_lbm_import_revalidates_mutated_optional_density(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    geometry = NacaFoil(scenario.foil)
+    source = LBMSolver()
+    source.initialize(scenario, geometry, scenario.seed)
+    state = source.export_state()
+    assert state.density is not None
+    state.density[0, 0, 0] = np.nan
+    destination = LBMSolver()
+    destination.initialize(scenario, geometry, scenario.seed)
+
+    outcome = destination.import_state(
+        state,
+        ControlState(state.time, state.angle_degrees, state.angular_velocity_degrees),
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.reason == "nonfinite_state"
+    assert destination.state_revision == 0
+
+
 def test_stable_import_admissibility_is_not_tied_to_output_interval() -> None:
     scenario = load_scenario(
         _REPOSITORY_ROOT / "scenarios" / "airfoil" / "chaotic-experimental.json"
