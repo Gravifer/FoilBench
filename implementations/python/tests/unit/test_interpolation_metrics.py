@@ -1,11 +1,22 @@
 # pyright: reportPrivateImportUsage=false
+import json
+from pathlib import Path
+
 import einx
 import numpy as np
 import pytest
 
 from foilbench_py.core.interpolation import sample_vector
-from foilbench_py.core.metrics import analyze_wake_probe, momentum, speed_squared
+from foilbench_py.core.metrics import (
+    analyze_wake_probe,
+    momentum,
+    recirculation_area,
+    speed_squared,
+    wake_width,
+)
 from foilbench_py.core.models import DomainSpec
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_bilinear_sampling_constant_field() -> None:
@@ -52,3 +63,33 @@ def test_wake_spectrum_reports_stationary_flow_without_a_false_frequency() -> No
     assert spectrum.dominant_frequency == 0.0
     assert spectrum.strouhal_number == 0.0
     assert spectrum.dominant_power_fraction == 0.0
+
+
+def test_shared_wake_metrics_fixture() -> None:
+    fixture = json.loads(
+        (_REPOSITORY_ROOT / "spec/conformance/wake-metrics.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    domain = DomainSpec(
+        2,
+        tuple(tuple(pair) for pair in fixture["bounds"]),
+        tuple(fixture["resolution"]),
+    )
+    velocity = np.asarray(fixture["velocity"], dtype=np.float64)
+    solid = np.asarray(fixture["solid"], dtype=np.bool_)
+
+    assert wake_width(
+        velocity,
+        domain,
+        fixture["pivot_x"],
+        fixture["chord"],
+        fixture["freestream_u"],
+        solid,
+    ) == pytest.approx(fixture["expected"]["wake_width"])
+    assert recirculation_area(
+        velocity,
+        domain,
+        fixture["pivot_x"],
+        solid,
+    ) == pytest.approx(fixture["expected"]["recirculation_area"])

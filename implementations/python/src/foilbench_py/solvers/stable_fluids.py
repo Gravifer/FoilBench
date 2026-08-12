@@ -678,9 +678,16 @@ class StableFluidsSolver:
             "divergence_l2": divergence_l2(velocity, scenario.domain),
             "divergence_linf": native_divergence_linf(u, v, scenario.domain, solid),
             "solid_leakage": solid_face_leakage(u, v, solid, wall),
-            "wake_width": wake_width(velocity, scenario.domain, scenario.foil.pivot[0]),
+            "wake_width": wake_width(
+                velocity,
+                scenario.domain,
+                scenario.foil.pivot[0],
+                scenario.foil.chord,
+                scenario.freestream[0],
+                solid,
+            ),
             "recirculation_area": recirculation_area(
-                velocity, scenario.domain, scenario.foil.pivot[0]
+                velocity, scenario.domain, scenario.foil.pivot[0], solid
             ),
         }
         warnings = () if not self._projection_warning else (self._projection_warning,)

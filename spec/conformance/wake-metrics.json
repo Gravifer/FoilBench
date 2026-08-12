@@ -1,0 +1,25 @@
+{
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 4,
+  "bounds": [[0.0, 4.0], [-1.0, 1.0]],
+  "resolution": [8, 4],
+  "pivot_x": 0.0,
+  "chord": 1.0,
+  "freestream_u": 1.0,
+  "velocity": [
+    [[1.0, 0.0], [1.0, 0.0], [0.8, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+    [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+    [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [-0.2, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+    [[-0.3, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [0.7, 0.0], [1.0, 0.0]]
+  ],
+  "solid": [
+    [false, false, false, false, false, false, false, false],
+    [false, false, false, true, false, false, false, false],
+    [false, false, false, false, false, false, false, false],
+    [false, false, false, false, false, false, false, false]
+  ],
+  "expected": {
+    "wake_width": 1.5,
+    "recirculation_area": 0.5
+  }
+}

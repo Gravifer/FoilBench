@@ -21,9 +21,12 @@ implementation must reproduce before solver comparisons are meaningful.
 - `vorticity-display.json` fixes authoritative-pose solid masking, robust
   fluid-only normalization, signed display range, and renderer sign/opacity
   meaning for the pedagogical vorticity underlay.
+- `wake-metrics.json` fixes the downstream regions, velocity-deficit
+  threshold, solid masking, and cell-center quantization of the named wake
+  width and recirculation-area diagnostics.
 
-Revision 4 requires the shared tracer-lifecycle, solver-validity, and
-vorticity-display fixtures above. Their normative meanings remain defined by
+Revision 4 requires the shared tracer-lifecycle, solver-validity,
+vorticity-display, and wake-metrics fixtures above. Their normative meanings remain defined by
 the interactive viewer and solver-validity contracts; the JSON files supply
 executable values rather than creating another source of policy.
 

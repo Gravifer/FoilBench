@@ -887,8 +887,20 @@ function diagnostics(solver::LBMSolver)
         ),
         "density_mean" => Float64(sum(density) / length(density)),
         "density_drift" => Float64(sum(density) / length(density) - solver.density_initial),
-        "wake_width" => Float64(wake_width(velocity, scenario.domain, scenario.foil.pivot[1])),
-        "recirculation_area" => Float64(recirculation_area(velocity, scenario.domain, scenario.foil.pivot[1])),
+        "wake_width" => Float64(wake_width(
+            velocity,
+            scenario.domain,
+            scenario.foil.pivot[1];
+            chord = scenario.foil.chord,
+            freestream_u = scenario.freestream[1],
+            solid = solver.solid,
+        )),
+        "recirculation_area" => Float64(recirculation_area(
+            velocity,
+            scenario.domain,
+            scenario.foil.pivot[1];
+            solid = solver.solid,
+        )),
     )
     all(isfinite, Base.values(values)) || throw(NumericalFailure(
         :nonfinite_state,

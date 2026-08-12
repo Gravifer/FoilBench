@@ -570,9 +570,21 @@ function diagnostics(solver::StableFluidsSolver)
         "solid_leakage" => Float64(solid_face_leakage(
             solver.u, solver.v, solver.solid, wall,
         )),
-        "wake_width" => Float64(wake_width(velocity, scenario.domain, scenario.foil.pivot[1])),
+        "wake_width" => Float64(wake_width(
+            velocity,
+            scenario.domain,
+            scenario.foil.pivot[1];
+            chord = scenario.foil.chord,
+            freestream_u = scenario.freestream[1],
+            solid = solver.solid,
+        )),
         "recirculation_area" => Float64(
-            recirculation_area(velocity, scenario.domain, scenario.foil.pivot[1]),
+            recirculation_area(
+                velocity,
+                scenario.domain,
+                scenario.foil.pivot[1];
+                solid = solver.solid,
+            ),
         ),
         "projection_iterations" => Float64(solver.projection_iterations),
         "diffusion_iterations" => Float64(solver.diffusion_iterations),

@@ -1067,7 +1067,7 @@ class LBMSolver:
         return maximum
 
     def diagnostics(self) -> Diagnostics:
-        scenario, _, populations, _ = self._require()
+        scenario, _, populations, solid = self._require()
         density, _ = self._macroscopic(populations)
         velocity = self._physical_velocity()
         values = {
@@ -1087,9 +1087,16 @@ class LBMSolver:
             "density_mean": float(np.mean(density)),
             "density_drift": float(np.mean(density) - self._density_initial),
             "effective_reynolds": self._effective_reynolds,
-            "wake_width": wake_width(velocity, scenario.domain, scenario.foil.pivot[0]),
+            "wake_width": wake_width(
+                velocity,
+                scenario.domain,
+                scenario.foil.pivot[0],
+                scenario.foil.chord,
+                scenario.freestream[0],
+                solid,
+            ),
             "recirculation_area": recirculation_area(
-                velocity, scenario.domain, scenario.foil.pivot[0]
+                velocity, scenario.domain, scenario.foil.pivot[0], solid
             ),
         }
         if not all(np.isfinite(value) for value in values.values()):

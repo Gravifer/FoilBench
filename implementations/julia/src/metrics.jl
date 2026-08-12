@@ -51,14 +51,19 @@ function wake_width(
     velocity::AbstractArray{T,3},
     domain::DomainSpec{2,T},
     pivot_x::Real;
+    chord::Real = 1.0,
+    freestream_u::Real = 1.0,
+    solid::Union{Nothing,AbstractMatrix{Bool}} = nothing,
     threshold::Real = 0.1,
 ) where {T}
     active_rows = falses(ny(domain))
     x0 = domain.bounds[1][1]
     for j in 1:ny(domain), i in 1:nx(domain)
         x = x0 + (T(i) - T(0.5)) * dx(domain)
-        x > T(pivot_x) + one(T) || continue
-        one(T) - velocity[i, j, 1] > T(threshold) && (active_rows[j] = true)
+        x > T(pivot_x) + T(chord) || continue
+        solid !== nothing && solid[i, j] && continue
+        T(freestream_u) - velocity[i, j, 1] > T(threshold) * abs(T(freestream_u)) &&
+            (active_rows[j] = true)
     end
     return count(active_rows) * dy(domain)
 end
@@ -67,12 +72,15 @@ function recirculation_area(
     velocity::AbstractArray{T,3},
     domain::DomainSpec{2,T},
     pivot_x::Real,
+    ; solid::Union{Nothing,AbstractMatrix{Bool}} = nothing,
 ) where {T}
     count_value = 0
     x0 = domain.bounds[1][1]
     for j in 1:ny(domain), i in 1:nx(domain)
         x = x0 + (T(i) - T(0.5)) * dx(domain)
-        x > T(pivot_x) && velocity[i, j, 1] < zero(T) && (count_value += 1)
+        x > T(pivot_x) || continue
+        solid !== nothing && solid[i, j] && continue
+        velocity[i, j, 1] < zero(T) && (count_value += 1)
     end
     return T(count_value) * dx(domain) * dy(domain)
 end

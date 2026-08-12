@@ -65,6 +65,9 @@ def wake_width(
     velocity: VelocityField,
     domain: DomainSpec,
     pivot_x: float,
+    chord: float = 1.0,
+    freestream_u: float = 1.0,
+    solid: MaskField | None = None,
     threshold: float = 0.1,
 ) -> float:
     centers_x = np.linspace(
@@ -72,22 +75,34 @@ def wake_width(
         domain.bounds[0][1] - 0.5 * domain.dx,
         domain.nx,
     )
-    wake_columns = centers_x > pivot_x + 1.0
+    wake_columns = centers_x > pivot_x + chord
     if not np.any(wake_columns):
         return 0.0
-    deficit = np.maximum(0.0, 1.0 - velocity[:, wake_columns, 0])
-    active_rows = np.any(deficit > threshold, axis=1)
+    active = freestream_u - velocity[:, wake_columns, 0] > (
+        threshold * abs(freestream_u)
+    )
+    if solid is not None:
+        active &= ~solid[:, wake_columns]
+    active_rows = np.any(active, axis=1)
     return float(np.count_nonzero(active_rows) * domain.dy)
 
 
-def recirculation_area(velocity: VelocityField, domain: DomainSpec, pivot_x: float) -> float:
+def recirculation_area(
+    velocity: VelocityField,
+    domain: DomainSpec,
+    pivot_x: float,
+    solid: MaskField | None = None,
+) -> float:
     centers_x = np.linspace(
         domain.bounds[0][0] + 0.5 * domain.dx,
         domain.bounds[0][1] - 0.5 * domain.dx,
         domain.nx,
     )
     downstream = centers_x > pivot_x
-    return float(np.count_nonzero(velocity[:, downstream, 0] < 0.0) * domain.dx * domain.dy)
+    recirculating = velocity[:, downstream, 0] < 0.0
+    if solid is not None:
+        recirculating &= ~solid[:, downstream]
+    return float(np.count_nonzero(recirculating) * domain.dx * domain.dy)
 
 
 def analyze_wake_probe(

@@ -1,6 +1,34 @@
-import type {FloatArray, Scenario} from "./contracts.js";
+import type {DomainSpec, FloatArray, Scenario} from "./contracts.js";
 import type {NacaFoil} from "./geometry.js";
 import {bounds2d, dimensions} from "./grid.js";
+
+export function wakeMetrics(
+  velocity: FloatArray,
+  domain: DomainSpec,
+  pivotX: number,
+  chord: number,
+  freestreamU: number,
+  solid: Uint8Array,
+): Readonly<{wake_width: number; recirculation_area: number}> {
+  const {nx, ny, dx, dy} = dimensions(domain);
+  const {x: bx} = bounds2d(domain);
+  const activeRows = new Uint8Array(ny);
+  let recirculatingCells = 0;
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+    const cell = y * nx + x;
+    if (solid[cell] !== 0) continue;
+    const px = bx[0] + (x + 0.5) * dx;
+    const u = velocity[2 * cell] ?? 0;
+    if (px > pivotX && u < 0) recirculatingCells += 1;
+    if (px > pivotX + chord && freestreamU - u > 0.1 * Math.abs(freestreamU)) activeRows[y] = 1;
+  }
+  let activeRowCount = 0;
+  for (const active of activeRows) activeRowCount += active;
+  return {
+    wake_width: activeRowCount * dy,
+    recirculation_area: recirculatingCells * dx * dy,
+  };
+}
 
 export function fieldDiagnostics(
   velocity: FloatArray,
@@ -14,9 +42,7 @@ export function fieldDiagnostics(
   let enstrophy = 0;
   let divergenceLinf = 0;
   let solidLeakage = 0;
-  let recirculationArea = 0;
-  let wakeMinimum = Number.POSITIVE_INFINITY;
-  let wakeMaximum = Number.NEGATIVE_INFINITY;
+  const solid = new Uint8Array(nx * ny);
   for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
     const cell = y * nx + x;
     const u = velocity[2 * cell] ?? 0;
@@ -24,8 +50,10 @@ export function fieldDiagnostics(
     kineticEnergy += 0.5 * (u * u + v * v);
     const px = bx[0] + (x + 0.5) * dx;
     const py = by[0] + (y + 0.5) * dy;
-    if (foil.signedDistance(px, py, angleDegrees) <= 0) solidLeakage = Math.max(solidLeakage, Math.hypot(u, v));
-    if (px > (scenario.foil.pivot[0] ?? 0) + 0.5 * scenario.foil.chord && u < 0) recirculationArea += dx * dy;
+    if (foil.signedDistance(px, py, angleDegrees) <= 0) {
+      solid[cell] = 1;
+      solidLeakage = Math.max(solidLeakage, Math.hypot(u, v));
+    }
     if (x === 0 || x + 1 === nx || y === 0 || y + 1 === ny) continue;
     const left = y * nx + x - 1; const right = y * nx + x + 1;
     const bottom = (y - 1) * nx + x; const top = (y + 1) * nx + x;
@@ -36,18 +64,22 @@ export function fieldDiagnostics(
     const vorticity = dvdx - dudy;
     enstrophy += 0.5 * vorticity * vorticity;
     divergenceLinf = Math.max(divergenceLinf, Math.abs(dudx + dvdy));
-    if (px > (scenario.foil.pivot[0] ?? 0) + 0.5 * scenario.foil.chord && Math.abs(vorticity) > 0.05) {
-      wakeMinimum = Math.min(wakeMinimum, py); wakeMaximum = Math.max(wakeMaximum, py);
-    }
   }
   const cells = nx * ny;
+  const wake = wakeMetrics(
+    velocity,
+    scenario.domain,
+    scenario.foil.pivot[0] ?? 0,
+    scenario.foil.chord,
+    scenario.freestream[0] ?? 0,
+    solid,
+  );
   return {
     kinetic_energy: kineticEnergy / cells,
     energy: kineticEnergy / cells,
     enstrophy: enstrophy / cells,
     reconstructed_divergence_linf: divergenceLinf,
     solid_cell_speed: solidLeakage,
-    wake_width: Number.isFinite(wakeMinimum) ? wakeMaximum - wakeMinimum : 0,
-    recirculation_area: recirculationArea,
+    ...wake,
   };
 }

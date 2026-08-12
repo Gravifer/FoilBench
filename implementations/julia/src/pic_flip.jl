@@ -919,8 +919,20 @@ function diagnostics(solver::PicFlipSolver)
         "reseeded_last_step" => Float64(solver.reseeded_last_step),
         "swept_collisions_last_step" => Float64(solver.swept_collisions_last_step),
         "particles_inside_solid" => Float64(inside),
-        "wake_width" => Float64(wake_width(solver.grid_velocity, scenario.domain, scenario.foil.pivot[1])),
-        "recirculation_area" => Float64(recirculation_area(solver.grid_velocity, scenario.domain, scenario.foil.pivot[1])),
+        "wake_width" => Float64(wake_width(
+            solver.grid_velocity,
+            scenario.domain,
+            scenario.foil.pivot[1];
+            chord = scenario.foil.chord,
+            freestream_u = scenario.freestream[1],
+            solid = solver.solid,
+        )),
+        "recirculation_area" => Float64(recirculation_area(
+            solver.grid_velocity,
+            scenario.domain,
+            scenario.foil.pivot[1];
+            solid = solver.solid,
+        )),
         "projection_iterations" => Float64(solver.projection_iterations),
     )
     isfinite(solver.native_divergence_linf) &&

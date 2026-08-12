@@ -69,6 +69,18 @@ Reported diagnostics include energy, enstrophy, divergence, mass or
 density drift where meaningful, solid leakage, wake width, and recirculation
 area. FoilBench does not assign an aesthetic score.
 
+The named wake diagnostics have language-independent cell-center semantics for
+the positive-x freestream cases in the shared repertoire. `wake_width` is the
+total transverse measure of rows containing at least one fluid cell more than
+one chord downstream of the foil pivot whose streamwise velocity deficit is
+greater than 10% of the streamwise freestream speed. `recirculation_area` is
+the area of fluid cells downstream of the pivot whose streamwise velocity is
+negative. Authoritative solid cells are excluded from both measures. The
+shared `spec/conformance/wake-metrics.json` field fixes the threshold,
+downstream regions, cell-center sampling, solid masking, and grid
+quantization; implementations must not substitute a vorticity span or another
+similarly named native diagnostic.
+
 Airfoil runs also sample transverse velocity 1.5 chords downstream during the
 second half of the matched physical interval. The runner reports RMS
 fluctuation, dominant frequency, Strouhal number, dominant spectral-power

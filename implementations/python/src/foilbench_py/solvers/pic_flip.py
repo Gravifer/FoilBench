@@ -1110,9 +1110,16 @@ class PicFlipSolver:
                     )
                 )
             ),
-            "wake_width": wake_width(grid_velocity, scenario.domain, scenario.foil.pivot[0]),
+            "wake_width": wake_width(
+                grid_velocity,
+                scenario.domain,
+                scenario.foil.pivot[0],
+                scenario.foil.chord,
+                scenario.freestream[0],
+                solid,
+            ),
             "recirculation_area": recirculation_area(
-                grid_velocity, scenario.domain, scenario.foil.pivot[0]
+                grid_velocity, scenario.domain, scenario.foil.pivot[0], solid
             ),
         }
         if self._native_divergence_linf is not None:

@@ -319,6 +319,38 @@ end
     @test solid_leakage(velocity, falses(48, 32)) == 0.0f0
     @test wake_width(velocity, domain, 0.0f0) == 0.0f0
     @test recirculation_area(velocity, domain, 0.0f0) == 0.0f0
+
+    wake_fixture = JSON3.read(
+        read(joinpath(FIXTURES, "wake-metrics.json"), String),
+    )
+    wake_domain = DomainSpec(
+        (
+            Tuple(Float32.(wake_fixture.bounds[1])),
+            Tuple(Float32.(wake_fixture.bounds[2])),
+        ),
+        Tuple(Int.(wake_fixture.resolution)),
+        (),
+    )
+    wake_velocity = zeros(Float32, nx(wake_domain), ny(wake_domain), 2)
+    wake_solid = falses(nx(wake_domain), ny(wake_domain))
+    for j in 1:ny(wake_domain), i in 1:nx(wake_domain), component in 1:2
+        wake_velocity[i, j, component] = wake_fixture.velocity[j][i][component]
+        wake_solid[i, j] = wake_fixture.solid[j][i]
+    end
+    @test wake_width(
+        wake_velocity,
+        wake_domain,
+        wake_fixture.pivot_x;
+        chord = wake_fixture.chord,
+        freestream_u = wake_fixture.freestream_u,
+        solid = wake_solid,
+    ) ≈ wake_fixture.expected.wake_width
+    @test recirculation_area(
+        wake_velocity,
+        wake_domain,
+        wake_fixture.pivot_x;
+        solid = wake_solid,
+    ) ≈ wake_fixture.expected.recirculation_area
 end
 
 @testset "Matrix-free projection and diffusion" begin
