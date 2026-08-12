@@ -117,6 +117,8 @@ export class ViewerModel {
   }
 
   public setAngle(angle: number, timestamp: number): void {
+    if (!Number.isFinite(angle)) throw new RangeError("pose angle must be finite");
+    if (!Number.isFinite(timestamp)) throw new RangeError("pose timestamp must be finite");
     const selected = Math.max(-30, Math.min(30, angle));
     this.dragging = true;
     this.lastPoseReceivedAt = performance.now();

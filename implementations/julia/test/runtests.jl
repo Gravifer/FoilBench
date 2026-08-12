@@ -1241,6 +1241,12 @@ end
     @test toggle_crop!(tracer_model)
     @test set_angle!(tracer_model, 90, 1.0) == 30
     @test set_angle!(tracer_model, -90, 2.0) == -30
+    prior_pose = tracer_model.manual_angle
+    prior_drag = tracer_model.drag_active
+    @test_throws ArgumentError set_angle!(tracer_model, NaN, 3.0)
+    @test_throws ArgumentError set_angle!(tracer_model, 5.0, Inf)
+    @test tracer_model.manual_angle == prior_pose
+    @test tracer_model.drag_active == prior_drag
     tracer_model.tracers.positions[:, 1] .= (0, 0)
     shallow_generation = tracer_model.tracers.generations[1]
     advance_tracers!(
@@ -1394,7 +1400,10 @@ end
     @test occursin("fresh restart", model.status_message)
     @test !model.metrics_warming
     @test iszero(model.last_requested_angular_velocity)
-    @test occursin("recovery_epoch=1", snapshot(model).status)
+    recovered_snapshot = snapshot(model)
+    @test occursin("recovery_epoch=1", recovered_snapshot.status)
+    @test recovered_snapshot.recovery_reason == model.recovery_reason
+    @test recovered_snapshot.recovery_stage == model.recovery_stage
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
     reset_viewer!(model)

@@ -110,6 +110,8 @@ function _with_revision(
         selected.schedule_active,
         selected.recovery_epoch,
         selected.tracer_recycle_counters,
+        selected.recovery_reason,
+        selected.recovery_stage,
     )
 end
 
@@ -148,6 +150,8 @@ function _failed_snapshot(selected::ViewerSnapshot{T}, message::AbstractString) 
         selected.schedule_active,
         selected.recovery_epoch,
         selected.tracer_recycle_counters,
+        selected.recovery_reason,
+        selected.recovery_stage,
     )
 end
 

@@ -109,6 +109,8 @@ def test_worker_recovers_once_from_failed_advance(
         assert recovered.failure is None
         assert recovered.angle_degrees == -30.0
         assert "recovered=fresh restart reason=nonfinite_state" in recovered.status
+        assert recovered.recovery_reason == "nonfinite_state"
+        assert recovered.recovery_stage == "post-import"
 
         resumed = worker.wait_for_revision(2)
         assert resumed.failure is None
@@ -116,6 +118,8 @@ def test_worker_recovers_once_from_failed_advance(
 
         reset = worker.wait_for_command(worker.reset())
         assert reset.recovery_epoch == 1
+        assert reset.recovery_reason is None
+        assert reset.recovery_stage is None
     finally:
         worker.close()
 

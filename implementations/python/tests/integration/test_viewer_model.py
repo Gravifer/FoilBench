@@ -394,6 +394,20 @@ def test_drag_velocity_uses_timestamped_samples_and_a_generous_cap(
     assert model.requested_tip_speed_ratio <= 8.0 + 1.0e-6
 
 
+def test_nonfinite_drag_sample_is_rejected_without_state_mutation(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(32, 16)), "stable-fluids")
+    before = (model.angle_override, model.drag_active, model.recovery_count)
+
+    with pytest.raises(ValueError, match="pose angle"):
+        model.set_angle(float("nan"), 1.0)
+    with pytest.raises(ValueError, match="pose timestamp"):
+        model.set_angle(5.0, float("inf"))
+
+    assert (model.angle_override, model.drag_active, model.recovery_count) == before
+
+
 def test_nonmonotonic_drag_sample_does_not_fabricate_a_tiny_interval(
     scenario_factory: ScenarioFactory,
 ) -> None:

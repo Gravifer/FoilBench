@@ -36,6 +36,8 @@ struct ViewerSnapshot{T<:AbstractFloat}
     schedule_active::Bool
     recovery_epoch::Int
     tracer_recycle_counters::Dict{Symbol,Int}
+    recovery_reason::Union{Nothing,Symbol}
+    recovery_stage::Union{Nothing,Symbol}
 end
 
 _random_fraction(rng::PCG32, ::Type{T}) where {T<:AbstractFloat} = T(next_float32!(rng))
@@ -704,6 +706,8 @@ function snapshot(model::ViewerModel{T}) where {T}
         model.manual_angle === nothing,
         model.recovery_count,
         copy(model.tracers.recycle_counters),
+        model.recovery_reason,
+        model.recovery_stage,
     )
 end
 
@@ -757,7 +761,9 @@ function set_angle!(
     angle_degrees::Real,
     timestamp::Real = time_ns() / 1.0e9,
 ) where {T}
-    selected = clamp(T(angle_degrees), T(-30), T(30))
+    selected = T(angle_degrees)
+    isfinite(selected) || throw(ArgumentError("pose angle must be finite"))
+    selected = clamp(selected, T(-30), T(30))
     selected_time = Float64(timestamp)
     isfinite(selected_time) || throw(ArgumentError("pose timestamp must be finite"))
     model.last_pose_received_at = time_ns() / 1.0e9

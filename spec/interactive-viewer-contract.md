@@ -155,7 +155,9 @@ Interactive foil pose must be clamped to **-30 through +30 degrees** in every
 native viewer. Scenario-authored controls are separate and may use a wider
 range when a scenario explicitly calls for it.
 
-Pointer samples must carry monotonic timestamps. The simulation owner should
+Pointer poses and timestamps must be finite, and invalid samples must be
+rejected before mutating drag, schedule, recovery, or solver state. Pointer
+samples must carry monotonic timestamps. The simulation owner should
 derive angular velocity from recent timestamped pose samples using a short
 smoothing window. It must not divide a large pose jump by an arbitrary render
 interval, the solver output interval, or a tiny hard-coded minimum event
@@ -322,6 +324,9 @@ A permitted fresh recovery has these baseline semantics:
 - discard imported and solver-private flow history;
 - cancel future scheduled angle events and enter manual pose control;
 - increment the recovery epoch and record a classified reason;
+- publish the classified recovery reason and stage as structured nullable
+  snapshot fields alongside the recovery epoch; status text may repeat them
+  for humans but is not the machine-readable record;
 - clear stale step-rate and solver diagnostics, displaying `warming` or an
   em dash until the first successful step;
 - fully reseed visible tracers and invalidate every old path segment;

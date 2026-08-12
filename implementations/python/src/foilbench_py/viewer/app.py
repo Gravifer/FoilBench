@@ -384,6 +384,10 @@ class ViewerModel:
                 self.pose_only_calm_steps = 0
 
     def set_angle(self, angle_degrees: float, timestamp: float | None = None) -> None:
+        if not np.isfinite(angle_degrees):
+            raise ValueError("pose angle must be finite")
+        if timestamp is not None and not np.isfinite(timestamp):
+            raise ValueError("pose timestamp must be finite")
         selected = float(np.clip(angle_degrees, -30.0, 30.0))
         selected_time = perf_counter() if timestamp is None else timestamp
         self.last_pose_received_at = perf_counter()
