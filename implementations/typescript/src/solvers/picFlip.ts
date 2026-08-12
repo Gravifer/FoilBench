@@ -27,6 +27,7 @@ export class PicFlipSolver implements FlowSolver {
   private nx = 0; private ny = 0; private dx = 1; private dy = 1; private boundsX0 = 0; private boundsY0 = 0; private periodicX = false; private periodicY = false;
   public get stateRevision(): number { return this.revision; }
   private rollback: ParticleCheckpoint | null = null; private oldFaces: StableCheckpoint | null = null; private newFaces: StableCheckpoint | null = null; private populationFaces: StableCheckpoint | null = null;
+  private scatterU: FloatArray | null = null; private scatterUWeights: FloatArray | null = null; private scatterV: FloatArray | null = null; private scatterVWeights: FloatArray | null = null;
 
   private requireScenario(): Scenario { if (this.scenario === null) throw new Error("solver is not initialized"); return this.scenario; }
   private requireFoil(): NacaFoil { if (this.foil === null) throw new Error("foil is missing"); return this.foil; }
@@ -39,7 +40,7 @@ export class PicFlipSolver implements FlowSolver {
     if (scenario.domain.dimension !== 2) throw new RangeError("pic-flip supports only 2D");
     if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid PIC/FLIP restart state");
     const configuredCfl = scenario.solverOptions.picCfl ?? 0.75; if (!(configuredCfl > 0 && configuredCfl <= 1) || !Number.isFinite(configuredCfl)) throw new RangeError("pic_cfl must be in (0, 1]");
-    this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.blend = scenario.solverOptions.picFlipBlend ?? 0.95; this.cfl = configuredCfl; this.rng = new Pcg32(seed, 71); this.advanceCount = 0; this.settlingSteps = 0; this.unsupportedFaceFraction = 0; this.rollback = null; this.oldFaces = null; this.newFaces = null; this.populationFaces = null;
+    this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.blend = scenario.solverOptions.picFlipBlend ?? 0.95; this.cfl = configuredCfl; this.rng = new Pcg32(seed, 71); this.advanceCount = 0; this.settlingSteps = 0; this.unsupportedFaceFraction = 0; this.rollback = null; this.oldFaces = null; this.newFaces = null; this.populationFaces = null; this.scatterU = null; this.scatterUWeights = null; this.scatterV = null; this.scatterVWeights = null;
     const layout = dimensions(scenario.domain); const bounds = bounds2d(scenario.domain); this.nx = layout.nx; this.ny = layout.ny; this.dx = layout.dx; this.dy = layout.dy; this.boundsX0 = bounds.x[0]; this.boundsY0 = bounds.y[0]; this.periodicX = scenario.domain.periodicAxes.includes("x"); this.periodicY = scenario.domain.periodicAxes.includes("y"); const maximumCamber = Number(scenario.foil.naca[0]) / 100; const thickness = Number(scenario.foil.naca.slice(2)) / 100; this.collisionRadius = Math.hypot(0.75 * scenario.foil.chord, (maximumCamber + 0.51 * thickness) * scenario.foil.chord);
     this.grid.restart(scenario, seed, start); this.seedParticles(start.angleDegrees);
     this.revision = 0;
@@ -94,8 +95,8 @@ export class PicFlipSolver implements FlowSolver {
   private sampleFaceU(faces: StableCheckpoint, px: number, py: number): number { return this.sampleComponent(faces.u, this.nx + 1, this.ny, (px - this.boundsX0) / this.dx, (py - this.boundsY0) / this.dy - 0.5, this.periodicX, this.periodicY, this.periodicX, false); }
   private sampleFaceV(faces: StableCheckpoint, px: number, py: number): number { return this.sampleComponent(faces.v, this.nx, this.ny + 1, (px - this.boundsX0) / this.dx - 0.5, (py - this.boundsY0) / this.dy, this.periodicX, this.periodicY, false, this.periodicY); }
 
-  private scatterComponent(values: FloatArray, positionsX: FloatArray, positionsY: FloatArray, width: number, height: number, gxOffset: number, gyOffset: number, periodicX: boolean, periodicY: boolean, duplicateX: boolean, duplicateY: boolean, fallback: FloatArray): {readonly field: FloatArray; readonly unsupported: number} {
-    const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); const output = allocate(scenario.precision, width * height); const weights = allocate(scenario.precision, width * height); const uniqueWidth = duplicateX ? width - 1 : width; const uniqueHeight = duplicateY ? height - 1 : height;
+  private scatterComponent(values: FloatArray, positionsX: FloatArray, positionsY: FloatArray, width: number, height: number, gxOffset: number, gyOffset: number, periodicX: boolean, periodicY: boolean, duplicateX: boolean, duplicateY: boolean, fallback: FloatArray, outputScratch: FloatArray | null, weightScratch: FloatArray | null): {readonly field: FloatArray; readonly weights: FloatArray; readonly unsupported: number} {
+    const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); const length = width * height; const output = outputScratch?.length === length ? outputScratch : allocate(scenario.precision, length); const weights = weightScratch?.length === length ? weightScratch : allocate(scenario.precision, length); output.fill(0); weights.fill(0); const uniqueWidth = duplicateX ? width - 1 : width; const uniqueHeight = duplicateY ? height - 1 : height;
     for (let particle = 0; particle < positionsX.length; particle += 1) {
       const gx = ((positionsX[particle] ?? 0) - bx[0]) / dx + gxOffset; const gy = ((positionsY[particle] ?? 0) - by[0]) / dy + gyOffset; const baseX = Math.floor(gx - 0.5); const baseY = Math.floor(gy - 0.5);
       const wx0 = this.quadraticWeight(gx - baseX); const wx1 = this.quadraticWeight(gx - baseX - 1); const wx2 = this.quadraticWeight(gx - baseX - 2); const wy0 = this.quadraticWeight(gy - baseY); const wy1 = this.quadraticWeight(gy - baseY - 1); const wy2 = this.quadraticWeight(gy - baseY - 2);
@@ -109,12 +110,12 @@ export class PicFlipSolver implements FlowSolver {
     let unsupported = 0; for (let index = 0; index < output.length; index += 1) { if ((weights[index] ?? 0) <= 1e-12) unsupported += 1; output[index] = (weights[index] ?? 0) > 1e-12 ? (output[index] ?? 0) / (weights[index] ?? 1) : fallback[index] ?? 0; }
     if (duplicateX) for (let iy = 0; iy < height; iy += 1) output[iy * width + width - 1] = output[iy * width] ?? 0;
     if (duplicateY) for (let ix = 0; ix < width; ix += 1) output[(height - 1) * width + ix] = output[ix] ?? 0;
-    return {field: output, unsupported};
+    return {field: output, weights, unsupported};
   }
 
   private scatterToFaces(fallback: StableCheckpoint): {readonly u: FloatArray; readonly v: FloatArray} {
     const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
-    const u = this.scatterComponent(this.vx, this.x, this.y, nx + 1, ny, 0, -0.5, periodicX, periodicY, periodicX, false, fallback.u); const v = this.scatterComponent(this.vy, this.x, this.y, nx, ny + 1, -0.5, 0, periodicX, periodicY, false, periodicY, fallback.v); this.unsupportedFaceFraction = (u.unsupported + v.unsupported) / (u.field.length + v.field.length); return {u: u.field, v: v.field};
+    const u = this.scatterComponent(this.vx, this.x, this.y, nx + 1, ny, 0, -0.5, periodicX, periodicY, periodicX, false, fallback.u, this.scatterU, this.scatterUWeights); this.scatterU = u.field; this.scatterUWeights = u.weights; const v = this.scatterComponent(this.vy, this.x, this.y, nx, ny + 1, -0.5, 0, periodicX, periodicY, false, periodicY, fallback.v, this.scatterV, this.scatterVWeights); this.scatterV = v.field; this.scatterVWeights = v.weights; this.unsupportedFaceFraction = (u.unsupported + v.unsupported) / (u.field.length + v.field.length); return {u: u.field, v: v.field};
   }
 
   private respawnAtInlet(index: number, angleDegrees: number, faces: StableCheckpoint): void {
