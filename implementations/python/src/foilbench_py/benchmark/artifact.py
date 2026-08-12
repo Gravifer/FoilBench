@@ -82,7 +82,17 @@ def physical_identities_match(
             physical_identities_match(a, b, precision=precision)
             for a, b in zip(left_sequence, right_sequence, strict=True)
         )
-    return type(left) is type(right) and left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, bytes) or isinstance(right, bytes):
+        return isinstance(left, bytes) and isinstance(right, bytes) and left == right
+    if isinstance(left, bytearray) or isinstance(right, bytearray):
+        return (
+            isinstance(left, bytearray)
+            and isinstance(right, bytearray)
+            and left == right
+        )
+    return left is None and right is None
 
 
 def _require_finite(value: object, path: str = "result") -> None:
