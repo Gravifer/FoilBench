@@ -1,4 +1,5 @@
 import type {Scenario, SolverId} from "../core/contracts.js";
+import type {TracerRecycleCounters} from "./tracers.js";
 
 export type ViewerCommand =
   | {readonly kind: "initialize"; readonly sequence: number; readonly scenario: Scenario; readonly solverId: SolverId}
@@ -35,6 +36,7 @@ export interface ViewerSnapshot {
   readonly stepRate: number | null; readonly simulatedPerWall: number | null; readonly substeps: number;
   readonly maxSpeed: number; readonly diagnostics: Readonly<Record<string, number>>; readonly status: string;
   readonly recoveryEpoch: number; readonly recoveryReason: string | null; readonly recoveryStage: string | null;
+  readonly tracerRecycleCounters: TracerRecycleCounters;
   readonly poseOnly: boolean; readonly motionMode: "resolved" | "pose-only"; readonly scheduleActive: boolean;
   readonly phase: "warming" | "running" | "paused" | "failed"; readonly diagnosticMode: "cadenced" | "every-step";
   readonly solverTuning: string;

@@ -113,6 +113,9 @@ def test_worker_recovers_once_from_failed_advance(
         resumed = worker.wait_for_revision(2)
         assert resumed.failure is None
         assert resumed.simulation_time > 0.0
+
+        reset = worker.wait_for_command(worker.reset())
+        assert reset.recovery_epoch == 1
     finally:
         worker.close()
 

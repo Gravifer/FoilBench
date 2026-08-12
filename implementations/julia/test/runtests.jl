@@ -1386,12 +1386,14 @@ end
     stable = model.solver::StableFluidsSolver{Float64}
     @test adjust_tuning!(model, 0.05)
     stable.u[1, 1] = NaN
+    model.last_requested_angular_velocity = 600.0
     recover_solver!(model, ArgumentError("injected finite-state failure"))
     @test model.recovery_count == 1
     @test model.simulation_time == recovery_time + scenario.output_dt
     @test all(isfinite, export_state(model.solver).velocity)
     @test occursin("fresh restart", model.status_message)
     @test !model.metrics_warming
+    @test iszero(model.last_requested_angular_velocity)
     @test occursin("recovery_epoch=1", snapshot(model).status)
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 
@@ -1442,6 +1444,9 @@ end
     worker = ViewerWorker(worker_model)
     start!(worker)
     first_snapshot = wait_for_snapshot(worker)
+    failed_snapshot = FoilBenchJulia._failed_snapshot(first_snapshot, "injected")
+    @test failed_snapshot.phase == :failed
+    @test failed_snapshot.tracer_recycle_counters == first_snapshot.tracer_recycle_counters
     @test first_snapshot.solver_id == "stable-fluids"
     @test latest_snapshot(worker) === latest_snapshot(worker)
     pause_sequence = enqueue!(worker, TogglePauseCommand())

@@ -346,7 +346,7 @@ class SimulationWorker:
             motion_mode=session.motion_mode,
             diagnostic_mode=session.diagnostic_mode,
             schedule_active=session.schedule_active,
-            recovery_epoch=0 if session.recovery is None else session.recovery.epoch,
+            recovery_epoch=self._model.recovery_count,
             tracer_recycle_counters={
                 str(reason): count
                 for reason, count in self._model.tracers.recycle_counters.items()

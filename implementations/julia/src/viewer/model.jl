@@ -973,6 +973,7 @@ function recover_solver!(
         current_angle,
     )
     model.angular_velocity = zero(T)
+    model.last_requested_angular_velocity = zero(T)
     model.manual_angle = current_angle
     empty!(model.pose_samples)
     model.last_pose_received_at = nothing
@@ -1053,6 +1054,7 @@ function _reject_or_fallback!(
             ))
         (selected, validation_report, candidate_diagnostics)
     catch error
+        error isa NumericalFailure || rethrow()
         model.status_message =
             "warm import rejected ($reason); fresh destination failed " *
             "($(classify_viewer_failure(error))); source retained"

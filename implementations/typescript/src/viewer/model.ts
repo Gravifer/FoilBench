@@ -81,6 +81,7 @@ export class ViewerModel {
   private vorticityCacheRevision: number | null = null;
   private nextVorticityTime = 0;
   private recoveryPending = false;
+  private warmValidationPending = false;
   private readonly tuningValues = new Map<SolverId, InteractiveTuningValue>();
   private readonly presentationFoil: NacaFoil;
 
@@ -131,6 +132,7 @@ export class ViewerModel {
       this.angularVelocity = Math.max(-maximum, Math.min(maximum, (selected - first.angle) / ((timestamp - first.time) / 1000)));
     }
     this.manualAngle = selected;
+    this.warmValidationPending = false;
     this.status = "manual control";
   }
 
@@ -148,6 +150,7 @@ export class ViewerModel {
     this.playbackRate = Math.max(0.5, Math.min(2, (selected / this.scenario.reynolds) ** Math.log10(1.5)));
     this.status = "Re changed; warming";
     this.recoveryPending = false;
+    this.warmValidationPending = false;
     this.failureTimes = [];
     this.clearMeasurements();
   }
@@ -165,6 +168,7 @@ export class ViewerModel {
     const tuning = this.solver.adjustInteractiveTuning(amount);
     this.tuningValues.set(this.solver.info.id, tuning.value);
     this.status = `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
+    this.warmValidationPending = false;
     this.clearMeasurements();
   }
 
@@ -208,6 +212,7 @@ export class ViewerModel {
     this.playbackRate = 1;
     this.failureTimes = [];
     this.recoveryPending = false;
+    this.warmValidationPending = false;
     this.tracers.reseed(this.scenario.controls[0]?.angleDegrees ?? 0, "scenario_reset");
     this.status = "warming";
     this.clearMeasurements();
@@ -243,6 +248,7 @@ export class ViewerModel {
     catch (error) { this.status = `switched; presentation failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
     this.clearMeasurements();
     this.diagnosticsReady = true;
+    this.warmValidationPending = true;
     return true;
   }
 
@@ -260,8 +266,8 @@ export class ViewerModel {
       if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh destination restart disagrees with requested time or pose");
       validationReport = incoming.advance({time: this.time + validationDt, angleDegrees: angle, angularVelocityDegrees: 0}, validationDt);
     } catch (error) {
-      const detail = error instanceof NumericalFailure ? error.reason : error instanceof Error ? error.name : "unknown";
-      this.status = `warm import rejected (${reason}); fresh destination failed (${detail}); source retained`;
+      if (!(error instanceof NumericalFailure)) throw error;
+      this.status = `warm import rejected (${reason}); fresh destination failed (${error.reason}); source retained`;
       return false;
     }
     this.solver = incoming;
@@ -278,6 +284,7 @@ export class ViewerModel {
     this.clearMeasurements();
     this.lastReport = validationReport;
     this.diagnosticsReady = true;
+    this.warmValidationPending = true;
     return true;
   }
 
@@ -294,6 +301,7 @@ export class ViewerModel {
       return 0;
     }
     this.lastReport = report;
+    this.warmValidationPending = false;
     this.time += report.advancedDt;
     this.diagnosticsReady = true;
     const guardedTrial = this.resolvedMotionTrial;
@@ -326,6 +334,7 @@ export class ViewerModel {
   }
 
   private recover(error: NumericalFailure): void {
+    const postImport = this.warmValidationPending;
     const now = performance.now();
     if (this.resolvedMotionTrial || (this.presentation.poseOnly && this.poseOnlyReleasePending && !this.dragging)) {
       this.resolvedMotionTrial = false;
@@ -369,15 +378,16 @@ export class ViewerModel {
       this.lastPoseReceivedAt = null;
       this.presentation.recoveryEpoch += 1;
       this.presentation.recoveryReason = error.reason;
-      this.presentation.recoveryStage = "ordinary-step";
+      this.presentation.recoveryStage = postImport ? "post-import" : "ordinary-step";
       this.tracers.reseed(angle, "forced_recovery");
-      this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=ordinary-step discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
+      this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=${this.presentation.recoveryStage} discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
       this.clearMeasurements();
       this.lastReport = validationReport;
       this.diagnosticsCache = validationDiagnostics.values;
       this.diagnosticsCacheRevision = validationDiagnostics.stateRevision;
       this.diagnosticsReady = true;
       this.recoveryPending = true;
+      this.warmValidationPending = true;
       if (resetReynolds || poseOnlyRecovery) this.failureTimes = [];
     } catch (recoveryError) {
       this.paused = true;
@@ -477,6 +487,7 @@ export class ViewerModel {
       stepRate: this.stepRate, simulatedPerWall: this.simulatedPerWall, substeps: this.lastReport.substeps,
       maxSpeed: this.lastReport.maxSpeed, diagnostics, status: this.status,
       recoveryEpoch: session.recoveryEpoch, recoveryReason: session.recoveryReason, recoveryStage: session.recoveryStage,
+      tracerRecycleCounters: this.tracers.recycleCounters,
       poseOnly: this.presentation.poseOnly, motionMode: session.motionMode, scheduleActive: session.scheduleActive,
       phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.tuningLabel(),
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,

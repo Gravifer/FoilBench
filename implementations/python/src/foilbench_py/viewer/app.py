@@ -417,6 +417,7 @@ class ViewerModel:
         if self.angle_override is not None:
             self.previous_angle = self.angle_override
         self.manual_angular_velocity_degrees = 0.0
+        self.last_requested_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
         self.last_pose_received_at = None
         self.drag_active = False
@@ -570,6 +571,7 @@ class ViewerModel:
         self.angle_override = current_angle
         self.previous_angle = current_angle
         self.manual_angular_velocity_degrees = 0.0
+        self.last_requested_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
         self.last_pose_received_at = None
         self.tracers.reseed_all(current_angle, "forced_recovery")

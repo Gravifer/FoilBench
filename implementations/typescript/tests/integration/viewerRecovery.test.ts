@@ -55,6 +55,7 @@ describe("interactive recovery semantics", () => {
     expect(Object.keys(recovered.diagnostics).length).toBeGreaterThan(0);
     expect([...model.tracers.positions]).not.toEqual([...before]);
     expect(model.tracers.recycleCounters.forced_recovery).toBe(model.tracers.count);
+    expect(recovered.tracerRecycleCounters.forced_recovery).toBe(model.tracers.count);
     model.releaseAngle(); model.step();
     expect(model.time).toBeCloseTo(completedTime + 2 * model.scenario.outputDt, 12);
   });
@@ -153,6 +154,32 @@ describe("interactive recovery semantics", () => {
     expect(model.time).toBe(completedTime);
     expect(model.snapshot().recoveryEpoch).toBe(0);
     expect(model.status).toContain("source retained");
+  });
+
+  it("classifies the first failure after an accepted switch as post-import", async () => {
+    const model = new ViewerModel(await scenario(), "stable-fluids");
+    model.step();
+    expect(model.switchSolver("pic-flip")).toBe(true);
+    model.solver = new FailingSolver(model.solver, numericalFailure());
+    model.step();
+    expect(model.snapshot().recoveryStage).toBe("post-import");
+  });
+
+  it("propagates a programming error from a fresh warm-switch fallback", async () => {
+    let destinationCreations = 0;
+    const factory = (id: SolverId): FlowSolver => {
+      const solver = createSolver(id);
+      if (id !== "lbm-d2q9") return solver;
+      destinationCreations += 1;
+      return destinationCreations === 1
+        ? new RejectingImportSolver(solver, "nonfinite_state")
+        : new FailingSolver(solver, new TypeError("injected fallback bug"));
+    };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory);
+    const source = model.solver;
+    expect(() => model.switchSolver("lbm-d2q9")).toThrow(TypeError);
+    expect(model.solver).toBe(source);
+    expect(model.snapshot().recoveryEpoch).toBe(0);
   });
 
   it("retains the source and skips fallback for structural import rejection", async () => {

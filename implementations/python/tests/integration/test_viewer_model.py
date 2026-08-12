@@ -572,6 +572,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     positions = model.tracers.positions.copy()
     history = model.tracers.history.copy()
     generations = model.tracers.generations.copy()
+    model.last_requested_angular_velocity_degrees = 600.0
 
     model.recover_solver(FloatingPointError("unstable imported flow"))
 
@@ -583,6 +584,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
     assert model.time == pytest.approx(recovery_time + model.scenario.output_dt)
     assert model.angle_override == 30.0
     assert model.previous_angle == 30.0
+    assert model.last_requested_angular_velocity_degrees == 0.0
     assert not np.array_equal(model.tracers.positions, positions)
     assert not np.array_equal(model.tracers.history, history)
     np.testing.assert_array_equal(model.tracers.generations, generations + 1)

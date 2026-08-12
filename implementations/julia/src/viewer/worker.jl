@@ -147,6 +147,7 @@ function _failed_snapshot(selected::ViewerSnapshot{T}, message::AbstractString) 
         selected.diagnostic_mode,
         selected.schedule_active,
         selected.recovery_epoch,
+        selected.tracer_recycle_counters,
     )
 end
 
