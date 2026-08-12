@@ -73,9 +73,11 @@ def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
     root = find_repo_root(Path(__file__))
     matrix_paths: dict[str, Path] = {}
     for path in (root / "benchmark-matrices").glob("*.json"):
-        document = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(document, dict) and isinstance(document.get("id"), str):
-            matrix_paths[str(document["id"])] = path
+        document = cast(object, json.loads(path.read_text(encoding="utf-8")))
+        if isinstance(document, dict):
+            typed_document = cast(dict[str, object], document)
+            if isinstance(typed_document.get("id"), str):
+                matrix_paths[str(typed_document["id"])] = path
     grouped: dict[tuple[str, str], list[dict[str, object]]] = {}
     for result in results:
         grouped.setdefault(

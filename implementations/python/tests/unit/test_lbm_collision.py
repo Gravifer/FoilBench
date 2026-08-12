@@ -15,7 +15,6 @@ _C = np.asarray(
     [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]],
     dtype=np.float64,
 )
-_W = np.asarray([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
