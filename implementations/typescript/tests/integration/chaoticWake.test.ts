@@ -21,6 +21,8 @@ describe("TypeScript chaotic-wake parity", () => {
     const sensitivity = runChaosSensitivity(scenario, selected, 0.08, 1e-4);
     validateDocument(sensitivity, resultSchema);
     expect(Object.values(sensitivity.metrics).every(Number.isFinite)).toBe(true);
+    expect(Number(sensitivity.metrics["initial_wake_rms_difference"])).toBeGreaterThan(2e-6);
+    expect(Number(sensitivity.metrics["initial_wake_rms_difference"])).toBeLessThan(2e-5);
     expect(sensitivity.series?.times.length).toBeGreaterThan(0);
   });
 
