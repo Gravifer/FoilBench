@@ -77,12 +77,6 @@ try {
     }
 
     if ($Julia) {
-        Write-Host '==> Julia: Pkg.test()'
-        Invoke-Checked julia @(
-            '--startup-file=no', '--history-file=no',
-            '--project=implementations/julia',
-            '-e', 'using Pkg; Pkg.test()'
-        )
         if ($Representative) {
             Write-Host '==> Julia: 160x96 startup gate'
             Invoke-Checked julia @(
@@ -109,6 +103,13 @@ try {
                 'implementations/julia/benchmark/scheduled_gate.jl'
             )
         }
+
+        Write-Host '==> Julia: Pkg.test()'
+        Invoke-Checked julia @(
+            '--startup-file=no', '--history-file=no',
+            '--project=implementations/julia',
+            '-e', 'using Pkg; Pkg.test()'
+        )
 
         Write-Host '==> Julia: viewer environment load'
         Invoke-Checked julia @(
