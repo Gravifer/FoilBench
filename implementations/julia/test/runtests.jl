@@ -1092,7 +1092,8 @@ end
         pic_scenario.output_dt,
     )
     @test pic_report.substeps >= 2
-    @test pic_report.evidence["stability_retries"] >= 1
+    @test pic_report.evidence["stability_retries"] >=
+        pic_case.minimum_total_stability_retries
     @test pic_report.evidence["maximum_particle_cfl"] <=
         option(pic_scenario, "pic_cfl", 0.75) * (1 + 1.0e-6)
     @test all(isfinite, export_state(pic_solver).velocity)

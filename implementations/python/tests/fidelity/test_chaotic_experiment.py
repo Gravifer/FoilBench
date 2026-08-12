@@ -57,7 +57,9 @@ def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
     report = solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
 
     assert report.substeps >= 2
-    assert int(report.evidence["stability_retries"]) >= 1
+    assert int(report.evidence["stability_retries"]) >= int(
+        cast(int, retry_case["minimum_total_stability_retries"])
+    )
     maximum_particle_cfl = cast(float, report.evidence["maximum_particle_cfl"])
     configured_cfl = cast(float, scenario.solver_options["pic_cfl"])
     assert maximum_particle_cfl <= configured_cfl * (1.0 + 1.0e-6)

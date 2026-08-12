@@ -568,6 +568,8 @@ function _advance_pic_once!(
     maximum_speed = max(
         maximum(hypot(solver.grid_velocity[i, j, 1], solver.grid_velocity[i, j, 2]) for
             i in axes(solver.grid_velocity, 1), j in axes(solver.grid_velocity, 2)),
+        maximum(hypot(solver.particle_velocity[i, 1], solver.particle_velocity[i, 2]) for
+            i in axes(solver.particle_velocity, 1)),
         abs(scenario.freestream[1]),
         T(1.0e-6),
     )
@@ -684,8 +686,8 @@ function _advance_pic_once!(
                 solver, start_control, sub_control, timestep, pic_velocity,
                 projected_u, projected_v,
             )
-            solver.settling_steps > 0 && (solver.settling_steps -= 1)
         end
+        solver.settling_steps > 0 && (solver.settling_steps -= 1)
         solver.advance_count += 1
         solver.advance_count % solver.population_interval == 0 &&
             _pic_maintain_population!(solver, control)

@@ -292,9 +292,9 @@ export class StableFluidsSolver implements FlowSolver {
     try {
       ({u: this.u, v: this.v} = cellToFaces(state.velocity, nx, ny, scenario.precision, periodicX, periodicY));
       this.solid = new Uint8Array(nx * ny); this.time = state.time; this.control = control;
-      this.updateSolid(control); this.enforceSolidFaces(control);
+      this.updateSolid(control); this.applyDomainBoundaries(this.u, this.v); this.enforceSolidFaces(control);
       this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection);
-      this.enforceSolidFaces(control); this.refreshFinalDivergence();
+      this.applyDomainBoundaries(this.u, this.v); this.enforceSolidFaces(control); this.refreshFinalDivergence();
       if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) {
         this.restore(saved);
         return rejectedImport("projection_failure", "projection");

@@ -687,6 +687,7 @@ class PicFlipSolver:
             )
         max_speed = max(
             float(np.max(np.linalg.norm(grid_velocity, axis=2))),
+            float(np.max(np.linalg.norm(particle_velocity, axis=1))),
             abs(scenario.freestream[0]),
             1.0e-6,
         )
@@ -824,8 +825,8 @@ class PicFlipSolver:
                     projected_u,
                     projected_v,
                 )
-                if self._settling_steps > 0:
-                    self._settling_steps -= 1
+            if self._settling_steps > 0:
+                self._settling_steps -= 1
             self._advance_count += 1
             if self._advance_count % self._population_interval == 0:
                 self._maintain_particle_population(control)

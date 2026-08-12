@@ -14,8 +14,8 @@ function _pcg(
     operator_direction = similar(direction)
     residual_dot = dot(residual, preconditioned)
     right_norm = sqrt(dot(right_hand_side, right_hand_side))
-    right_norm <= eps(T) && return solution, 0, zero(T), true
-    threshold = max(tolerance * right_norm, eps(T) * sqrt(T(length(right_hand_side))))
+    right_norm == zero(T) && return solution, 0, zero(T), true
+    threshold = tolerance * right_norm
     for iteration in 1:max_iterations
         apply_operator!(operator_direction, direction)
         denominator = dot(direction, operator_direction)
@@ -33,15 +33,27 @@ function _pcg(
                 "preconditioned CG produced non-finite state",
             ))
         residual_norm = sqrt(dot(residual, residual))
-        residual_norm <= threshold &&
-            return solution, iteration, residual_norm / max(right_norm, eps(T)), true
+        if residual_norm <= threshold
+            apply_operator!(operator_direction, solution)
+            @. residual = right_hand_side - operator_direction
+            residual_norm = sqrt(dot(residual, residual))
+            relative_residual = residual_norm / right_norm
+            relative_residual <= tolerance &&
+                return solution, iteration, relative_residual, true
+            @. preconditioned = residual * inverse_diagonal
+            direction .= preconditioned
+            residual_dot = dot(residual, preconditioned)
+            continue
+        end
         @. preconditioned = residual * inverse_diagonal
         next_residual_dot = dot(residual, preconditioned)
         beta = next_residual_dot / residual_dot
         @. direction = preconditioned + beta * direction
         residual_dot = next_residual_dot
     end
-    final_residual = sqrt(dot(residual, residual)) / max(right_norm, eps(T))
+    apply_operator!(operator_direction, solution)
+    @. residual = right_hand_side - operator_direction
+    final_residual = sqrt(dot(residual, residual)) / right_norm
     return solution, max_iterations, final_residual, false
 end
 
