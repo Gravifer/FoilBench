@@ -526,7 +526,10 @@ function import_state!(
             imported[index, 2] = wall[index, 2]
         end
         solver.u, solver.v = cell_to_faces(imported)
-        _project!(solver, max(scenario.output_dt, T(1.0e-4)))
+        # Canonical reconstruction does not advance physical time.  A small
+        # projection pseudo-step keeps import admissibility independent of the
+        # scenario output interval while retaining the excessive-speed guard.
+        _project!(solver, T(1.0e-4))
     catch failure
         solver.u, solver.v, solver.solid, solver.control, solver.time,
             solver.projection_iterations, solver.diffusion_iterations, solver.revision = checkpoint

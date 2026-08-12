@@ -176,6 +176,14 @@ Artifact-level diagnostics reconstructed from canonical cell-centered fields
 remain separately defined by benchmark methodology. They must not be confused
 with the native accepted-step postconditions above.
 
+Canonical reconstruction may project or otherwise condition an imported
+field, but that operation does not advance physical time.  Any numerical
+pseudo-step used solely for reconstruction must therefore be independent of
+the scenario output interval.  Import admissibility may reject genuinely
+unresolved or excessive fields, but must not change merely because two
+otherwise identical scenarios request different presentation/measurement
+cadences.
+
 For LBM, `solid_leakage` is the native through-flux at represented cut links,
 not the wall-normal speed at the adjacent fluid-cell center. Interpolated
 bounce-back reflects every population directed through a handled cut link, so

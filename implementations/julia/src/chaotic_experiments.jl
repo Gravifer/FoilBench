@@ -191,7 +191,10 @@ function run_chaos_sensitivity(
     initialize!(perturbed, scenario, geometry, scenario.seed)
     initial_control = control_at(scenario, zero(T))
     reference_state = export_state(reference)
-    import_state!(reference, reference_state, initial_control)
+    reference_outcome = import_state!(reference, reference_state, initial_control)
+    accepted(reference_outcome) || throw(ErrorException(
+        "reference reconstruction rejected: $(reference_outcome.reason) at $(reference_outcome.stage)",
+    ))
     state = export_state(perturbed)
     velocity = canonical_to_cell(state)
     centers = cell_centers(scenario.domain)
@@ -232,12 +235,18 @@ function run_chaos_sensitivity(
         cell_to_canonical(velocity),
         state.density,
     )
-    import_state!(perturbed, perturbed_state, initial_control)
+    perturbed_outcome = import_state!(perturbed, perturbed_state, initial_control)
+    accepted(perturbed_outcome) || throw(ErrorException(
+        "deterministic perturbation rejected: $(perturbed_outcome.reason) at $(perturbed_outcome.stage)",
+    ))
     wake = falses(nx(scenario.domain), ny(scenario.domain))
     for j in 1:ny(scenario.domain), i in 1:nx(scenario.domain)
         wake[i, j] = centers[i, j, 1] > scenario.foil.pivot[1] && !solid[i, j]
     end
     initial_difference = Float64(_wake_rms_difference(cell_velocity(perturbed), cell_velocity(reference), wake))
+    isfinite(initial_difference) && initial_difference > 0 || throw(ErrorException(
+        "deterministic perturbation produced no measurable separation",
+    ))
     times = Float64[]
     differences = Float64[]
     simulated = zero(T)

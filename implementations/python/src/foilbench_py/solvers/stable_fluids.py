@@ -611,7 +611,12 @@ class StableFluidsSolver:
             wall = self._wall_grid(control)
             velocity[self._solid] = wall[self._solid]
             self._u, self._v = cell_to_faces(velocity)
-            self._apply_projection(max(scenario.output_dt, 1.0e-4))
+            # Canonical reconstruction does not advance physical time.  Use a
+            # small projection pseudo-step so a valid high-speed state is not
+            # rejected merely because the scenario has a comparatively large
+            # output interval.  The projection CFL guard still rejects truly
+            # excessive imported velocities.
+            self._apply_projection(1.0e-4)
         except NumericalFailure as failure:
             (
                 self._u,

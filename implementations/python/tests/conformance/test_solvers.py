@@ -153,6 +153,29 @@ def test_lbm_import_ignores_finite_solid_density(
     assert outcome.status == "accepted"
 
 
+def test_stable_import_admissibility_is_not_tied_to_output_interval() -> None:
+    scenario = load_scenario(
+        _REPOSITORY_ROOT / "scenarios" / "airfoil" / "chaotic-experimental.json"
+    )
+    geometry = NacaFoil(scenario.foil)
+    source = StableFluidsSolver()
+    source.initialize(scenario, geometry, scenario.seed)
+    state = source.export_state()
+    destination = StableFluidsSolver()
+    destination.initialize(scenario, geometry, scenario.seed)
+
+    outcome = destination.import_state(
+        state,
+        ControlState(
+            state.time,
+            state.angle_degrees,
+            state.angular_velocity_degrees,
+        ),
+    )
+
+    assert outcome.status == "accepted"
+
+
 def test_shared_revision_3_validity_fixture() -> None:
     fixture = _validity_fixture()
     assert fixture["contract_id"] == "foilbench-phase2-v1"

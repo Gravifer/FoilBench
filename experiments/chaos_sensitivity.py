@@ -73,7 +73,12 @@ def main() -> None:
 
     control = scenario.control_at(0.0)
     reference_state = reference.export_state()
-    reference.import_state(reference_state, control)
+    reference_outcome = reference.import_state(reference_state, control)
+    if reference_outcome.status != "accepted":
+        raise RuntimeError(
+            "reference reconstruction rejected: "
+            f"{reference_outcome.reason} at {reference_outcome.stage}"
+        )
     state = perturbed.export_state()
     positions = cell_centers(scenario.domain)
     x = positions[:, :, 0]
@@ -94,10 +99,15 @@ def main() -> None:
     perturbation *= arguments.epsilon / np.max(np.linalg.norm(perturbation, axis=2))
     velocity = state.velocity.copy()
     velocity[0] += np.asarray(perturbation, dtype=scenario.dtype)
-    perturbed.import_state(
+    perturbed_outcome = perturbed.import_state(
         replace(state, source_solver="deterministic-perturbation", velocity=velocity),
         control,
     )
+    if perturbed_outcome.status != "accepted":
+        raise RuntimeError(
+            "deterministic perturbation rejected: "
+            f"{perturbed_outcome.reason} at {perturbed_outcome.stage}"
+        )
 
     wake = (x > scenario.foil.pivot[0]) & ~geometry.mask(scenario.domain, case.angle_degrees)
     initial_difference = float(
@@ -111,6 +121,8 @@ def main() -> None:
             )
         )
     )
+    if not np.isfinite(initial_difference) or initial_difference <= 0.0:
+        raise RuntimeError("deterministic perturbation produced no measurable separation")
     times: list[float] = []
     differences: list[float] = []
     simulated = 0.0

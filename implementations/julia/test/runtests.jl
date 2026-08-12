@@ -495,6 +495,26 @@ end
     @test import_report.source_solver == "stable-fluids"
     @test import_report.destination_solver == "stable-fluids"
     @test cell_velocity(imported) ≈ cell_velocity(solver) atol = 1.0e-10
+
+    chaotic = load_scenario(joinpath(
+        REPOSITORY_ROOT, "scenarios", "airfoil", "chaotic-experimental.json",
+    ))
+    chaotic_geometry = NacaFoil(chaotic.foil)
+    chaotic_source = StableFluidsSolver(Float32)
+    initialize!(chaotic_source, chaotic, chaotic_geometry, chaotic.seed)
+    chaotic_state = export_state(chaotic_source)
+    chaotic_destination = StableFluidsSolver(Float32)
+    initialize!(chaotic_destination, chaotic, chaotic_geometry, chaotic.seed)
+    chaotic_outcome = import_state!(
+        chaotic_destination,
+        chaotic_state,
+        ControlState(
+            chaotic_state.time,
+            chaotic_state.angle_degrees,
+            chaotic_state.angular_velocity_degrees,
+        ),
+    )
+    @test accepted(chaotic_outcome)
 end
 
 @testset "D2Q9 TRT kernels and scaling" begin
