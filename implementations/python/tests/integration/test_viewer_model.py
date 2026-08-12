@@ -115,6 +115,15 @@ def test_headless_viewer_update_and_switch(
     assert "warm-import transient" in model.status()
 
 
+def test_status_derives_aerodynamic_aoa_without_changing_solver_pose(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    model = ViewerModel.create(scenario_factory(resolution=(24, 12)), "stable-fluids")
+    model.set_angle(12.0, 1.0)
+    assert model.control(0.0).angle_degrees == 12.0
+    assert "AoA=-12.0°" in model.status()
+
+
 def test_initial_tracers_respect_the_authoritative_foil_pose(
     scenario_factory: ScenarioFactory,
 ) -> None:

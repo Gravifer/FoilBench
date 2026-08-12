@@ -662,7 +662,7 @@ function snapshot(model::ViewerModel{T}) where {T}
         @sprintf(
             "  t=%7.2f  AoA=%6.1f°  Re=%7.0f  rate=%4.2fx  ",
             model.simulation_time,
-            angle,
+            abs(angle) < T(0.05) ? zero(T) : -angle,
             reynolds(model.solver),
             model.playback_rate,
         ),

@@ -155,6 +155,13 @@ Interactive foil pose must be clamped to **-30 through +30 degrees** in every
 native viewer. Scenario-authored controls are separate and may use a wider
 range when a scenario explicitly calls for it.
 
+Pointer motion continues to command the geometric chord angle defined in
+`canonical-state.md`. The public overlay is derived presentation: with
+freestream in `+x`, it must display `AoA = -angle_degrees`, so positive AoA is
+nose-up and places the leading edge above the trailing edge. The display
+conversion must not alter pointer commands, geometry, solver-facing angular
+velocity, scheduled controls, canonical state, or benchmark artifacts.
+
 Pointer poses and timestamps must be finite, and invalid samples must be
 rejected before mutating drag, schedule, recovery, or solver state. Pointer
 samples must carry monotonic timestamps. The simulation owner should
@@ -730,6 +737,8 @@ Headless viewer tests should cover:
 - coalescing of rapid pose samples without dropping discrete commands;
 - ordering barriers around pose, release, reset, pause, switch, and shutdown;
 - the -30 to +30 degree interactive pose limit;
+- positive displayed AoA for a nose-up geometric pose without changing the
+  solver-facing pose or angular velocity;
 - press-without-motion neutrality, first-moved-sample drag behavior, and
   authoritative solver-facing angular velocity;
 - manual-drag and forced-recovery schedule cancellation;

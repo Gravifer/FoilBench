@@ -29,4 +29,22 @@ The manifest records:
 - foil angle and angular velocity;
 - source language and solver.
 
+## Foil-angle convention
+
+`angle_degrees` is the geometric world-space rotation of the
+leading-edge-to-trailing-edge chord vector: zero aligns it with `+x`, and
+positive values rotate it counterclockwise. `angular_velocity_degrees` is the
+time derivative of that geometric coordinate. Scenarios, solver controls,
+moving-wall velocities, canonical artifacts, and benchmark control histories
+all retain this internal convention.
+
+This geometric coordinate is not itself signed aerodynamic angle of attack.
+For the Phase 2 airfoil frame, where the leading edge is upstream and the
+freestream travels in `+x`, a viewer labeled `AoA` must display
+`-angle_degrees`: positive displayed AoA is nose-up, with the leading edge
+above the trailing edge. This is a presentation transformation only and must
+not be fed back into geometry, solver controls, wall motion, canonical state,
+or benchmark identity. A future scenario family with another freestream
+direction must define its display transformation explicitly.
+
 Serialization and layout conversion are outside solver benchmark timing.

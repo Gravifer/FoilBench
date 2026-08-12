@@ -797,9 +797,10 @@ class ViewerModel:
                 f"div={divergence:.2e}  leak={leakage:.2e}"
             )
         )
+        displayed_aoa = 0.0 if abs(control.angle_degrees) < 0.05 else -control.angle_degrees
         return (
             f"{solver.info.display_name}  t={self.time:6.2f}  "
-            f"AoA={control.angle_degrees:5.1f}°  "
+            f"AoA={displayed_aoa:5.1f}°  "
             f"Re={self.manager.reynolds:7.0f}  rate={self.playback_rate:4.2f}x  "
             f"{measurements}  "
             f"tracers={self.tracers.mode}  vort={'on' if self.show_vorticity else 'off'}"

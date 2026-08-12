@@ -1145,6 +1145,12 @@ end
     @test !toggle_crop!(model)
     @test !model.presentation.crop_enabled
 
+    angle_model = ViewerModel(scenario; tracer_count = 32, history_length = 5)
+    set_angle!(angle_model, 12.0, 1.0)
+    angle_snapshot = snapshot(angle_model)
+    @test angle_snapshot.angle_degrees == 12.0
+    @test occursin("AoA= -12.0°", angle_snapshot.status)
+
     periodic_tracer = 1
     x0, x1 = scenario.domain.bounds[1]
     y0, y1 = scenario.domain.bounds[2]

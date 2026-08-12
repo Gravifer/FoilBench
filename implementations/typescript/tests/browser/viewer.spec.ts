@@ -36,7 +36,7 @@ test("viewer renders and applies interactive controls", async ({page}) => {
   await page.mouse.down();
   await page.mouse.move(bounds.x + 0.62 * bounds.width, bounds.y + 0.40 * bounds.height, {steps: 4});
   await page.mouse.up();
-  await expect(overlay).toContainText(/AoA=\s+[5-9]/);
+  await expect(overlay).toContainText(/AoA=\s*-[5-9]/);
 
   await page.keyboard.press("Space");
   await page.waitForTimeout(100);
