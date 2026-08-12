@@ -26,7 +26,12 @@ def collect_results(directory: str | Path) -> list[dict[str, object]]:
         value = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(value, dict):
             typed = cast(dict[str, object], value)
-            if typed.get("schema_version") == 1 and "solver" in typed:
+            if (
+                typed.get("schema_version") == 1
+                and "solver" in typed
+                and "benchmark_matrix_id" in typed
+                and "success" in typed
+            ):
                 validate_json(typed, schema)
                 validate_result_semantics(typed)
                 results.append(typed)
@@ -69,7 +74,9 @@ def _assert_required_languages(
         )
 
 
-def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
+def _assert_complete_matrices(
+    results: list[dict[str, object]], required_languages: Sequence[str] = ()
+) -> None:
     root = find_repo_root(Path(__file__))
     matrix_paths: dict[str, Path] = {}
     for path in (root / "benchmark-matrices").glob("*.json"):
@@ -83,34 +90,44 @@ def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
         grouped.setdefault(
             (str(result["benchmark_matrix_id"]), str(result["language"])), []
         ).append(result)
-    for (matrix_id, language), selected in grouped.items():
-        path = matrix_paths.get(matrix_id)
-        if path is None:
-            raise ValueError(f"cannot verify completeness of unknown matrix {matrix_id}")
-        matrix = load_matrix(path)
-        expected = {
-            (solver, resolution, repetition)
-            for solver in matrix.solvers
-            for resolution in matrix.resolutions
-            for repetition in range(1, matrix.repetitions + 1)
-        }
-        observed = [
-            (
-                str(result["solver"]),
-                tuple(cast(list[int], result["resolution"])),
-                int(cast(int, result["repetition"])),
-            )
-            for result in selected
-        ]
-        if len(observed) != len(set(observed)):
-            raise ValueError(f"duplicate {language} artifacts for matrix {matrix_id}")
-        missing = expected - set(observed)
-        extra = set(observed) - expected
-        if missing or extra:
-            raise ValueError(
-                f"incomplete {language} artifacts for matrix {matrix_id}: "
-                f"missing={sorted(missing)!r} extra={sorted(extra)!r}"
-            )
+    matrix_ids = {str(result["benchmark_matrix_id"]) for result in results}
+    languages = (
+        set(required_languages)
+        if required_languages
+        else {str(result["language"]) for result in results}
+    )
+    for matrix_id in matrix_ids:
+        for language in languages:
+            selected = grouped.get((matrix_id, language), [])
+            path = matrix_paths.get(matrix_id)
+            if path is None:
+                raise ValueError(f"cannot verify completeness of unknown matrix {matrix_id}")
+            matrix = load_matrix(path)
+            expected = {
+                (solver, resolution, repetition)
+                for solver in matrix.solvers
+                for resolution in matrix.resolutions
+                for repetition in range(1, matrix.repetitions + 1)
+            }
+            observed = [
+                (
+                    str(result["solver"]),
+                    tuple(cast(list[int], result["resolution"])),
+                    int(cast(int, result["repetition"])),
+                )
+                for result in selected
+            ]
+            if len(observed) != len(set(observed)):
+                raise ValueError(f"duplicate {language} artifacts for matrix {matrix_id}")
+            missing = expected - set(observed)
+            extra = set(observed) - expected
+            failed = [item for item in selected if item["success"] is not True]
+            if missing or extra or failed:
+                raise ValueError(
+                    f"incomplete {language} artifacts for matrix {matrix_id}: "
+                    f"missing={sorted(missing)!r} extra={sorted(extra)!r} "
+                    f"failed={len(failed)}"
+                )
 
 
 def format_comparison(
@@ -121,12 +138,14 @@ def format_comparison(
 ) -> str:
     results = collect_results(directory)
     if not results:
+        if require_complete or required_languages:
+            raise ValueError("strict benchmark comparison found no result artifacts")
         return "No benchmark result JSON files found."
     _assert_matched_identities(results)
     if required_languages:
         _assert_required_languages(results, required_languages)
     if require_complete:
-        _assert_complete_matrices(results)
+        _assert_complete_matrices(results, required_languages)
     header = (
         f"{'language':<12} {'solver':<18} {'median ms':>11} "
         f"{'p95 ms':>11} {'sim/wall':>11} {'success':>8}"

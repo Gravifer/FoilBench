@@ -6,6 +6,5 @@
   "resolutions": [[128, 64]],
   "duration": 0.1,
   "repetitions": 1,
-  "save_snapshots": false
+  "save_snapshots": true
 }
-

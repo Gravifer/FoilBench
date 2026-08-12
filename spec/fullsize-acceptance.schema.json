@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "contract_revision", "startup", "scheduled_checkpoints", "warm_switch", "preview", "artifact_interchange", "chaotic_extension"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "contract_id": {"const": "foilbench-phase2-v1"},
+    "contract_revision": {"const": 4},
+    "startup": {"$ref": "#/$defs/solverGate"},
+    "scheduled_checkpoints": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario", "solver", "resolution", "times"],
+      "properties": {
+        "scenario": {"type": "string", "minLength": 1}, "solver": {"$ref": "#/$defs/solver"},
+        "resolution": {"$ref": "#/$defs/resolution"},
+        "times": {"type": "array", "minItems": 1, "items": {"type": "number", "exclusiveMinimum": 0}}
+      }
+    },
+    "warm_switch": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario", "resolution", "angles_degrees", "require_all_directed_pairs", "validate_fresh_fallback_first_step"],
+      "properties": {
+        "scenario": {"type": "string", "minLength": 1}, "resolution": {"$ref": "#/$defs/resolution"},
+        "angles_degrees": {"type": "array", "minItems": 1, "items": {"type": "number", "minimum": -30, "maximum": 30}},
+        "require_all_directed_pairs": {"const": true}, "validate_fresh_fallback_first_step": {"const": true}
+      }
+    },
+    "preview": {"$ref": "#/$defs/previewGate"},
+    "artifact_interchange": {
+      "type": "object", "additionalProperties": false,
+      "required": ["matrix", "languages", "require_every_comparer"],
+      "properties": {
+        "matrix": {"type": "string", "minLength": 1},
+        "languages": {"const": ["python", "julia", "typescript"]},
+        "require_every_comparer": {"const": true}
+      }
+    },
+    "chaotic_extension": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fixture", "participation_required_for_claim", "minimum_probe_rms", "minimum_spectral_entropy", "minimum_broadband_power_fraction", "minimum_enstrophy_coefficient_of_variation", "maximum_dominant_power_fraction", "minimum_sensitivity_amplification"],
+      "properties": {
+        "fixture": {"type": "string", "minLength": 1}, "participation_required_for_claim": {"const": true},
+        "minimum_probe_rms": {"type": "number", "minimum": 0}, "minimum_spectral_entropy": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_broadband_power_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_enstrophy_coefficient_of_variation": {"type": "number", "minimum": 0},
+        "maximum_dominant_power_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_sensitivity_amplification": {"type": "number", "exclusiveMinimum": 1}
+      }
+    }
+  },
+  "$defs": {
+    "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+    "resolution": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 4}, {"type": "integer", "minimum": 4}], "items": false},
+    "solverGate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario", "resolution", "solvers"],
+      "properties": {
+        "scenario": {"type": "string", "minLength": 1}, "resolution": {"$ref": "#/$defs/resolution"},
+        "steps": {"type": "integer", "minimum": 1},
+        "solvers": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/solver"}}
+      }
+    },
+    "previewGate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario", "resolution", "solvers", "minimum_warmed_solver_steps_per_second"],
+      "properties": {
+        "scenario": {"type": "string", "minLength": 1}, "resolution": {"$ref": "#/$defs/resolution"},
+        "solvers": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/solver"}},
+        "minimum_warmed_solver_steps_per_second": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

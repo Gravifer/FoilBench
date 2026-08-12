@@ -2,7 +2,7 @@ import {mkdtemp, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it} from "vitest";
-import {compareResults, validateResultSemantics} from "../../src/benchmark/runner.js";
+import {assertCompleteMatrices, compareResults, validateResultSemantics} from "../../src/benchmark/runner.js";
 
 function result(language: string): Record<string, unknown> {
   return {
@@ -110,5 +110,21 @@ describe("benchmark artifact comparison", () => {
     const inconsistent = result("typescript");
     inconsistent["median_step_seconds"] = 123;
     expect(() => validateResultSemantics(inconsistent)).toThrow("inconsistent derived field");
+  });
+
+  it("rejects an empty strict comparison", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "foilbench-ts-empty-"));
+    directories.push(directory);
+    await expect(compareResults(directory, true, ["python", "julia", "typescript"])).rejects.toThrow("no result artifacts");
+  });
+
+  it("checks the Cartesian matrix and required-language roster", async () => {
+    const results = ["stable-fluids", "lbm-d2q9", "pic-flip"].map((solver) => ({
+      benchmark_matrix_id: "test", language: "typescript", solver,
+      resolution: [32, 16], repetition: 1, success: true,
+    }));
+    await expect(assertCompleteMatrices(results, ["typescript", "python"])).rejects.toThrow("incomplete python artifacts");
+    const first = results[0]; if (first === undefined) throw new Error("missing test result"); first["success"] = false;
+    await expect(assertCompleteMatrices(results, ["typescript"])).rejects.toThrow("failed=1");
   });
 });

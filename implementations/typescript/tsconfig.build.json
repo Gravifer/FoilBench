@@ -18,6 +18,7 @@
     "src/benchmark/previewGate.ts",
     "src/benchmark/warmSwitchGate.ts",
     "src/benchmark/scheduledGate.ts",
+    "src/benchmark/interchangeGate.ts",
     "src/experiments/chaoticWake.ts",
     "src/experiments/dragCalibration.ts",
     "src/cli.ts"

@@ -39,6 +39,7 @@
     "minimum_spectral_entropy": 0.1,
     "minimum_broadband_power_fraction": 0.05,
     "minimum_enstrophy_coefficient_of_variation": 0.05,
-    "maximum_dominant_power_fraction": 0.9
+    "maximum_dominant_power_fraction": 0.9,
+    "minimum_sensitivity_amplification": 2.0
   }
 }

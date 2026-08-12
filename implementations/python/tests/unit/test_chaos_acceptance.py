@@ -27,6 +27,7 @@ def test_chaos_acceptance_enforces_thresholds_and_participation(tmp_path: Path) 
             {
                 "schema_version": 1,
                 "contract_id": "foilbench-phase2-v1",
+                "contract_revision": 4,
                 "experiment": "chaotic-wake-sweep",
                 "language": "python",
                 "solver": "stable-fluids",
@@ -49,6 +50,7 @@ def test_chaos_acceptance_enforces_thresholds_and_participation(tmp_path: Path) 
     sensitivity = {
         "schema_version": 1,
         "contract_id": "foilbench-phase2-v1",
+        "contract_revision": 4,
         "experiment": "chaotic-wake-sensitivity",
         "language": "python",
         "solver": "stable-fluids",
@@ -78,6 +80,7 @@ def test_chaos_acceptance_enforces_thresholds_and_participation(tmp_path: Path) 
             "realized_post_import_wake_rms_difference": 8.0e-6,
             "realized_to_requested_ratio": 0.08,
         },
+        "series": {"times": [12.0], "wake_rms_differences": [0.1]},
         "wall_seconds": 1.0,
     }
     sweep_path = tmp_path / "sweep.json"
@@ -104,6 +107,7 @@ def test_chaos_preflight_enforces_initialization_ratio_and_roster(tmp_path: Path
     preflight = {
         "schema_version": 1,
         "contract_id": "foilbench-phase2-v1",
+        "contract_revision": 4,
         "experiment": "chaotic-wake-sensitivity",
         "language": "python",
         "solver": "stable-fluids",

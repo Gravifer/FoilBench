@@ -1937,6 +1937,24 @@ end
         @test_throws ArgumentError validate_benchmark_result(malformed, schema_path)
     end
 
+    cartesian_results = [Dict{String,Any}(
+        "benchmark_matrix_id" => "test",
+        "language" => "julia",
+        "solver" => solver_id,
+        "resolution" => [32, 16],
+        "repetition" => 1,
+        "success" => true,
+    ) for solver_id in solver_ids()]
+    @test_throws ArgumentError FoilBenchJulia._assert_complete_benchmark_matrices(
+        cartesian_results,
+        ["julia", "python"],
+    )
+    cartesian_results[1]["success"] = false
+    @test_throws ArgumentError FoilBenchJulia._assert_complete_benchmark_matrices(
+        cartesian_results,
+        ["julia"],
+    )
+
     mktempdir() do directory
         open(joinpath(directory, "result.json"), "w") do io
             JSON3.pretty(io, result)
@@ -1957,6 +1975,14 @@ end
             JSON3.pretty(io, rounded)
         end
         @test_throws ArgumentError format_benchmark_comparison(directory)
+    end
+
+    mktempdir() do directory
+        @test_throws ArgumentError format_benchmark_comparison(
+            directory;
+            require_complete = true,
+            required_languages = ["python", "julia", "typescript"],
+        )
     end
 
     mktempdir() do directory

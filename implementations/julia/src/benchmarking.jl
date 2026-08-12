@@ -563,12 +563,9 @@ function collect_benchmark_results(directory::AbstractString)
     schema_path = joinpath(find_repository_root(@__DIR__), "spec", "result.schema.json")
     for (root, _, files) in walkdir(directory), file in sort(files)
         endswith(file, ".json") || continue
-        value = try
-            JSON3.read(read(joinpath(root, file), String), Dict{String,Any})
-        catch
-            continue
-        end
-        if get(value, "schema_version", 0) == 1 && haskey(value, "solver")
+        value = JSON3.read(read(joinpath(root, file), String), Dict{String,Any})
+        if get(value, "schema_version", 0) == 1 && haskey(value, "solver") &&
+            haskey(value, "benchmark_matrix_id") && haskey(value, "success")
             validate_benchmark_result(value, schema_path)
             push!(results, value)
         end
@@ -628,7 +625,10 @@ function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
     return nothing
 end
 
-function _assert_complete_benchmark_matrices(results::Vector{Dict{String,Any}})
+function _assert_complete_benchmark_matrices(
+    results::Vector{Dict{String,Any}},
+    required_languages::Vector{String} = String[],
+)
     root = find_repository_root(@__DIR__)
     matrix_paths = Dict{String,String}()
     for path in readdir(joinpath(root, "benchmark-matrices"); join = true)
@@ -641,7 +641,11 @@ function _assert_complete_benchmark_matrices(results::Vector{Dict{String,Any}})
         key = (String(result["benchmark_matrix_id"]), String(result["language"]))
         push!(get!(grouped, key, Dict{String,Any}[]), result)
     end
-    for ((matrix_id, language), selected) in grouped
+    matrix_ids = Set(String(result["benchmark_matrix_id"]) for result in results)
+    languages = isempty(required_languages) ?
+        Set(String(result["language"]) for result in results) : Set(required_languages)
+    for matrix_id in matrix_ids, language in languages
+        selected = get(grouped, (matrix_id, language), Dict{String,Any}[])
         haskey(matrix_paths, matrix_id) ||
             throw(ArgumentError("cannot verify completeness of unknown matrix $matrix_id"))
         matrix = load_benchmark_matrix(matrix_paths[matrix_id])
@@ -664,9 +668,10 @@ function _assert_complete_benchmark_matrices(results::Vector{Dict{String,Any}})
             throw(ArgumentError("duplicate $language artifacts for matrix $matrix_id"))
         missing = setdiff(expected, observed)
         extra = setdiff(observed, expected)
-        isempty(missing) && isempty(extra) || throw(ArgumentError(
+        failed = count(result -> result["success"] !== true, selected)
+        isempty(missing) && isempty(extra) && failed == 0 || throw(ArgumentError(
             "incomplete $language artifacts for matrix $matrix_id: " *
-            "missing=$(collect(missing)) extra=$(collect(extra))",
+            "missing=$(collect(missing)) extra=$(collect(extra)) failed=$failed",
         ))
     end
     return nothing
@@ -695,11 +700,13 @@ function format_benchmark_comparison(
     required_languages::Vector{String} = String[],
 )
     results = collect_benchmark_results(directory)
+    isempty(results) && (require_complete || !isempty(required_languages)) &&
+        throw(ArgumentError("strict benchmark comparison found no result artifacts"))
     isempty(results) && return "No benchmark result JSON files found."
     _assert_matched_benchmark_identities(results)
     isempty(required_languages) ||
         _assert_required_benchmark_languages(results, required_languages)
-    require_complete && _assert_complete_benchmark_matrices(results)
+    require_complete && _assert_complete_benchmark_matrices(results, required_languages)
     header = rpad("language", 12) * rpad("solver", 20) * lpad("median ms", 12) *
         lpad("p95 ms", 12) * lpad("sim/wall", 12) * lpad("success", 10)
     lines = [header, repeat('-', length(header))]

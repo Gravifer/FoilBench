@@ -42,7 +42,9 @@ The sensitivity artifact records:
 
 The shared case fixture bounds the realized/requested ratio broadly enough to
 allow language-appropriate projection differences while rejecting a setup
-dominated by reconstruction mismatch.
+dominated by reconstruction mismatch. Full-duration evidence must also exceed
+the declared minimum amplification and must record a finite, nondecreasing-time
+series whose final and maximum values agree with the named summary metrics.
 
 ## Mandatory preflight
 

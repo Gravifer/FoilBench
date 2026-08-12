@@ -6,7 +6,8 @@ import {cpus, platform, release} from "node:os";
 import {dirname, isAbsolute, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createServer} from "vite";
-import type {Scenario, SolverId, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, Scenario, SolverId, StepReport} from "../core/contracts.js";
+import {decodeNpy, semanticCOrder} from "../core/npy.js";
 import {parseScenario, validateDocument} from "../core/scenario.js";
 import type {BenchmarkMatrix, BrowserRunRequest, BrowserRunResult} from "./types.js";
 import type {BrowserCanonicalSnapshot} from "./types.js";
@@ -120,16 +121,52 @@ function encodeNpy(values: readonly number[], precision: "float32" | "float64", 
 
 async function saveCanonicalSnapshot(directory: string, snapshot: BrowserCanonicalSnapshot, solverId: SolverId, schema: object): Promise<void> { await mkdir(directory, {recursive: true}); const [nx, ny] = snapshot.resolution; if (nx === undefined || ny === undefined) throw new RangeError("2D snapshot resolution missing"); const velocityMetadata = {file: "velocity.npy", axes: ["z", "y", "x", "component"], order: "C"}; const densityMetadata = snapshot.density === null ? null : {file: "density.npy", axes: ["z", "y", "x"], order: "C"}; const manifest = {schema_version: 1, dimension: 2, bounds: snapshot.bounds, resolution: snapshot.resolution, periodic_axes: snapshot.periodicAxes, time: snapshot.time, precision: snapshot.precision, angle_degrees: snapshot.angleDegrees, angular_velocity_degrees: snapshot.angularVelocityDegrees, source_language: "typescript", source_solver: solverId, velocity: velocityMetadata, density: densityMetadata}; validateDocument(manifest, schema); await writeFile(join(directory, "velocity.npy"), encodeNpy(snapshot.velocity, snapshot.precision, [1, ny, nx, 2])); if (snapshot.density !== null) await writeFile(join(directory, "density.npy"), encodeNpy(snapshot.density, snapshot.precision, [1, ny, nx])); await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8"); }
 
-async function assertCompleteMatrices(results: readonly Readonly<Record<string, unknown>>[]): Promise<void> {
+export async function loadCanonicalSnapshot(directory: string): Promise<CanonicalFlowState> {
+  const root = repositoryRoot();
+  const manifest = await json(join(directory, "manifest.json")) as Record<string, unknown>;
+  validateDocument(manifest, await json(join(root, "spec/canonical-manifest.schema.json")) as object);
+  const velocityMetadata = manifest["velocity"] as {file: string; axes: readonly string[]; order: "C" | "F"};
+  if (velocityMetadata.file !== "velocity.npy" || JSON.stringify(velocityMetadata.axes) !== JSON.stringify(["z", "y", "x", "component"])) throw new TypeError("invalid canonical velocity metadata");
+  const velocityBytes = await readFile(join(directory, velocityMetadata.file));
+  const velocityNpy = decodeNpy(velocityBytes.buffer.slice(velocityBytes.byteOffset, velocityBytes.byteOffset + velocityBytes.byteLength));
+  const precision = manifest["precision"] as "float32" | "float64";
+  const resolution = manifest["resolution"] as readonly number[];
+  const dimension = manifest["dimension"] as 2 | 3;
+  const expectedVelocityShape = [dimension === 2 ? 1 : resolution[2], resolution[1], resolution[0], dimension];
+  if (JSON.stringify(velocityNpy.shape) !== JSON.stringify(expectedVelocityShape)) throw new TypeError("canonical velocity shape disagrees with manifest");
+  if (velocityNpy.precision !== precision || velocityMetadata.order !== (velocityNpy.fortranOrder ? "F" : "C")) throw new TypeError("canonical velocity dtype/order disagrees with manifest");
+  let density = null;
+  const densityMetadata = manifest["density"] as {file: string; axes: readonly string[]; order: "C" | "F"} | null;
+  if (densityMetadata !== null) {
+    if (densityMetadata.file !== "density.npy" || JSON.stringify(densityMetadata.axes) !== JSON.stringify(["z", "y", "x"])) throw new TypeError("invalid canonical density metadata");
+    const densityBytes = await readFile(join(directory, densityMetadata.file));
+    const densityNpy = decodeNpy(densityBytes.buffer.slice(densityBytes.byteOffset, densityBytes.byteOffset + densityBytes.byteLength));
+    if (JSON.stringify(densityNpy.shape) !== JSON.stringify(expectedVelocityShape.slice(0, -1))) throw new TypeError("canonical density shape disagrees with manifest");
+    if (densityNpy.precision !== precision || densityMetadata.order !== (densityNpy.fortranOrder ? "F" : "C")) throw new TypeError("canonical density dtype/order disagrees with manifest");
+    density = semanticCOrder(densityNpy);
+  }
+  return {
+    schemaVersion: 1, dimension,
+    bounds: manifest["bounds"] as readonly (readonly [number, number])[], resolution,
+    periodicAxes: manifest["periodic_axes"] as readonly ("x" | "y" | "z")[], time: Number(manifest["time"]), precision,
+    angleDegrees: Number(manifest["angle_degrees"]), angularVelocityDegrees: Number(manifest["angular_velocity_degrees"]),
+    sourceLanguage: String(manifest["source_language"]), sourceSolver: String(manifest["source_solver"]),
+    velocity: semanticCOrder(velocityNpy), density,
+  };
+}
+
+export async function assertCompleteMatrices(results: readonly Readonly<Record<string, unknown>>[], requiredLanguages: readonly string[] = []): Promise<void> {
   const root = repositoryRoot();
   const matrixFiles = (await import("node:fs/promises").then(({readdir}) => readdir(join(root, "benchmark-matrices")))).filter((name) => name.endsWith(".json"));
   const matrices = new Map<string, BenchmarkMatrix>();
   for (const file of matrixFiles) { const matrix = await loadMatrix(join(root, "benchmark-matrices", file)); matrices.set(matrix.id, matrix); }
   const grouped = new Map<string, Readonly<Record<string, unknown>>[]>();
   for (const result of results) { const key = JSON.stringify([result["benchmark_matrix_id"], result["language"]]); const selected = grouped.get(key) ?? []; selected.push(result); grouped.set(key, selected); }
-  for (const selected of grouped.values()) {
-    const first = selected[0]; if (first === undefined) continue;
-    const matrixId = String(first["benchmark_matrix_id"]); const language = String(first["language"]); const matrix = matrices.get(matrixId);
+  const matrixIds = new Set(results.map((result) => String(result["benchmark_matrix_id"])));
+  const languages = requiredLanguages.length > 0 ? requiredLanguages : [...new Set(results.map((result) => String(result["language"])))];
+  for (const matrixId of matrixIds) for (const language of languages) {
+    const selected = grouped.get(JSON.stringify([matrixId, language])) ?? [];
+    const matrix = matrices.get(matrixId);
     if (matrix === undefined) throw new Error(`cannot verify completeness of unknown matrix ${matrixId}`);
     const expected = new Set<string>();
     for (const solver of matrix.solvers) for (const resolution of matrix.resolutions) for (let repetition = 1; repetition <= matrix.repetitions; repetition += 1) expected.add(JSON.stringify([solver, resolution, repetition]));
@@ -137,7 +174,8 @@ async function assertCompleteMatrices(results: readonly Readonly<Record<string, 
     const observed = new Set(observedValues);
     if (observed.size !== observedValues.length) throw new Error(`duplicate ${language} artifacts for matrix ${matrixId}`);
     const missing = [...expected].filter((key) => !observed.has(key)); const extra = [...observed].filter((key) => !expected.has(key));
-    if (missing.length > 0 || extra.length > 0) throw new Error(`incomplete ${language} artifacts for matrix ${matrixId}: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
+    const failed = selected.filter((result) => result["success"] !== true).length;
+    if (missing.length > 0 || extra.length > 0 || failed > 0) throw new Error(`incomplete ${language} artifacts for matrix ${matrixId}: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)} failed=${String(failed)}`);
   }
 }
 
@@ -163,7 +201,7 @@ export async function compareResults(directory: string, requireComplete = false,
     if (!file.endsWith(".json")) continue;
     const value = await json(join(selected, file)) as Record<string, unknown>;
     const solver = value["solver"];
-    if (typeof solver !== "string") continue;
+    if (typeof solver !== "string" || typeof value["benchmark_matrix_id"] !== "string" || typeof value["success"] !== "boolean") continue;
     if (!validator(value)) throw new TypeError(new Ajv2020().errorsText(validator.errors));
     validateResultSemantics(value);
     results.push(value);
@@ -178,7 +216,8 @@ export async function compareResults(directory: string, requireComplete = false,
     const throughput = Number(value["simulated_seconds_per_wall_second"]).toFixed(3);
     lines.push(`${language.padEnd(12)}${solver.padEnd(20)}${median.padStart(10)}${p95.padStart(12)}${throughput.padStart(12)} ${String(value["success"])}`);
   }
+  if (results.length === 0 && (requireComplete || requiredLanguages.length > 0)) throw new Error("strict benchmark comparison found no result artifacts");
   if (requiredLanguages.length > 0) assertRequiredLanguages(results, requiredLanguages);
-  if (requireComplete) await assertCompleteMatrices(results);
+  if (requireComplete) await assertCompleteMatrices(results, requiredLanguages);
   return lines.join("\n");
 }

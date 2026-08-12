@@ -278,6 +278,7 @@ def main() -> None:
         result: dict[str, object] = {
             "schema_version": 1,
             "contract_id": "foilbench-phase2-v1",
+            "contract_revision": 4,
             "experiment": "chaotic-wake-sweep",
             "language": "python",
             "solver": "stable-fluids",

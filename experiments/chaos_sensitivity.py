@@ -162,6 +162,7 @@ def main() -> None:
     envelope: dict[str, object] = {
         "schema_version": 1,
         "contract_id": "foilbench-phase2-v1",
+        "contract_revision": 4,
         "experiment": "chaotic-wake-sensitivity",
         "language": "python",
         "solver": "stable-fluids",

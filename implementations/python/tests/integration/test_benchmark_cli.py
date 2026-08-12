@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 import json
 from pathlib import Path
 from typing import cast
@@ -5,7 +6,7 @@ from typing import cast
 import pytest
 
 from foilbench_py.benchmark.artifact import validate_result_semantics
-from foilbench_py.benchmark.compare import format_comparison
+from foilbench_py.benchmark.compare import _assert_complete_matrices, format_comparison
 from foilbench_py.benchmark.runner import recovery_window, run_matrix
 from foilbench_py.cli import main
 from foilbench_py.core.scenario import find_repo_root, load_scenario
@@ -124,6 +125,34 @@ def test_result_semantics_reject_cross_field_contradictions(tmp_path: Path) -> N
     inconsistent["median_step_seconds"] = 123.0
     with pytest.raises(ValueError, match="inconsistent derived field"):
         validate_result_semantics(inconsistent)
+
+
+def test_strict_comparison_rejects_empty_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="no result artifacts"):
+        format_comparison(
+            tmp_path,
+            require_complete=True,
+            required_languages=("python", "julia", "typescript"),
+        )
+
+
+def test_completeness_is_cartesian_over_required_languages() -> None:
+    results = [
+        {
+            "benchmark_matrix_id": "test",
+            "language": "python",
+            "solver": solver_id,
+            "resolution": [32, 16],
+            "repetition": 1,
+            "success": True,
+        }
+        for solver_id in solver_ids()
+    ]
+    with pytest.raises(ValueError, match="incomplete julia artifacts"):
+        _assert_complete_matrices(results, ("python", "julia"))
+    results[0]["success"] = False
+    with pytest.raises(ValueError, match="failed=1"):
+        _assert_complete_matrices(results, ("python",))
 
 
 def test_describe_reports_python_capabilities(capsys: pytest.CaptureFixture[str]) -> None:

@@ -22,6 +22,7 @@
     "gate:preview": "tsx src/benchmark/previewGate.ts",
     "gate:warm-switch": "tsx src/benchmark/warmSwitchGate.ts",
     "gate:scheduled": "tsx src/benchmark/scheduledGate.ts",
+    "gate:interchange": "tsx src/benchmark/interchangeGate.ts",
     "compare": "tsx src/cli.ts compare",
     "chaos:sweep": "tsx src/cli.ts chaos-sweep",
     "chaos:paired": "tsx src/cli.ts chaos-paired",

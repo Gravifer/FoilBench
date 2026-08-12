@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenario", "solver", "transport", "sweep", "sensitivity", "initialization_preflight"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "scenario": {"type": "string", "minLength": 1},
+    "solver": {"const": "stable-fluids"},
+    "transport": {"const": "skew-rk2"},
+    "sweep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["duration", "burn_in", "cases"],
+      "properties": {
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "burn_in": {"type": "number", "minimum": 0},
+        "cases": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/case"}}
+      }
+    },
+    "sensitivity": {"$ref": "#/$defs/trajectory"},
+    "initialization_preflight": {
+      "type": "object", "additionalProperties": false,
+      "required": ["duration", "epsilon", "case", "minimum_realized_to_requested_ratio", "maximum_realized_to_requested_ratio"],
+      "properties": {
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "epsilon": {"type": "number", "exclusiveMinimum": 0},
+        "case": {"$ref": "#/$defs/case"},
+        "minimum_realized_to_requested_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_realized_to_requested_ratio": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "resolution": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 8}, {"type": "integer", "minimum": 8}], "items": false},
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reynolds", "angle_degrees", "resolution"],
+      "properties": {
+        "reynolds": {"type": "number", "exclusiveMinimum": 0},
+        "angle_degrees": {"type": "number"},
+        "resolution": {"$ref": "#/$defs/resolution"}
+      }
+    },
+    "trajectory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["duration", "epsilon", "case"],
+      "properties": {
+        "duration": {"type": "number", "exclusiveMinimum": 0},
+        "epsilon": {"type": "number", "exclusiveMinimum": 0},
+        "case": {"$ref": "#/$defs/case"}
+      }
+    }
+  }
+}

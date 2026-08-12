@@ -12,8 +12,11 @@ function main(arguments::Vector{String})
         error("preview fixture resolution disagrees with its scenario")
     minimum_rate = length(arguments) >= 1 ? parse(Float64, arguments[1]) :
         Float64(fixture.preview.minimum_warmed_solver_steps_per_second)
+    required_solvers = String.(fixture.preview.solvers)
+    required_solvers == solver_ids() ||
+        error("preview fixture solver roster must exactly match the implemented solver roster")
     failed = false
-    for solver_id in solver_ids()
+    for solver_id in required_solvers
         solver = create_solver(solver_id, scalar_type(scenario))
         initialize!(solver, scenario, NacaFoil(scenario.foil), scenario.seed)
         advance!(solver, control_at(scenario, scenario.output_dt), scenario.output_dt)

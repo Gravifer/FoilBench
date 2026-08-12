@@ -29,6 +29,7 @@ function envelope(selected, raw)
     return Dict{String,Any}(
         "schema_version" => 1,
         "contract_id" => "foilbench-phase2-v1",
+        "contract_revision" => 4,
         "experiment" => "chaotic-wake-sweep",
         "language" => "julia",
         "solver" => "stable-fluids",

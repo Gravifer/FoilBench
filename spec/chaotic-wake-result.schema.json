@@ -4,10 +4,11 @@
   "title": "FoilBench chaotic-wake experiment result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "contract_id", "experiment", "language", "solver", "scenario", "parameters", "metrics", "wall_seconds"],
+  "required": ["schema_version", "contract_id", "contract_revision", "experiment", "language", "solver", "scenario", "parameters", "metrics", "wall_seconds"],
   "properties": {
     "schema_version": {"const": 1},
     "contract_id": {"const": "foilbench-phase2-v1"},
+    "contract_revision": {"const": 4},
     "experiment": {"enum": ["chaotic-wake-sweep", "chaotic-wake-sensitivity"]},
     "language": {"enum": ["python", "julia", "typescript"]},
     "solver": {"const": "stable-fluids"},
@@ -85,9 +86,10 @@
     {
       "if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}},
       "then": {
-        "required": ["initialization"],
+        "required": ["initialization", "series"],
         "properties": {
           "initialization": true,
+          "series": true,
           "parameters": {"type": "object", "properties": {"epsilon": true}, "required": ["epsilon"]},
           "metrics": {"type": "object", "properties": {"initial_wake_rms_difference": true, "final_wake_rms_difference": true, "maximum_wake_rms_difference": true, "amplification": true, "finite_time_exponent": true, "exponential_fit_r_squared": true, "exponential_fit_samples": true}, "required": ["initial_wake_rms_difference", "final_wake_rms_difference", "maximum_wake_rms_difference", "amplification", "finite_time_exponent", "exponential_fit_r_squared", "exponential_fit_samples"]}
         }

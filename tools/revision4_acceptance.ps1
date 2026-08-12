@@ -47,6 +47,11 @@ $typescriptResults = Join-Path $OutputRoot 'benchmarks/typescript'
 
 Push-Location $repositoryRoot
 try {
+    Write-Host '==> Revision 4: acceptance fixture schemas'
+    Invoke-Checked uv @(
+        'run', '--project', 'implementations/python', 'python',
+        'tools/validate_acceptance_fixtures.py'
+    )
     Write-Host '==> Revision 4: independently emitted benchmark artifacts'
     Invoke-Checked uv @(
         'run', '--project', 'implementations/python', 'foilbench-py',
@@ -60,6 +65,21 @@ try {
     Invoke-Checked npm @(
         '--prefix', 'implementations/typescript', 'run', 'bench', '--',
         $matrix, $typescriptResults
+    )
+
+    Write-Host '==> Revision 4: every native canonical reader and solver importer'
+    Invoke-Checked uv @(
+        'run', '--project', 'implementations/python', 'python',
+        'implementations/python/benchmark/interchange_gate.py', $OutputRoot
+    )
+    Invoke-Checked julia @(
+        '--threads=auto', '--startup-file=no', '--history-file=no',
+        '--project=implementations/julia',
+        'implementations/julia/benchmark/interchange_gate.jl', $OutputRoot
+    )
+    Invoke-Checked npm @(
+        '--prefix', 'implementations/typescript', 'run', 'gate:interchange', '--',
+        $OutputRoot
     )
 
     Write-Host '==> Revision 4: every native benchmark comparer'

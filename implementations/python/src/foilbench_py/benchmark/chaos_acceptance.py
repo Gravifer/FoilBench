@@ -3,6 +3,7 @@
 import json
 import math
 from collections.abc import Mapping, Sequence
+from itertools import pairwise
 from pathlib import Path
 from typing import cast
 
@@ -78,6 +79,43 @@ def _check_sensitivity_initialization(
         )
 
 
+def _check_sensitivity_growth(
+    document: Mapping[str, object], minimum_amplification: float, failures: list[str]
+) -> None:
+    language = str(document["language"])
+    metrics = cast(Mapping[str, object], document["metrics"])
+    series = cast(Mapping[str, object], document["series"])
+    times = [float(value) for value in cast(list[float], series["times"])]
+    differences = [
+        float(value) for value in cast(list[float], series["wake_rms_differences"])
+    ]
+    if not times or len(times) != len(differences):
+        failures.append(f"{language}: sensitivity series is empty or misaligned")
+        return
+    if not all(math.isfinite(value) for value in (*times, *differences)):
+        failures.append(f"{language}: sensitivity series contains non-finite values")
+        return
+    if any(right <= left for left, right in pairwise(times)):
+        failures.append(f"{language}: sensitivity times are not strictly increasing")
+    initial = float(cast(float, metrics["initial_wake_rms_difference"]))
+    final = float(cast(float, metrics["final_wake_rms_difference"]))
+    maximum = float(cast(float, metrics["maximum_wake_rms_difference"]))
+    amplification = float(cast(float, metrics["amplification"]))
+    if not math.isclose(final, differences[-1], rel_tol=1.0e-9, abs_tol=0.0):
+        failures.append(f"{language}: final sensitivity metric disagrees with its series")
+    if not math.isclose(maximum, max(differences), rel_tol=1.0e-9, abs_tol=0.0):
+        failures.append(f"{language}: maximum sensitivity metric disagrees with its series")
+    if not math.isclose(
+        amplification, maximum / initial, rel_tol=1.0e-9, abs_tol=0.0
+    ):
+        failures.append(f"{language}: sensitivity amplification is inconsistent")
+    if amplification < minimum_amplification:
+        failures.append(
+            f"{language}: sensitivity amplification {amplification:.6g} is below "
+            f"{minimum_amplification:.6g}"
+        )
+
+
 def validate_chaos_acceptance(
     paths: Sequence[Path], *, required_languages: Sequence[str] = ()
 ) -> str:
@@ -142,6 +180,11 @@ def validate_chaos_acceptance(
                 sensitivity_count += 1
                 _check_sensitivity_initialization(
                     entry, sensitivity_fixture, preflight_fixture, failures
+                )
+                _check_sensitivity_growth(
+                    entry,
+                    float(cast(float, thresholds["minimum_sensitivity_amplification"])),
+                    failures,
                 )
                 continue
             parameters = cast(Mapping[str, object], entry["parameters"])

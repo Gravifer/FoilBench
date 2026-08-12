@@ -30,6 +30,8 @@
     "spec/canonical-manifest.schema.json",
     "spec/result.schema.json",
     "spec/benchmark-matrix.schema.json",
+    "spec/fullsize-acceptance.schema.json",
+    "spec/chaotic-wake-cases.schema.json",
     "spec/viewer-transcript.schema.json",
     "spec/chaotic-wake-result.schema.json"
   ],
