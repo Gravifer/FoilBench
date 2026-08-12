@@ -22,7 +22,11 @@ from foilbench_py.core.models import (
 )
 from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.core.state_io import midspan_velocity
-from foilbench_py.core.switching import SolverManager, classify_import_failure
+from foilbench_py.core.switching import (
+    SolverFactory,
+    SolverManager,
+    classify_import_failure,
+)
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from foilbench_py.types import MaskField, ScalarField
@@ -181,9 +185,14 @@ class ViewerModel:
         return float(np.clip(relative_reynolds**exponent, 0.5, 2.0))
 
     @classmethod
-    def create(cls, scenario: Scenario, initial_solver: str = "stable-fluids") -> "ViewerModel":
+    def create(
+        cls,
+        scenario: Scenario,
+        initial_solver: str = "stable-fluids",
+        solver_factory: SolverFactory = create_solver,
+    ) -> "ViewerModel":
         geometry = NacaFoil(scenario.foil)
-        manager = SolverManager(create_solver, scenario, geometry, initial_solver)
+        manager = SolverManager(solver_factory, scenario, geometry, initial_solver)
         domain_area = np.prod([upper - lower for lower, upper in scenario.domain.bounds[:2]])
         tracer_count = int(np.clip(round(float(domain_area) * 256.0), 2_048, 8_192))
         initial_angle = scenario.control_at(0.0).angle_degrees

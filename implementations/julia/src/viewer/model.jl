@@ -346,6 +346,7 @@ mutable struct ViewerModel{T<:AbstractFloat}
     warm_validation_pending::Bool
     presentation_failure::Union{Nothing,String}
     solver_epoch::Int
+    solver_factory::Function
 end
 
 function _create_solver(::Type{T}, solver_id::AbstractString) where {T<:AbstractFloat}
@@ -360,9 +361,10 @@ function ViewerModel(
     solver_id::AbstractString = "stable-fluids",
     tracer_count::Union{Nothing,Int} = nothing,
     history_length::Int = 12,
+    solver_factory::Function = identifier -> _create_solver(T, identifier),
 ) where {T}
     geometry = NacaFoil(scenario.foil)
-    solver = _create_solver(T, solver_id)
+    solver = solver_factory(solver_id)
     initialize!(solver, scenario, geometry, scenario.seed)
     initial_control = control_at(scenario, zero(T))
     crop_available = option(scenario, "viewer_crop_cells", 0) > 0
@@ -422,6 +424,7 @@ function ViewerModel(
         false,
         nothing,
         0,
+        solver_factory,
     )
     _remember_active_tuning!(model)
     _refresh_presentation!(model; force_vorticity = true)
@@ -837,7 +840,7 @@ reset_reynolds!(model::ViewerModel) = set_reynolds!(model, model.scenario.reynol
 
 function reset_viewer!(model::ViewerModel{T}) where {T}
     tracer_mode = model.tracers.mode
-    solver = _create_solver(T, solver_info(model.solver).id)
+    solver = model.solver_factory(solver_info(model.solver).id)
     initialize!(solver, model.scenario, model.geometry, model.scenario.seed)
     model.solver = solver
     model.solver_epoch += 1
@@ -904,7 +907,7 @@ function _fresh_solver_at_control(
     control::ControlState;
     selected_reynolds::Real = reynolds(model.solver),
 ) where {T}
-    incoming = _create_solver(T, solver_id)
+    incoming = model.solver_factory(solver_id)
     restart!(
         incoming,
         model.scenario,
@@ -1092,7 +1095,7 @@ function _reject_or_fallback!(
         "fresh destination reason=$reason; stage=warm-import-fallback; " *
         "private-state-discarded; reseeded=$moved"
     model.presentation_failure = nothing
-    _refresh_vorticity!(model; force = model.presentation.vorticity_visible)
+    _refresh_presentation!(model; force_vorticity = model.presentation.vorticity_visible)
     report = ImportReport(
         source_id,
         String(solver_id),
@@ -1110,7 +1113,7 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
     end
     _remember_active_tuning!(model)
     incoming = try
-        _create_solver(T, solver_id)
+        model.solver_factory(solver_id)
     catch error
         model.status_message = "solver $solver_id is not available yet"
         return ImportOutcome(
