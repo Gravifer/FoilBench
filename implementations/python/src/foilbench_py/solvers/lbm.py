@@ -32,7 +32,11 @@ from foilbench_py.core.solver_validation import (
     validate_canonical_import,
     validate_restart_state,
 )
-from foilbench_py.solvers._numba_adapter import lbm_trt_collision
+from foilbench_py.solvers._numba_adapter import (
+    lbm_apply_sponge,
+    lbm_moving_wall_stream,
+    lbm_trt_collision,
+)
 from foilbench_py.types import (
     CoordinateField,
     LatticePopulation,
@@ -521,61 +525,20 @@ class LBMSolver:
     ) -> LatticePopulation:
         """Stream fluid links and apply Bouzidi-style interpolated wall reflection."""
         scenario, geometry, _, solid = self._require()
-        centers = self._centers
         signed_distance = self._signed_distance
-        if centers is None or signed_distance is None:
+        if self._centers is None or signed_distance is None:
             raise RuntimeError("LBM geometry cache has not been initialized")
-        streamed = np.zeros_like(post_collision)
-        for direction, (cx_raw, cy_raw) in enumerate(self._C):
-            cx = int(cx_raw)
-            cy = int(cy_raw)
-            if direction == 0:
-                streamed[:, :, 0] = post_collision[:, :, 0]
-                continue
-
-            destination_solid = np.roll(solid, shift=(-cy, -cx), axis=(0, 1))
-            wall_link = ~solid & destination_solid
-            outgoing = np.where(
-                (~solid & ~destination_solid)[:, :, None],
-                post_collision[:, :, direction : direction + 1],
-                0.0,
-            )[:, :, 0]
-            streamed[:, :, direction] += np.roll(outgoing, shift=(cy, cx), axis=(0, 1))
-            if not np.any(wall_link):
-                continue
-
-            destination_distance = np.roll(signed_distance, shift=(-cy, -cx), axis=(0, 1))
-            link_fraction = np.clip(
-                signed_distance / np.maximum(signed_distance - destination_distance, 1.0e-12),
-                0.05,
-                1.0,
-            )
-            q = link_fraction[wall_link]
-            source_population = post_collision[:, :, direction][wall_link]
-            opposite = int(self._OPPOSITE[direction])
-            reflected = np.empty_like(source_population)
-            near = q < 0.5
-            if np.any(near):
-                upstream = np.roll(post_collision[:, :, direction], shift=(cy, cx), axis=(0, 1))[
-                    wall_link
-                ]
-                reflected[near] = (
-                    2.0 * q[near] * source_population[near] + (1.0 - 2.0 * q[near]) * upstream[near]
-                )
-            if np.any(~near):
-                far_q = q[~near]
-                reflected[~near] = source_population[~near] / (2.0 * far_q) + (
-                    2.0 * far_q - 1.0
-                ) * post_collision[:, :, opposite][wall_link][~near] / (2.0 * far_q)
-
-            wall_points = centers[wall_link].copy()
-            wall_points[:, 0] += q * cx * scenario.domain.dx
-            wall_points[:, 1] += q * cy * scenario.domain.dy
-            wall_velocity = geometry.wall_velocity(wall_points, control) * lattice_velocity_scale
-            wall_projection = cx * wall_velocity[:, 0] + cy * wall_velocity[:, 1]
-            reflected -= 6.0 * self._W[direction] * density[wall_link] * wall_projection
-            streamed[:, :, opposite][wall_link] = reflected
-        return streamed
+        return lbm_moving_wall_stream(
+            post_collision,
+            density,
+            solid,
+            signed_distance,
+            scenario.domain.bounds,
+            (scenario.domain.dx, scenario.domain.dy),
+            (geometry.spec.pivot[0], geometry.spec.pivot[1]),
+            float(np.deg2rad(control.angular_velocity_degrees)),
+            lattice_velocity_scale,
+        )
 
     def _step(self, control: ControlState) -> None:
         scenario, _, populations, _ = self._require()
@@ -633,8 +596,7 @@ class LBMSolver:
             streamed[0, -1, :] = boundary_equilibrium[0, -1, :]
             streamed[-1, -1, :] = boundary_equilibrium[-1, -1, :]
         if self._sponge is not None:
-            strength = self._sponge[:, :, None]
-            streamed = (1.0 - strength) * streamed + strength * boundary_equilibrium
+            lbm_apply_sponge(streamed, boundary_equilibrium, self._sponge)
         self._f = streamed
         self._control = control
 

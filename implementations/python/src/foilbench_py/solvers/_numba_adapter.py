@@ -7,14 +7,24 @@
 import numpy as np
 from jaxtyping import Float
 
-from foilbench_kernels.lbm import trt_collision_kernel
+from foilbench_kernels.lbm import (
+    moving_wall_stream_kernel,
+    sponge_kernel,
+    trt_collision_kernel,
+)
 from foilbench_kernels.pic import (
     gather_face_component_kernel,
     grid_to_particle_kernel,
     particle_to_grid_kernel,
     scatter_face_component_kernel,
 )
-from foilbench_py.types import FaceVelocityX, FaceVelocityY, LatticePopulation, ScalarField
+from foilbench_py.types import (
+    FaceVelocityX,
+    FaceVelocityY,
+    LatticePopulation,
+    MaskField,
+    ScalarField,
+)
 
 
 def _require_supported_float(array: np.ndarray, name: str) -> None:
@@ -166,3 +176,38 @@ def lbm_trt_collision(
         omega_minus,
     )
     return density, post_collision
+
+
+def lbm_moving_wall_stream(
+    post_collision: LatticePopulation,
+    density: ScalarField,
+    solid: MaskField,
+    signed_distance: ScalarField,
+    bounds: tuple[tuple[float, float], ...],
+    spacing: tuple[float, float],
+    pivot: tuple[float, float],
+    angular_velocity_radians: float,
+    lattice_velocity_scale: float,
+) -> LatticePopulation:
+    return moving_wall_stream_kernel(
+        post_collision,
+        density,
+        solid,
+        signed_distance,
+        bounds[0][0],
+        bounds[1][0],
+        spacing[0],
+        spacing[1],
+        pivot[0],
+        pivot[1],
+        angular_velocity_radians,
+        lattice_velocity_scale,
+    )
+
+
+def lbm_apply_sponge(
+    populations: LatticePopulation,
+    boundary_equilibrium: LatticePopulation,
+    strength: ScalarField,
+) -> None:
+    sponge_kernel(populations, boundary_equilibrium, strength)
