@@ -13,7 +13,7 @@ function main(arguments::Vector{String})
     minimum_rate = length(arguments) >= 1 ? parse(Float64, arguments[1]) :
         Float64(fixture.preview.minimum_warmed_solver_steps_per_second)
     required_solvers = String.(fixture.preview.solvers)
-    required_solvers == solver_ids() ||
+    required_solvers == collect(solver_ids()) ||
         error("preview fixture solver roster must exactly match the implemented solver roster")
     failed = false
     for solver_id in required_solvers
