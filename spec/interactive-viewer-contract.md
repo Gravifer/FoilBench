@@ -1,6 +1,6 @@
 # Interactive viewer contract
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 4.
 Exact drag-resolution constants and optional visual-closeness criteria remain
 nonblocking follow-up questions; the observable minimums below are accepted.
 

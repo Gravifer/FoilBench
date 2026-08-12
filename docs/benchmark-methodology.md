@@ -1,6 +1,6 @@
 # Benchmark methodology
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 4.
 
 The latest historical Phase 1 interactive snapshot is recorded in
 [benchmark-results-2026-07-31.md](benchmark-results-2026-07-31.md). Python,

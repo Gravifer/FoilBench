@@ -1,7 +1,7 @@
 # Chaotic-wake experiment contract
 
-Status: proposed normative optional extension of `foilbench-phase2-v1`,
-revision 4.
+Status: superseded historical draft. The accepted Revision 4 authority is
+[`chaotic-wake-contract.md`](chaotic-wake-contract.md).
 
 The Phase 2 acceptance bar remains a visibly unsteady vortex street. These
 experiments are an overachievement track for deterministic numerical 2D

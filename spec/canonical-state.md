@@ -1,6 +1,6 @@
 # Canonical flow state
 
-Status: proposed normative component of `foilbench-phase2-v1`, revision 4.
+Status: accepted normative component of `foilbench-phase2-v1`, revision 4.
 The file schema remains version 1 because the revision-3 change is semantic,
 not structural.
 
