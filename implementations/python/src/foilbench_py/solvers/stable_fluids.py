@@ -121,12 +121,8 @@ class StableFluidsSolver:
         self._control: ControlState = ControlState(0.0, 0.0, 0.0)
         self._time: float = 0.0
         self._projection_warning: str = ""
-        self._last_projection: IterativeReport = IterativeReport(
-            "relative-l2", 0.0, 0, 0.0, True
-        )
-        self._last_viscosity: IterativeReport = IterativeReport(
-            "update-linf", 0.0, 0, 0.0, True
-        )
+        self._last_projection: IterativeReport = IterativeReport("relative-l2", 0.0, 0, 0.0, True)
+        self._last_viscosity: IterativeReport = IterativeReport("update-linf", 0.0, 0, 0.0, True)
         self._maccormack: bool = True
         self._face_advection: bool = False
         self._skew_rk2: bool = False
@@ -247,9 +243,7 @@ class StableFluidsSolver:
         scenario, _, u, v, solid = self._require()
         channel = str(scenario.solver_options.get("initial_condition", "")) == "poiseuille"
         pressure_tolerance = _float_option(scenario, "pressure_tolerance", 1.0e-5)
-        pressure_max_iterations = _int_option(
-            scenario, "pressure_max_iterations", 640
-        )
+        pressure_max_iterations = _int_option(scenario, "pressure_max_iterations", 640)
         cfl_option = scenario.solver_options.get("stable_cfl", 0.7)
         if not isinstance(cfl_option, (int, float)):
             raise TypeError("stable_cfl must be numeric")
@@ -267,13 +261,15 @@ class StableFluidsSolver:
             )
         face_speed = max(float(np.max(np.abs(u))), float(np.max(np.abs(v))))
         wall_speed = (
-            float(np.max(np.linalg.norm(wall_velocity[solid], axis=1)))
-            if np.any(solid)
-            else 0.0
+            float(np.max(np.linalg.norm(wall_velocity[solid], axis=1))) if np.any(solid) else 0.0
         )
-        projection_cfl = max(face_speed, wall_speed) * dt / min(
-            scenario.domain.dx,
-            scenario.domain.dy,
+        projection_cfl = (
+            max(face_speed, wall_speed)
+            * dt
+            / min(
+                scenario.domain.dx,
+                scenario.domain.dy,
+            )
         )
         if projection_cfl > projection_cfl_limit:
             raise NumericalFailure(
@@ -380,104 +376,11 @@ class StableFluidsSolver:
         )
         start_time = self._time
         start_angle = self._control.angle_degrees
-        try:
-            for substep in range(substeps):
-                fraction = (substep + 1) / substeps
-                sub_control = ControlState(
-                    start_time + fraction * target_dt,
-                    start_angle + fraction * (control.angle_degrees - start_angle),
-                    control.angular_velocity_degrees,
-                )
-                _, _, step_u, step_v, step_solid = self._require()
-                if self._skew_rk2:
-                    self._u, self._v = advect_faces_skew_rk2(
-                        step_u,
-                        step_v,
-                        dt,
-                        scenario.domain,
-                        step_solid,
-                        self._wall_grid(sub_control),
-                        scenario.freestream,
-                    )
-                    self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
-                        self._u,
-                        self._v,
-                        viscosity,
-                        dt,
-                        scenario.domain,
-                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
-                        _int_option(scenario, "pressure_max_iterations", 640),
-                    )
-                elif self._face_advection:
-                    advected_u, advected_v = advect_faces(
-                        step_u,
-                        step_v,
-                        dt,
-                        scenario.domain,
-                        self._maccormack,
-                    )
-                    self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
-                        advected_u,
-                        advected_v,
-                        viscosity,
-                        dt,
-                        scenario.domain,
-                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
-                        _int_option(scenario, "pressure_max_iterations", 640),
-                    )
-                else:
-                    velocity = faces_to_cell(step_u, step_v)
-                    velocity = advect_velocity(
-                        velocity, dt, scenario.domain, self._maccormack
-                    )
-                    velocity, self._last_viscosity = implicit_diffuse(
-                        velocity,
-                        viscosity,
-                        dt,
-                        scenario.domain,
-                        _float_option(scenario, "pressure_tolerance", 1.0e-5),
-                        _int_option(scenario, "pressure_max_iterations", 640),
-                    )
-                    self._u, self._v = cell_to_faces(velocity)
-                if not self._last_viscosity.converged:
-                    raise NumericalFailure(
-                        "convergence_failure",
-                        "Stable Fluids implicit viscosity did not converge",
-                        "viscosity",
-                        {
-                            "criterion": self._last_viscosity.criterion,
-                            "iterations": self._last_viscosity.iterations,
-                            "tolerance": self._last_viscosity.tolerance,
-                            "final_residual": self._last_viscosity.final_residual,
-                        },
-                    )
-                self._control = sub_control
-                self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
-                self._apply_projection(dt)
-            final_velocity = self.cell_velocity()
-            if not np.isfinite(final_velocity).all():
-                raise NumericalFailure(
-                    "nonfinite_state",
-                    "Stable Fluids produced non-finite velocity",
-                    "postcondition",
-                )
-            final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
-            accepted_measure = (
-                dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
-                if self._skew_rk2
-                else dt * final_speed / spacing
-            )
-            if accepted_measure > cfl * (1.0 + 1.0e-6):
-                raise NumericalFailure(
-                    "stability_limit",
-                    "Stable Fluids post-step motion exceeded its transport envelope",
-                    "advection",
-                    {
-                        "accepted_measure": accepted_measure,
-                        "maximum_measure": cfl,
-                    },
-                )
-        except Exception:
+        final_speed = max_speed
+        accepted_measure = fluid_measure / substeps
+        stability_retries = 0
+
+        def restore_checkpoint() -> None:
             (
                 self._u,
                 self._v,
@@ -488,8 +391,125 @@ class StableFluidsSolver:
                 self._revision,
                 self._last_projection,
                 self._last_viscosity,
-            ) = checkpoint
-            raise
+            ) = (
+                checkpoint[0].copy(),
+                checkpoint[1].copy(),
+                checkpoint[2].copy(),
+                *checkpoint[3:],
+            )
+
+        while True:
+            try:
+                for substep in range(substeps):
+                    fraction = (substep + 1) / substeps
+                    sub_control = ControlState(
+                        start_time + fraction * target_dt,
+                        start_angle + fraction * (control.angle_degrees - start_angle),
+                        control.angular_velocity_degrees,
+                    )
+                    _, _, step_u, step_v, step_solid = self._require()
+                    if self._skew_rk2:
+                        self._u, self._v = advect_faces_skew_rk2(
+                            step_u,
+                            step_v,
+                            dt,
+                            scenario.domain,
+                            step_solid,
+                            self._wall_grid(sub_control),
+                            scenario.freestream,
+                        )
+                        self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
+                            self._u,
+                            self._v,
+                            viscosity,
+                            dt,
+                            scenario.domain,
+                            _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                            _int_option(scenario, "pressure_max_iterations", 640),
+                        )
+                    elif self._face_advection:
+                        advected_u, advected_v = advect_faces(
+                            step_u,
+                            step_v,
+                            dt,
+                            scenario.domain,
+                            self._maccormack,
+                        )
+                        self._u, self._v, self._last_viscosity = implicit_diffuse_faces(
+                            advected_u,
+                            advected_v,
+                            viscosity,
+                            dt,
+                            scenario.domain,
+                            _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                            _int_option(scenario, "pressure_max_iterations", 640),
+                        )
+                    else:
+                        velocity = faces_to_cell(step_u, step_v)
+                        velocity = advect_velocity(velocity, dt, scenario.domain, self._maccormack)
+                        velocity, self._last_viscosity = implicit_diffuse(
+                            velocity,
+                            viscosity,
+                            dt,
+                            scenario.domain,
+                            _float_option(scenario, "pressure_tolerance", 1.0e-5),
+                            _int_option(scenario, "pressure_max_iterations", 640),
+                        )
+                        self._u, self._v = cell_to_faces(velocity)
+                    if not self._last_viscosity.converged:
+                        raise NumericalFailure(
+                            "convergence_failure",
+                            "Stable Fluids implicit viscosity did not converge",
+                            "viscosity",
+                            {
+                                "criterion": self._last_viscosity.criterion,
+                                "iterations": self._last_viscosity.iterations,
+                                "tolerance": self._last_viscosity.tolerance,
+                                "final_residual": self._last_viscosity.final_residual,
+                            },
+                        )
+                    self._control = sub_control
+                    self._solid = geometry.mask(scenario.domain, sub_control.angle_degrees)
+                    self._apply_projection(dt)
+                final_velocity = self.cell_velocity()
+                if not np.isfinite(final_velocity).all():
+                    raise NumericalFailure(
+                        "nonfinite_state",
+                        "Stable Fluids produced non-finite velocity",
+                        "postcondition",
+                    )
+                final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
+                accepted_measure = (
+                    dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+                    if self._skew_rk2
+                    else dt * final_speed / spacing
+                )
+            except Exception:
+                restore_checkpoint()
+                raise
+            if accepted_measure <= cfl * (1.0 + 1.0e-6):
+                break
+            next_substeps = max(
+                substeps + 1,
+                int(np.ceil(1.05 * substeps * accepted_measure / cfl)),
+            )
+            restore_checkpoint()
+            if next_substeps > 512:
+                raise NumericalFailure(
+                    "stability_limit",
+                    "Stable Fluids retry requires too many internal substeps",
+                    "advection",
+                    {
+                        "accepted_measure": accepted_measure,
+                        "maximum_measure": cfl,
+                        "required_substeps": next_substeps,
+                        "maximum_substeps": 512,
+                        "stability_retries": stability_retries,
+                    },
+                )
+            stability_retries += 1
+            substeps = next_substeps
+            dt = target_dt / substeps
         self._time = start_time + target_dt
         self._control = ControlState(
             self._time,
@@ -524,6 +544,7 @@ class StableFluidsSolver:
                 "maximum_wall_speed": wall_speed,
                 "maximum_characteristic_displacement": accepted_measure,
                 "maximum_boundary_sweep": sweep_cells / substeps,
+                "stability_retries": stability_retries,
                 "pressure_converged": True,
                 "pressure_iterations": self._last_projection.iterations,
                 "pressure_relative_residual": self._last_projection.final_residual,

@@ -244,6 +244,9 @@ findings into focused repairs:
 - shared validity fixtures enforce quantitative limits, bounded iterative
   solves, exact LBM time mapping, atomic rollback, periodic face diffusion,
   post-step motion evidence, and representable runtime Reynolds changes;
+- recoverable post-step substep-planning misses now roll back and retry the
+  same requested interval internally, and the published 160×96 chaotic-wake
+  startup is exercised without substituting a smaller test grid;
 - canonical exporters zero solid-cell velocity consistently, LBM importers
   ignore finite density inside the authoritative solid, and TypeScript validates
   precision and control pose before import;

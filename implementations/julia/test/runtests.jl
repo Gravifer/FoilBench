@@ -1029,21 +1029,29 @@ end
         @test maximum(abs, view(cell_velocity(solver), :, :, 2)) > 0.25
     end
 
-    chaotic = resized_scenario(
-        load_scenario(
-            joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "chaotic-experimental.json"),
-        ),
-        (40, 24),
+    retry_fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
+    retry_case = retry_fixture.stable_retry_case
+    chaotic = load_scenario(
+        joinpath(REPOSITORY_ROOT, String(retry_case.scenario)),
     )
     chaotic_solver = StableFluidsSolver(Float32)
     initialize!(chaotic_solver, chaotic, NacaFoil(chaotic.foil), 0)
     @test chaotic_solver.skew_rk2
-    chaotic_report = advance!(
-        chaotic_solver,
-        control_at(chaotic, chaotic.output_dt),
-        chaotic.output_dt,
-    )
+    total_retries = 0
+    chaotic_report = nothing
+    for step in 1:Int(retry_case.expected_steps)
+        chaotic_report = advance!(
+            chaotic_solver,
+            control_at(chaotic, step * chaotic.output_dt),
+            chaotic.output_dt,
+        )
+        @test chaotic_report.state_revision == step
+        total_retries += Int(chaotic_report.evidence["stability_retries"])
+    end
+    @test chaotic_report !== nothing
     @test chaotic_report.advanced_dt == chaotic.output_dt
+    @test export_state(chaotic_solver).time == retry_case.duration
+    @test total_retries >= retry_case.minimum_total_stability_retries
     @test all(isfinite, export_state(chaotic_solver).velocity)
 end
 

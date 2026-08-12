@@ -17,6 +17,7 @@
       "maximum_fluid_speed",
       "maximum_characteristic_displacement",
       "maximum_boundary_sweep",
+      "stability_retries",
       "pressure_converged",
       "pressure_iterations",
       "pressure_relative_residual",
@@ -76,5 +77,11 @@
     "pic_maximum_underfilled_cell_fraction": 0.6,
     "pic_maximum_unsupported_face_fraction": 0.15,
     "pic_maximum_unresolved_solid_particles": 0
+  },
+  "stable_retry_case": {
+    "scenario": "scenarios/airfoil/chaotic-experimental.json",
+    "duration": 1.0,
+    "expected_steps": 60,
+    "minimum_total_stability_retries": 1
   }
 }

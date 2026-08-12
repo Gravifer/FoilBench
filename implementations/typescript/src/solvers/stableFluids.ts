@@ -202,7 +202,55 @@ export class StableFluidsSolver implements FlowSolver {
   }
 
   public advance(control: ControlState, targetDt: number): StepReport {
-    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); this.requireCompletionTime(control, targetDt); const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7; const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl; const angleDelta = control.angleDegrees - this.control.angleDegrees; const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; const sweepCells = scenario.foil.chord * Math.abs(angleDelta) * Math.PI / (180 * Math.min(dx, dy)); const fluidRate = this.transportMode === "skew-rk2" ? maxSpeed * (1 / dx + 1 / dy) : maxSpeed / Math.min(dx, dy); const required = Math.max(targetDt * fluidRate / cfl, targetDt * wallSpeed / (cfl * Math.min(dx, dy)), sweepCells / cfl); const substeps = Math.max(1, Math.ceil(required)); if (substeps > 512) throw new NumericalFailure("stability_limit", "stable-fluids motion requires too many internal substeps", this.transportMode === "skew-rk2" ? "advection" : "boundary", {required_substeps: substeps, maximum_substeps: 512, maximum_fluid_speed: maxSpeed, maximum_wall_speed: wallSpeed, boundary_sweep_cells: sweepCells}); const dt = targetDt / substeps; const saved = this.transactionCheckpoint(); try { for (let step = 0; step < substeps; step += 1) { const fraction = (step + 1) / substeps; this.substep({time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * angleDelta, angularVelocityDegrees: control.angularVelocityDegrees}, dt); } if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity", "postcondition"); const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision); maxSpeed = 0; for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0)); const acceptedMeasure = this.transportMode === "skew-rk2" ? dt * maxSpeed * (1 / dx + 1 / dy) : dt * maxSpeed / Math.min(dx, dy); if (acceptedMeasure > cfl * (1 + 1e-6)) throw new NumericalFailure("stability_limit", "post-step transport measure exceeded the selected substep envelope", "advection", {accepted_measure: acceptedMeasure, maximum_measure: cfl, substeps}); } catch (error) { this.restore(saved); throw error; } const evidence = this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps); this.time += targetDt; this.control = {...control, time: this.time}; this.revision += 1; return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, stateRevision: this.revision, evidence, warnings: []};
+    if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive");
+    this.requireCompletionTime(control, targetDt);
+    const scenario = this.requireScenario();
+    const {nx, ny, dx, dy} = dimensions(scenario.domain);
+    const velocity = cellVelocity(this.u, this.v, nx, ny, scenario.precision);
+    let maxSpeed = 0;
+    for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0));
+    const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7;
+    const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl;
+    const angleDelta = control.angleDegrees - this.control.angleDegrees;
+    const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord;
+    const spacing = Math.min(dx, dy);
+    const sweepCells = scenario.foil.chord * Math.abs(angleDelta) * Math.PI / (180 * spacing);
+    const fluidRate = this.transportMode === "skew-rk2" ? maxSpeed * (1 / dx + 1 / dy) : maxSpeed / spacing;
+    const required = Math.max(targetDt * fluidRate / cfl, targetDt * wallSpeed / (cfl * spacing), sweepCells / cfl);
+    let substeps = Math.max(1, Math.ceil(required));
+    if (substeps > 512) throw new NumericalFailure("stability_limit", "stable-fluids motion requires too many internal substeps", this.transportMode === "skew-rk2" ? "advection" : "boundary", {required_substeps: substeps, maximum_substeps: 512, maximum_fluid_speed: maxSpeed, maximum_wall_speed: wallSpeed, boundary_sweep_cells: sweepCells});
+    let dt = targetDt / substeps;
+    const saved = this.transactionCheckpoint();
+    let acceptedMeasure = Number.POSITIVE_INFINITY;
+    let stabilityRetries = 0;
+    for (;;) {
+      try {
+        for (let step = 0; step < substeps; step += 1) {
+          const fraction = (step + 1) / substeps;
+          this.substep({time: this.time + fraction * targetDt, angleDegrees: this.control.angleDegrees + fraction * angleDelta, angularVelocityDegrees: control.angularVelocityDegrees}, dt);
+        }
+        if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "stable-fluids produced non-finite velocity", "postcondition");
+        const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision);
+        maxSpeed = 0;
+        for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0));
+        acceptedMeasure = this.transportMode === "skew-rk2" ? dt * maxSpeed * (1 / dx + 1 / dy) : dt * maxSpeed / spacing;
+      } catch (error) {
+        this.restore(saved);
+        throw error;
+      }
+      if (acceptedMeasure <= cfl * (1 + 1e-6)) break;
+      const nextSubsteps = Math.max(substeps + 1, Math.ceil(1.05 * substeps * acceptedMeasure / cfl));
+      this.restore(saved);
+      if (nextSubsteps > 512) throw new NumericalFailure("stability_limit", "stable-fluids retry requires too many internal substeps", "advection", {accepted_measure: acceptedMeasure, maximum_measure: cfl, required_substeps: nextSubsteps, maximum_substeps: 512, stability_retries: stabilityRetries});
+      stabilityRetries += 1;
+      substeps = nextSubsteps;
+      dt = targetDt / substeps;
+    }
+    const evidence = {...this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps), stability_retries: stabilityRetries};
+    this.time += targetDt;
+    this.control = {...control, time: this.time};
+    this.revision += 1;
+    return {requestedDt: targetDt, advancedDt: targetDt, substeps, maxSpeed, stateRevision: this.revision, evidence, warnings: []};
   }
 
   public sampleVelocity(points: FloatArray): FloatArray { const scenario = this.requireScenario(); if (points.length % 2 !== 0) throw new RangeError("points must contain x/y pairs"); const velocity = cellVelocity(this.u, this.v, dimensions(scenario.domain).nx, dimensions(scenario.domain).ny, scenario.precision); const output = allocate(scenario.precision, points.length); for (let index = 0; index < points.length; index += 2) { const sampled = sampleCell(velocity, scenario.domain, points[index] ?? 0, points[index + 1] ?? 0); output[index] = sampled[0]; output[index + 1] = sampled[1]; } return output; }

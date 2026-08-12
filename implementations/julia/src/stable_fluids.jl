@@ -339,72 +339,98 @@ function advance!(
     diffusion_residual = zero(T)
     final_speed = maximum_speed
     accepted_measure = fluid_measure / T(substeps)
-    try
-        for substep in 1:substeps
-            fraction = T(substep) / T(substeps)
-            sub_control = ControlState(
-                start_time + fraction * target,
-                start_angle + fraction * (T(control.angle_degrees) - start_angle),
-                T(control.angular_velocity_degrees),
-            )
-            wall = wall_velocity_grid(geometry, scenario.domain, sub_control)
-            if solver.skew_rk2
-                solver.u, solver.v = advect_faces_skew_rk2(
-                    solver.u, solver.v, timestep, scenario.domain, solver.solid, wall,
-                    scenario.freestream,
+    stability_retries = 0
+    while true
+        try
+            for substep in 1:substeps
+                fraction = T(substep) / T(substeps)
+                sub_control = ControlState(
+                    start_time + fraction * target,
+                    start_angle + fraction * (T(control.angle_degrees) - start_angle),
+                    T(control.angular_velocity_degrees),
                 )
-                diffusion_residual = _diffuse_faces!(solver, viscosity, timestep)
-            elseif solver.face_advection
-                solver.u, solver.v = advect_faces(
-                    solver.u, solver.v, timestep, scenario.domain;
-                    maccormack = solver.maccormack,
+                wall = wall_velocity_grid(geometry, scenario.domain, sub_control)
+                if solver.skew_rk2
+                    solver.u, solver.v = advect_faces_skew_rk2(
+                        solver.u, solver.v, timestep, scenario.domain, solver.solid, wall,
+                        scenario.freestream,
+                    )
+                    diffusion_residual = _diffuse_faces!(solver, viscosity, timestep)
+                elseif solver.face_advection
+                    solver.u, solver.v = advect_faces(
+                        solver.u, solver.v, timestep, scenario.domain;
+                        maccormack = solver.maccormack,
+                    )
+                    diffusion_residual = _diffuse_faces!(solver, viscosity, timestep)
+                else
+                    velocity = advect_velocity(
+                        cell_velocity(solver), timestep, scenario.domain;
+                        maccormack = solver.maccormack,
+                    )
+                    velocity, diffusion_iterations, diffusion_residual,
+                        diffusion_converged = implicit_diffuse_velocity(
+                        velocity, viscosity, timestep, scenario.domain;
+                        tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
+                        max_iterations = option(scenario, "pressure_max_iterations", 640),
+                    )
+                    diffusion_converged || throw(NumericalFailure(
+                        :convergence_failure,
+                        "Stable Fluids implicit viscosity did not converge",
+                        :viscosity,
+                        Dict{String,Any}(
+                            "iterations" => diffusion_iterations,
+                            "tolerance" =>
+                                option(scenario, "pressure_tolerance", T(1.0e-5)),
+                            "final_residual" => diffusion_residual,
+                        ),
+                    ))
+                    solver.diffusion_iterations = diffusion_iterations
+                    solver.u, solver.v = cell_to_faces(velocity)
+                end
+                solver.control = sub_control
+                solver.solid = solid_mask(
+                    geometry, scenario.domain, sub_control.angle_degrees,
                 )
-                diffusion_residual = _diffuse_faces!(solver, viscosity, timestep)
-            else
-                velocity = advect_velocity(
-                    cell_velocity(solver), timestep, scenario.domain;
-                    maccormack = solver.maccormack,
-                )
-                velocity, diffusion_iterations, diffusion_residual, diffusion_converged =
-                    implicit_diffuse_velocity(
-                    velocity, viscosity, timestep, scenario.domain;
-                    tolerance = option(scenario, "pressure_tolerance", T(1.0e-5)),
-                    max_iterations = option(scenario, "pressure_max_iterations", 640),
-                )
-                diffusion_converged || throw(NumericalFailure(
-                    :convergence_failure,
-                    "Stable Fluids implicit viscosity did not converge",
-                    :viscosity,
-                    Dict{String,Any}(
-                        "iterations" => diffusion_iterations,
-                        "tolerance" => option(scenario, "pressure_tolerance", T(1.0e-5)),
-                        "final_residual" => diffusion_residual,
-                    ),
-                ))
-                solver.diffusion_iterations = diffusion_iterations
-                solver.u, solver.v = cell_to_faces(velocity)
+                pressure_residual = _project!(solver, timestep)
             end
-            solver.control = sub_control
-            solver.solid = solid_mask(geometry, scenario.domain, sub_control.angle_degrees)
-            pressure_residual = _project!(solver, timestep)
+            final_speed = _maximum_speed(cell_velocity(solver))
+            accepted_measure = solver.skew_rk2 ?
+                timestep * final_speed *
+                (inv(dx(scenario.domain)) + inv(dy(scenario.domain))) :
+                timestep * final_speed / spacing
+        catch
+            solver.u = copy(checkpoint[1])
+            solver.v = copy(checkpoint[2])
+            solver.solid = copy(checkpoint[3])
+            solver.control, solver.time, solver.projection_iterations,
+                solver.diffusion_iterations, solver.revision = checkpoint[4:end]
+            rethrow()
         end
-        final_speed = _maximum_speed(cell_velocity(solver))
-        accepted_measure = solver.skew_rk2 ?
-            timestep * final_speed * (inv(dx(scenario.domain)) + inv(dy(scenario.domain))) :
-            timestep * final_speed / spacing
-        accepted_measure <= cfl * (one(T) + T(1.0e-6)) || throw(NumericalFailure(
+        accepted_measure <= cfl * (one(T) + T(1.0e-6)) && break
+        next_substeps = max(
+            substeps + 1,
+            ceil(Int, T(1.05) * T(substeps) * accepted_measure / cfl),
+        )
+        solver.u = copy(checkpoint[1])
+        solver.v = copy(checkpoint[2])
+        solver.solid = copy(checkpoint[3])
+        solver.control, solver.time, solver.projection_iterations,
+            solver.diffusion_iterations, solver.revision = checkpoint[4:end]
+        next_substeps <= 512 || throw(NumericalFailure(
             :stability_limit,
-            "Stable Fluids post-step motion exceeded its transport envelope",
+            "Stable Fluids retry requires too many internal substeps",
             :advection,
             Dict{String,Any}(
                 "accepted_measure" => accepted_measure,
                 "maximum_measure" => cfl,
+                "required_substeps" => next_substeps,
+                "maximum_substeps" => 512,
+                "stability_retries" => stability_retries,
             ),
         ))
-    catch
-        solver.u, solver.v, solver.solid, solver.control, solver.time,
-            solver.projection_iterations, solver.diffusion_iterations, solver.revision = checkpoint
-        rethrow()
+        stability_retries += 1
+        substeps = next_substeps
+        timestep = target / T(substeps)
     end
     solver.time = T(control.time)
     solver.control = ControlState(
@@ -422,6 +448,7 @@ function advance!(
             "maximum_characteristic_displacement" =>
                 accepted_measure,
             "maximum_boundary_sweep" => sweep_cells / substeps,
+            "stability_retries" => stability_retries,
             "pressure_converged" => true,
             "pressure_iterations" => solver.projection_iterations,
             "pressure_relative_residual" => pressure_residual,

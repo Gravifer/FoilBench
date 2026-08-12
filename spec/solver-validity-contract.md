@@ -83,6 +83,30 @@ The solver still applies finite-state, convergence, and geometric
 postconditions; it simply must not present the result as valid evidence of
 moving-wall physics.
 
+### Recoverable substep-planning misses
+
+An initial substep count is a prediction made from the last completed state.
+If a tentative finite step later shows that this prediction was too small for
+the active transport or swept-motion envelope, the solver must first treat
+that condition as a recoverable planning miss. It must roll back the tentative
+attempt, deterministically increase the substep count, and retry the same
+requested physical interval and control endpoint within a finite work budget.
+
+Every discarded attempt restores all public and private solver state,
+including time, control, fields, particles, populations, iterative-solver
+history, RNG state, and state revision. A successful retry commits exactly
+once and reports the total substeps used by the accepted attempt plus
+`stability_retries`, the number of discarded planning attempts. The retry may
+not damp the requested pose or angular velocity, shorten the requested
+interval, or publish an intermediate revision.
+
+The operation may still fail atomically with `stability_limit` when the
+increased plan exceeds the declared internal-substep ceiling or retry budget.
+Non-finite state, an impossible initial motion estimate, and failures unrelated
+to substep planning remain classified failures rather than automatic retries.
+This requirement does not weaken any accepted-step envelope: only the final
+committed attempt may be reported as successful.
+
 ## Iterative methods
 
 Every iterative solve has a finite iteration bound and reports or internally
@@ -113,6 +137,7 @@ must make the following evidence available to conformance and benchmark code:
 
 - requested and advanced physical interval;
 - internal substep count;
+- discarded stability-planning retry count;
 - maximum represented fluid speed;
 - maximum moving-wall or geometry-sweep speed when nonzero;
 - the relevant maximum CFL or lattice Mach measure;
