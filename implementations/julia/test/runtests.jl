@@ -1886,7 +1886,8 @@ end
     @test sensitivity["initial_wake_rms_difference"] > 0
     @test sensitivity["initialization"]["reference_import_status"] == "accepted"
     @test sensitivity["initialization"]["perturbed_import_status"] == "accepted"
-    @test sensitivity["initialization"]["authoritative_angle_degrees"] == 25.0
+    @test sensitivity["initialization"]["authoritative_angle_degrees"] ==
+          selected.angle_degrees
     @test sensitivity["amplification"] > 0
     @test length(sensitivity["times"]) == length(sensitivity["wake_rms_differences"])
     @test all(isfinite, sensitivity["wake_rms_differences"])
