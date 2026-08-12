@@ -596,9 +596,14 @@ end
         mac_positions, mac_velocity, periodic, fallback_u, fallback_v,
     )
     mac_gathered = faces_to_particle(mac_u, mac_v, mac_positions, periodic)
+    mac_gathered_in_place = fill(Float32(NaN), size(mac_velocity))
+    @test faces_to_particle!(
+        mac_gathered_in_place, mac_u, mac_v, mac_positions, periodic,
+    ) === mac_gathered_in_place
     @test mac_u ≈ fallback_u atol = 1.0f-6
     @test mac_v ≈ fallback_v atol = 1.0f-6
     @test mac_gathered ≈ mac_velocity atol = 1.0f-6
+    @test mac_gathered_in_place ≈ mac_gathered atol = 1.0f-6
     @test mac_u[1, :] == mac_u[end, :]
     @test mac_v[:, 1] == mac_v[:, end]
     @test 0 <= unsupported < 1

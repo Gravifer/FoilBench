@@ -30,6 +30,8 @@ mutable struct PicFlipSolver{T<:AbstractFloat} <: AbstractFlowSolver{2,T}
     unsupported_face_fraction::T
     native_divergence_linf::T
     native_solid_leakage::T
+    pic_velocity_scratch::Matrix{T}
+    delta_scratch::Matrix{T}
     revision::Int
 end
 
@@ -58,6 +60,8 @@ function PicFlipSolver(::Type{T} = Float32) where {T<:AbstractFloat}
         zero(T),
         T(NaN),
         T(NaN),
+        Matrix{T}(undef, 2, 0),
+        Matrix{T}(undef, 2, 0),
         0,
     )
 end
@@ -616,6 +620,11 @@ function _advance_pic_once!(
     particle_speed = maximum_speed
     maximum_particle_cfl = timestep * transport_speed /
         min(dx(scenario.domain), dy(scenario.domain))
+    particle_count = size(solver.positions, 2)
+    size(solver.pic_velocity_scratch, 2) == particle_count ||
+        (solver.pic_velocity_scratch = Matrix{T}(undef, 2, particle_count))
+    size(solver.delta_scratch, 2) == particle_count ||
+        (solver.delta_scratch = Matrix{T}(undef, 2, particle_count))
     try
         solver.reseeded_last_step = 0
         solver.swept_collisions_last_step = 0
@@ -669,14 +678,15 @@ function _advance_pic_once!(
                 solver, diffused_u, diffused_v, sub_control, timestep,
             )
             solver.grid_velocity = faces_to_cell(projected_u, projected_v)
-            pic_velocity = faces_to_particle(
+            pic_velocity = faces_to_particle!(
+                solver.pic_velocity_scratch,
                 projected_u, projected_v, solver.positions, scenario.domain,
             )
-            delta = faces_to_particle(
-                projected_u .- before_projection_u,
-                projected_v .- before_projection_v,
-                solver.positions,
-                scenario.domain,
+            before_projection_u .= projected_u .- before_projection_u
+            before_projection_v .= projected_v .- before_projection_v
+            delta = faces_to_particle!(
+                solver.delta_scratch,
+                before_projection_u, before_projection_v, solver.positions, scenario.domain,
             )
             blend = solver.settling_steps > 0 ? zero(T) : solver.blend
             solver.particle_velocity .= (one(T) - blend) .* pic_velocity .+

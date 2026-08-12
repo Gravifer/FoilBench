@@ -94,6 +94,7 @@ export lbm_scaling
 export lbm_trt_collision
 export grid_to_particle
 export faces_to_particle
+export faces_to_particle!
 export particle_cell_counts
 export particle_cell_ids
 export particle_to_grid

@@ -159,7 +159,8 @@ function _scatter_face_component(
     return output, unsupported
 end
 
-function _gather_face_component(
+function _gather_face_component!(
+    output::AbstractVector{T},
     field::AbstractMatrix{T},
     positions::AbstractMatrix{T},
     domain::DomainSpec{2,T},
@@ -173,7 +174,8 @@ function _gather_face_component(
     periodic_y = :y in domain.periodic_axes
     unique_width = duplicate_x ? width - 1 : width
     unique_height = duplicate_y ? height - 1 : height
-    output = Vector{T}(undef, size(positions, 2))
+    length(output) == size(positions, 2) ||
+        throw(DimensionMismatch("face gather output has the wrong length"))
     Threads.@threads :static for particle in axes(positions, 2)
         gx = (positions[1, particle] - domain.bounds[1][1]) / dx(domain) + gx_offset
         gy = (positions[2, particle] - domain.bounds[2][1]) / dy(domain) + gy_offset
@@ -200,6 +202,21 @@ function _gather_face_component(
     return output
 end
 
+function _gather_face_component(
+    field::AbstractMatrix{T},
+    positions::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+    gx_offset::T,
+    gy_offset::T,
+    duplicate_x::Bool,
+    duplicate_y::Bool,
+) where {T<:AbstractFloat}
+    output = Vector{T}(undef, size(positions, 2))
+    return _gather_face_component!(
+        output, field, positions, domain, gx_offset, gy_offset, duplicate_x, duplicate_y,
+    )
+end
+
 function particle_to_faces(
     positions::AbstractMatrix{T},
     velocities::AbstractMatrix{T},
@@ -220,7 +237,8 @@ function particle_to_faces(
     return u, v, unsupported_fraction
 end
 
-function faces_to_particle(
+function faces_to_particle!(
+    output::AbstractMatrix{T},
     u::AbstractMatrix{T},
     v::AbstractMatrix{T},
     positions::AbstractMatrix{T},
@@ -228,14 +246,28 @@ function faces_to_particle(
 ) where {T<:AbstractFloat}
     size(u) == (nx(domain) + 1, ny(domain)) || throw(DimensionMismatch("invalid u faces"))
     size(v) == (nx(domain), ny(domain) + 1) || throw(DimensionMismatch("invalid v faces"))
-    output = Matrix{T}(undef, 2, size(positions, 2))
-    output[1, :] .= _gather_face_component(
-        u, positions, domain, zero(T), T(-0.5), :x in domain.periodic_axes, false,
+    size(output) == (2, size(positions, 2)) ||
+        throw(DimensionMismatch("particle gather output has the wrong shape"))
+    _gather_face_component!(
+        view(output, 1, :), u, positions, domain,
+        zero(T), T(-0.5), :x in domain.periodic_axes, false,
     )
-    output[2, :] .= _gather_face_component(
-        v, positions, domain, T(-0.5), zero(T), false, :y in domain.periodic_axes,
+    _gather_face_component!(
+        view(output, 2, :), v, positions, domain,
+        T(-0.5), zero(T), false, :y in domain.periodic_axes,
     )
     return output
+end
+
+
+function faces_to_particle(
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    positions::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+) where {T<:AbstractFloat}
+    output = Matrix{T}(undef, 2, size(positions, 2))
+    return faces_to_particle!(output, u, v, positions, domain)
 end
 
 function particle_cell_ids(
