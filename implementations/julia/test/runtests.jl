@@ -456,6 +456,17 @@ end
     )
     @test skew_u ≈ u atol = 1.0f-6
     @test skew_v ≈ v atol = 1.0f-6
+
+    cancellation_u = Matrix{Float32}(undef, 5, 4)
+    for j in axes(cancellation_u, 2), i in axes(cancellation_u, 1)
+        cancellation_u[i, j] = isodd(i) ? 2.0f0 : -2.0f0
+    end
+    cancellation_v = zeros(Float32, 4, 5)
+    cancellation_domain = DomainSpec(((0.0f0, 2.0f0), (-1.0f0, 1.0f0)), (4, 4), ())
+    @test faces_to_cell(cancellation_u, cancellation_v) ≈ zeros(Float32, 4, 4, 2)
+    @test FoilBenchJulia.skew_face_advection_rate(
+        cancellation_u, cancellation_v, cancellation_domain,
+    ) ≈ 4.0f0
 end
 
 @testset "Stable Fluids solver contract" begin

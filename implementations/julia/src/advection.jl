@@ -198,6 +198,23 @@ function _skew_symmetric_convection(
         T(0.5) .* (advective_v .+ conservative_v)
 end
 
+function skew_face_advection_rate(
+    u::AbstractMatrix{T},
+    v::AbstractMatrix{T},
+    domain::DomainSpec{2,T},
+) where {T<:AbstractFloat}
+    cell = faces_to_cell(u, v)
+    v_on_u, u_on_v = cell_to_faces(cell[:, :, [2, 1]])
+    selected = zero(T)
+    for index in eachindex(u, v_on_u)
+        selected = max(selected, abs(u[index]) / dx(domain) + abs(v_on_u[index]) / dy(domain))
+    end
+    for index in eachindex(v, u_on_v)
+        selected = max(selected, abs(u_on_v[index]) / dx(domain) + abs(v[index]) / dy(domain))
+    end
+    return selected
+end
+
 function advect_faces_skew_rk2(
     u::AbstractMatrix{T},
     v::AbstractMatrix{T},

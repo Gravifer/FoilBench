@@ -306,9 +306,10 @@ function advance!(
     wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius
     sweep_cells = abs(deg2rad(T(control.angle_degrees) - solver.control.angle_degrees)) *
         maximum_radius / spacing
-    fluid_measure = solver.skew_rk2 ?
-        target * maximum_speed * (inv(dx(scenario.domain)) + inv(dy(scenario.domain))) :
-        target * maximum_speed / spacing
+    advective_rate = solver.skew_rk2 ?
+        skew_face_advection_rate(solver.u, solver.v, scenario.domain) :
+        maximum_speed / spacing
+    fluid_measure = target * advective_rate
     required = max(
         T(1.05) * fluid_measure / cfl,
         target * wall_speed / (cfl * spacing),
@@ -394,10 +395,10 @@ function advance!(
                 pressure_residual = _project!(solver, timestep)
             end
             final_speed = _maximum_speed(cell_velocity(solver))
-            accepted_measure = solver.skew_rk2 ?
-                timestep * final_speed *
-                (inv(dx(scenario.domain)) + inv(dy(scenario.domain))) :
-                timestep * final_speed / spacing
+            advective_rate = solver.skew_rk2 ?
+                skew_face_advection_rate(solver.u, solver.v, scenario.domain) :
+                final_speed / spacing
+            accepted_measure = timestep * advective_rate
         catch
             solver.u = copy(checkpoint[1])
             solver.v = copy(checkpoint[2])
@@ -447,6 +448,7 @@ function advance!(
             "maximum_wall_speed" => wall_speed,
             "maximum_characteristic_displacement" =>
                 accepted_measure,
+            "maximum_advective_rate" => advective_rate,
             "maximum_boundary_sweep" => sweep_cells / substeps,
             "stability_retries" => stability_retries,
             "pressure_converged" => true,

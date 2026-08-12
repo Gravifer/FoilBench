@@ -149,6 +149,16 @@ export class StableFluidsSolver implements FlowSolver {
     const scenario = this.requireScenario(); const first = this.skewConvectionFaces(this.u, this.v); const midpointU = allocate(scenario.precision, this.u.length); const midpointV = allocate(scenario.precision, this.v.length); for (let index = 0; index < this.u.length; index += 1) midpointU[index] = (this.u[index] ?? 0) - 0.5 * dt * (first.u[index] ?? 0); for (let index = 0; index < this.v.length; index += 1) midpointV[index] = (this.v[index] ?? 0) - 0.5 * dt * (first.v[index] ?? 0); this.applyDomainBoundaries(midpointU, midpointV); this.enforceSolidFacesOn(midpointU, midpointV, control); const second = this.skewConvectionFaces(midpointU, midpointV); const outputU = allocate(scenario.precision, this.u.length); const outputV = allocate(scenario.precision, this.v.length); for (let index = 0; index < this.u.length; index += 1) outputU[index] = (this.u[index] ?? 0) - dt * (second.u[index] ?? 0); for (let index = 0; index < this.v.length; index += 1) outputV[index] = (this.v[index] ?? 0) - dt * (second.v[index] ?? 0); this.applyDomainBoundaries(outputU, outputV); this.enforceSolidFacesOn(outputU, outputV, control); return {u: outputU, v: outputV};
   }
 
+  private skewFaceAdvectionRate(u: FloatArray, v: FloatArray): number {
+    const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain);
+    const cellU = allocate(scenario.precision, nx * ny); const cellV = allocate(scenario.precision, nx * ny);
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { cellU[y * nx + x] = 0.5 * ((u[y * (nx + 1) + x] ?? 0) + (u[y * (nx + 1) + x + 1] ?? 0)); cellV[y * nx + x] = 0.5 * ((v[y * nx + x] ?? 0) + (v[(y + 1) * nx + x] ?? 0)); }
+    let selected = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x <= nx; x += 1) { const cross = x === 0 ? cellV[y * nx] ?? 0 : x === nx ? cellV[y * nx + nx - 1] ?? 0 : 0.5 * ((cellV[y * nx + x - 1] ?? 0) + (cellV[y * nx + x] ?? 0)); selected = Math.max(selected, Math.abs(u[y * (nx + 1) + x] ?? 0) / dx + Math.abs(cross) / dy); }
+    for (let y = 0; y <= ny; y += 1) for (let x = 0; x < nx; x += 1) { const cross = y === 0 ? cellU[x] ?? 0 : y === ny ? cellU[(ny - 1) * nx + x] ?? 0 : 0.5 * ((cellU[(y - 1) * nx + x] ?? 0) + (cellU[y * nx + x] ?? 0)); selected = Math.max(selected, Math.abs(cross) / dx + Math.abs(v[y * nx + x] ?? 0) / dy); }
+    return selected;
+  }
+
   private diffuse(velocity: FloatArray, dt: number): FloatArray {
     const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const speed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), 1); const viscosity = speed * scenario.foil.chord / this.reynolds; const ax = viscosity * dt / (dx * dx); const ay = viscosity * dt / (dy * dy); if (ax + ay < 1e-8) { this.lastViscosity = emptyIteration(); return velocity; } const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); let current: FloatArray = allocate(scenario.precision, velocity.length); current.set(velocity); let next: FloatArray = allocate(scenario.precision, velocity.length); const sample = (field: FloatArray, x: number, y: number, component: number): number => { const sx = periodicX ? (x + nx) % nx : Math.max(0, Math.min(nx - 1, x)); const sy = periodicY ? (y + ny) % ny : Math.max(0, Math.min(ny - 1, y)); return field[2 * (sy * nx + sx) + component] ?? 0; };
     const tolerance = scenario.solverOptions.pressureTolerance ?? 1e-5; let converged = false; let performed = 0; let finalResidual = Number.POSITIVE_INFINITY;
@@ -254,7 +264,7 @@ export class StableFluidsSolver implements FlowSolver {
     const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord;
     const spacing = Math.min(dx, dy);
     const sweepCells = scenario.foil.chord * Math.abs(angleDelta) * Math.PI / (180 * spacing);
-    const fluidRate = this.transportMode === "skew-rk2" ? maxSpeed * (1 / dx + 1 / dy) : maxSpeed / spacing;
+    let fluidRate = this.transportMode === "skew-rk2" ? this.skewFaceAdvectionRate(this.u, this.v) : maxSpeed / spacing;
     const required = Math.max(targetDt * fluidRate / cfl, targetDt * wallSpeed / (cfl * spacing), sweepCells / cfl);
     let substeps = Math.max(1, Math.ceil(required));
     if (substeps > 512) throw new NumericalFailure("stability_limit", "stable-fluids motion requires too many internal substeps", this.transportMode === "skew-rk2" ? "advection" : "boundary", {required_substeps: substeps, maximum_substeps: 512, maximum_fluid_speed: maxSpeed, maximum_wall_speed: wallSpeed, boundary_sweep_cells: sweepCells});
@@ -272,7 +282,8 @@ export class StableFluidsSolver implements FlowSolver {
         const updated = cellVelocity(this.u, this.v, nx, ny, scenario.precision);
         maxSpeed = 0;
         for (let index = 0; index < updated.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(updated[index] ?? 0, updated[index + 1] ?? 0));
-        acceptedMeasure = this.transportMode === "skew-rk2" ? dt * maxSpeed * (1 / dx + 1 / dy) : dt * maxSpeed / spacing;
+        fluidRate = this.transportMode === "skew-rk2" ? this.skewFaceAdvectionRate(this.u, this.v) : maxSpeed / spacing;
+        acceptedMeasure = dt * fluidRate;
       } catch (error) {
         this.restore(saved);
         throw error;
@@ -285,7 +296,7 @@ export class StableFluidsSolver implements FlowSolver {
       substeps = nextSubsteps;
       dt = targetDt / substeps;
     }
-    const evidence = {...this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps), stability_retries: stabilityRetries};
+      const evidence = {...this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps), maximum_advective_rate: fluidRate, stability_retries: stabilityRetries};
     this.time += targetDt;
     this.control = {...control, time: this.time};
     this.revision += 1;

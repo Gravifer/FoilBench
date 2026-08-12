@@ -16,6 +16,7 @@ from foilbench_py.core.grid import (
     implicit_diffuse_faces,
     native_divergence_linf,
     project_faces,
+    skew_face_advection_rate,
     solid_face_leakage,
 )
 from foilbench_py.core.interpolation import sample_vector
@@ -337,11 +338,12 @@ class StableFluidsSolver:
             * geometry.maximum_radius
             / spacing
         )
-        fluid_measure = (
-            target_dt * max_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+        advective_rate = (
+            skew_face_advection_rate(current_u, current_v, scenario.domain)
             if self._skew_rk2
-            else target_dt * max_speed / spacing
+            else max_speed / spacing
         )
+        fluid_measure = target_dt * advective_rate
         required = max(
             1.05 * fluid_measure / cfl,
             target_dt * wall_speed / (cfl * spacing),
@@ -479,11 +481,13 @@ class StableFluidsSolver:
                         "postcondition",
                     )
                 final_speed = float(np.max(np.linalg.norm(final_velocity, axis=2)))
-                accepted_measure = (
-                    dt * final_speed * (1.0 / scenario.domain.dx + 1.0 / scenario.domain.dy)
+                _, _, final_u, final_v, _ = self._require()
+                advective_rate = (
+                    skew_face_advection_rate(final_u, final_v, scenario.domain)
                     if self._skew_rk2
-                    else dt * final_speed / spacing
+                    else final_speed / spacing
                 )
+                accepted_measure = dt * advective_rate
             except Exception:
                 restore_checkpoint()
                 raise
@@ -543,6 +547,7 @@ class StableFluidsSolver:
                 "maximum_fluid_speed": final_speed,
                 "maximum_wall_speed": wall_speed,
                 "maximum_characteristic_displacement": accepted_measure,
+                "maximum_advective_rate": advective_rate,
                 "maximum_boundary_sweep": sweep_cells / substeps,
                 "stability_retries": stability_retries,
                 "pressure_converged": True,

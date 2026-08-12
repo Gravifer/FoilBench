@@ -403,6 +403,18 @@ def _cross_velocity_on_faces(
     return v_on_u, u_on_v
 
 
+def skew_face_advection_rate(
+    u: FaceVelocityX,
+    v: FaceVelocityY,
+    domain: DomainSpec,
+) -> float:
+    """Return the native staggered-grid rate used by the skew-RK2 CFL."""
+    v_on_u, u_on_v = _cross_velocity_on_faces(u, v)
+    u_rate = np.abs(u) / domain.dx + np.abs(v_on_u) / domain.dy
+    v_rate = np.abs(u_on_v) / domain.dx + np.abs(v) / domain.dy
+    return max(float(np.max(u_rate)), float(np.max(v_rate)))
+
+
 def _skew_symmetric_convection(
     u: FaceVelocityX,
     v: FaceVelocityY,

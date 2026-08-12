@@ -9,10 +9,12 @@ from foilbench_py.core.grid import (
     apply_domain_boundaries,
     cell_to_faces,
     enforce_solid_faces,
+    faces_to_cell,
     implicit_diffuse_faces,
     local_velocity_bounds,
     project_faces,
     rk2_backtrace,
+    skew_face_advection_rate,
 )
 from foilbench_py.core.models import DomainSpec, NumericalFailure
 from foilbench_py.types import FaceVelocityX, FaceVelocityY, ScalarField
@@ -158,6 +160,17 @@ def test_face_advection_preserves_constant_mac_velocity() -> None:
 
     np.testing.assert_allclose(advected_u, u)
     np.testing.assert_allclose(advected_v, v)
+
+
+def test_skew_cfl_uses_native_faces_when_cell_averages_cancel() -> None:
+    domain = DomainSpec(2, ((0.0, 2.0), (-1.0, 1.0)), (4, 4))
+    u = np.empty((4, 5), dtype=np.float32)
+    u[:, 0::2] = 2.0
+    u[:, 1::2] = -2.0
+    v = np.zeros((5, 4), dtype=np.float32)
+
+    np.testing.assert_allclose(faces_to_cell(u, v), 0.0)
+    assert skew_face_advection_rate(u, v, domain) == pytest.approx(4.0)
 
 
 def test_skew_rk2_advection_preserves_constant_mac_velocity() -> None:
