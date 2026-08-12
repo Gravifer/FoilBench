@@ -335,12 +335,13 @@ class LBMSolver:
         self,
         target_dt: float,
         maximum_physical_speed: float,
+        minimum_substeps: int = 1,
     ) -> int:
         scenario, _, populations, _ = self._require()
         del populations
         selected_maximum = max(maximum_physical_speed, self._reference_speed)
         substeps = max(
-            1,
+            minimum_substeps,
             int(
                 np.ceil(
                     target_dt
@@ -637,7 +638,13 @@ class LBMSolver:
         self._f = streamed
         self._control = control
 
-    def advance(self, control: ControlState, target_dt: float) -> StepReport:
+    def _advance_once(
+        self,
+        control: ControlState,
+        target_dt: float,
+        minimum_substeps: int,
+        stability_retries: int,
+    ) -> StepReport:
         scenario, geometry, populations, solid = self._require()
         validate_advance_request(self._time, control, target_dt, scenario.precision)
         if not np.isfinite(populations).all():
@@ -692,6 +699,7 @@ class LBMSolver:
             substeps = self._configure_temporal_scaling(
                 target_dt,
                 1.25 * maximum_physical_speed,
+                minimum_substeps,
             )
             for substep in range(substeps):
                 fraction = (substep + 1) / substeps
@@ -770,6 +778,7 @@ class LBMSolver:
                     {
                         "maximum_lattice_mach": maximum_mach,
                         "maximum_lattice_mach_limit": self._MAXIMUM_MACH,
+                        "attempted_substeps": substeps,
                     },
                 )
         except Exception:
@@ -814,7 +823,7 @@ class LBMSolver:
             self._revision,
             {
                 "maximum_fluid_speed": max_speed,
-                "stability_retries": 0,
+                "stability_retries": stability_retries,
                 "maximum_wall_speed": wall_speed,
                 "maximum_geometry_sweep_speed": sweep_speed,
                 "maximum_lattice_mach": maximum_mach,
@@ -829,6 +838,42 @@ class LBMSolver:
                 and abs(control.angle_degrees - start_angle) > 1.0e-9,
             },
         )
+
+    def advance(self, control: ControlState, target_dt: float) -> StepReport:
+        minimum_substeps = 1
+        for stability_retries in range(4):
+            try:
+                return self._advance_once(
+                    control,
+                    target_dt,
+                    minimum_substeps,
+                    stability_retries,
+                )
+            except NumericalFailure as error:
+                if (
+                    error.reason != "excessive_velocity"
+                    or error.stage != "postcondition"
+                    or stability_retries == 3
+                ):
+                    raise
+                attempted = int(error.evidence.get("attempted_substeps", 0))
+                observed = float(error.evidence.get("maximum_lattice_mach", 0.0))
+                if attempted < 1 or not np.isfinite(observed) or observed <= 0.0:
+                    raise
+                minimum_substeps = max(
+                    attempted + 1,
+                    int(
+                        np.ceil(
+                            attempted
+                            * observed
+                            / self._MAXIMUM_MACH
+                            * 1.05
+                        )
+                    ),
+                )
+                if minimum_substeps > self._MAXIMUM_SUBSTEPS:
+                    raise
+        raise RuntimeError("unreachable LBM stability retry state")
 
     def sample_velocity(self, points: PointCloud) -> PointCloud:
         scenario, _, _, _ = self._require()

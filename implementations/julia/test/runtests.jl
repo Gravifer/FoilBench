@@ -1097,6 +1097,25 @@ end
     @test pic_report.evidence["maximum_particle_cfl"] <=
         option(pic_scenario, "pic_cfl", 0.75) * (1 + 1.0e-6)
     @test all(isfinite, export_state(pic_solver).velocity)
+
+    lbm_case = retry_fixture.planning_retry_cases["lbm-d2q9"]
+    lbm_scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(lbm_case.scenario)))
+    lbm_solver = LBMSolver(Float32)
+    restart!(
+        lbm_solver,
+        lbm_scenario,
+        NacaFoil(lbm_scenario.foil),
+        lbm_scenario.seed,
+        RestartState(0.0f0, Float32(lbm_case.angle_degrees), lbm_scenario.reynolds),
+    )
+    lbm_report = advance!(
+        lbm_solver,
+        ControlState(lbm_scenario.output_dt, Float32(lbm_case.angle_degrees), 0.0f0),
+        lbm_scenario.output_dt,
+    )
+    @test lbm_report.evidence["stability_retries"] >=
+        lbm_case.minimum_total_stability_retries
+    @test lbm_report.evidence["maximum_lattice_mach"] <= 0.08 * (1 + 1.0e-6)
 end
 
 @testset "Headless viewer model and worker" begin

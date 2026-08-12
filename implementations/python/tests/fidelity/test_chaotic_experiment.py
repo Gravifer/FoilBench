@@ -5,6 +5,7 @@ from typing import cast
 import numpy as np
 
 from foilbench_py.core.geometry import NacaFoil
+from foilbench_py.core.models import ControlState, RestartState
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver
 
@@ -64,3 +65,33 @@ def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
     configured_cfl = cast(float, scenario.solver_options["pic_cfl"])
     assert maximum_particle_cfl <= configured_cfl * (1.0 + 1.0e-6)
     assert np.isfinite(solver.export_state().velocity).all()
+
+
+def test_full_size_lbm_startup_retries_a_stale_mach_plan() -> None:
+    root = find_repo_root(Path(__file__))
+    fixture = cast(
+        dict[str, object],
+        json.loads(
+            (root / "spec" / "conformance" / "solver-validity.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    retry_case = cast(
+        dict[str, object],
+        cast(dict[str, object], fixture["planning_retry_cases"])["lbm-d2q9"],
+    )
+    scenario = load_scenario(root / str(retry_case["scenario"]))
+    solver = create_solver("lbm-d2q9")
+    angle = float(cast(float, retry_case["angle_degrees"]))
+    solver.restart(
+        scenario,
+        NacaFoil(scenario.foil),
+        scenario.seed,
+        RestartState(0.0, angle, scenario.reynolds),
+    )
+    report = solver.advance(ControlState(scenario.output_dt, angle, 0.0), scenario.output_dt)
+    assert int(report.evidence["stability_retries"]) >= int(
+        cast(int, retry_case["minimum_total_stability_retries"])
+    )
+    assert float(report.evidence["maximum_lattice_mach"]) <= 0.08 * (1.0 + 1.0e-6)

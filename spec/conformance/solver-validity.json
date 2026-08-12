@@ -92,6 +92,13 @@
       "duration": 0.016666666666666666,
       "expected_steps": 1,
       "minimum_total_stability_retries": 0
+    },
+    "lbm-d2q9": {
+      "scenario": "scenarios/airfoil/default.json",
+      "angle_degrees": 14.0,
+      "duration": 0.016666666666666666,
+      "expected_steps": 1,
+      "minimum_total_stability_retries": 1
     }
   }
 }

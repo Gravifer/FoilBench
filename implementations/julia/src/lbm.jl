@@ -273,11 +273,12 @@ function _lbm_configure_temporal_scaling!(
     solver::LBMSolver{T},
     target_dt::T,
     maximum_physical_speed::T,
+    minimum_substeps::Int = 1,
 ) where {T}
     scenario, _ = _lbm_require(solver)
     selected_maximum = max(maximum_physical_speed, solver.reference_speed)
     substeps = max(
-        1,
+        minimum_substeps,
         ceil(Int, target_dt * selected_maximum /
             (T(LBM_MAXIMUM_LATTICE_SPEED) * dx(scenario.domain)) - T(1.0e-12)),
     )
@@ -518,7 +519,13 @@ function _lbm_step!(solver::LBMSolver{T}, control::ControlState) where {T}
     return nothing
 end
 
-function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) where {T}
+function _advance_lbm_once!(
+    solver::LBMSolver{T},
+    control::ControlState,
+    target_dt::Real,
+    minimum_substeps::Int,
+    stability_retries::Int,
+) where {T}
     scenario, geometry = _lbm_require(solver)
     target = validate_advance_request(solver.time, control, target_dt)
     all(isfinite, solver.populations) || throw(NumericalFailure(
@@ -548,7 +555,7 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
     start_angle = solver.control.angle_degrees
     try
         substeps = _lbm_configure_temporal_scaling!(
-            solver, target, T(1.25) * maximum_physical_speed,
+            solver, target, T(1.25) * maximum_physical_speed, minimum_substeps,
         )
         for substep in 1:substeps
             fraction = T(substep) / T(substeps)
@@ -601,6 +608,7 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
                 Dict{String,Any}(
                     "maximum_lattice_mach" => maximum_mach,
                     "maximum_lattice_mach_limit" => LBM_MAXIMUM_MACH,
+                    "attempted_substeps" => substeps,
                 ),
             ))
     catch
@@ -624,7 +632,7 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
         target, target, substeps, maximum_speed, warnings, solver.revision,
         Dict{String,Any}(
             "maximum_fluid_speed" => maximum_speed,
-            "stability_retries" => 0,
+            "stability_retries" => stability_retries,
             "maximum_physical_speed" => maximum_speed,
             "maximum_wall_speed" => wall_speed,
             "maximum_geometry_sweep_speed" => sweep_speed,
@@ -643,6 +651,36 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
                 abs(T(control.angle_degrees) - checkpoint[6].angle_degrees) > T(1.0e-9),
         ),
     )
+end
+
+function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) where {T}
+    minimum_substeps = 1
+    for stability_retries in 0:3
+        try
+            return _advance_lbm_once!(
+                solver,
+                control,
+                target_dt,
+                minimum_substeps,
+                stability_retries,
+            )
+        catch error
+            retryable = error isa NumericalFailure &&
+                error.reason == :excessive_velocity &&
+                error.stage == :postcondition &&
+                stability_retries < 3
+            retryable || rethrow()
+            attempted = Int(get(error.evidence, "attempted_substeps", 0))
+            observed = T(get(error.evidence, "maximum_lattice_mach", zero(T)))
+            attempted >= 1 && isfinite(observed) && observed > zero(T) || rethrow()
+            minimum_substeps = max(
+                attempted + 1,
+                ceil(Int, attempted * observed / T(LBM_MAXIMUM_MACH) * T(1.05)),
+            )
+            minimum_substeps <= LBM_MAXIMUM_SUBSTEPS || rethrow()
+        end
+    end
+    error("unreachable LBM stability retry state")
 end
 
 function sample_velocity(solver::LBMSolver{T}, points::AbstractMatrix{T}) where {T}
