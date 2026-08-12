@@ -14,6 +14,7 @@
     "src/solvers/**/*.ts",
     "src/benchmark/types.ts",
     "src/benchmark/runner.ts",
+    "src/benchmark/startupGate.ts",
     "src/benchmark/previewGate.ts",
     "src/benchmark/warmSwitchGate.ts",
     "src/benchmark/scheduledGate.ts",

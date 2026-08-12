@@ -41,6 +41,11 @@ try {
             'ruff', 'check', 'implementations/python', 'tools/generate_conformance.py'
         )
         if ($Representative) {
+            Write-Host '==> Python: 160x96 startup gate'
+            Invoke-Checked uv @(
+                'run', '--project', 'implementations/python', 'python',
+                'implementations/python/benchmark/startup_gate.py'
+            )
             Write-Host '==> Python: 160x96 preview gate'
             Invoke-Checked uv @(
                 'run', '--project', 'implementations/python', 'python',
@@ -79,6 +84,12 @@ try {
             '-e', 'using Pkg; Pkg.test()'
         )
         if ($Representative) {
+            Write-Host '==> Julia: 160x96 startup gate'
+            Invoke-Checked julia @(
+                '--threads=auto', '--startup-file=no', '--history-file=no',
+                '--project=implementations/julia',
+                'implementations/julia/benchmark/startup_gate.jl'
+            )
             Write-Host '==> Julia: 160x96 preview gate'
             Invoke-Checked julia @(
                 '--threads=auto', '--startup-file=no', '--history-file=no',
@@ -119,6 +130,8 @@ try {
             Write-Host '==> TypeScript: Chromium viewer smoke test'
             Invoke-Checked npm @('run', 'test:browser')
             if ($Representative) {
+                Write-Host '==> TypeScript: 160x96 startup gate'
+                Invoke-Checked npm @('run', 'gate:startup')
                 Write-Host '==> TypeScript: 160x96 preview gate'
                 Invoke-Checked npm @('run', 'gate:preview')
                 Write-Host '==> TypeScript: 160x96 warm-switch gate'
@@ -130,6 +143,13 @@ try {
         finally {
             Pop-Location
         }
+    }
+
+    if ($Representative -and $Python -and $Julia -and $TypeScript) {
+        Write-Host '==> Revision 4: cross-language artifacts and chaotic extension'
+        Invoke-Checked pwsh @(
+            '-NoProfile', '-File', 'tools/revision4_acceptance.ps1'
+        )
     }
 }
 finally {

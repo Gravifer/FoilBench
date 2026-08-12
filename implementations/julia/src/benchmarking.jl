@@ -672,10 +672,33 @@ function _assert_complete_benchmark_matrices(results::Vector{Dict{String,Any}})
     return nothing
 end
 
-function format_benchmark_comparison(directory::AbstractString; require_complete::Bool = false)
+function _assert_required_benchmark_languages(
+    results::Vector{Dict{String,Any}},
+    required_languages::Vector{String},
+)
+    isempty(required_languages) && throw(ArgumentError("required languages must be non-empty"))
+    length(Set(required_languages)) == length(required_languages) ||
+        throw(ArgumentError("required languages must be unique"))
+    expected = Set(required_languages)
+    observed = Set(String(result["language"]) for result in results)
+    expected == observed || throw(ArgumentError(
+        "benchmark producer roster mismatch: " *
+        "missing=$(sort!(collect(setdiff(expected, observed)))) " *
+        "extra=$(sort!(collect(setdiff(observed, expected))))",
+    ))
+    return nothing
+end
+
+function format_benchmark_comparison(
+    directory::AbstractString;
+    require_complete::Bool = false,
+    required_languages::Vector{String} = String[],
+)
     results = collect_benchmark_results(directory)
     isempty(results) && return "No benchmark result JSON files found."
     _assert_matched_benchmark_identities(results)
+    isempty(required_languages) ||
+        _assert_required_benchmark_languages(results, required_languages)
     require_complete && _assert_complete_benchmark_matrices(results)
     header = rpad("language", 12) * rpad("solver", 20) * lpad("median ms", 12) *
         lpad("p95 ms", 12) * lpad("sim/wall", 12) * lpad("success", 10)

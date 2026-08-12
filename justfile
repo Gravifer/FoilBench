@@ -79,6 +79,18 @@ jl-switch-gate:
 ts-switch-gate:
     npm --prefix implementations/typescript run gate:warm-switch
 
+# Run Python's full 160x96 startup acceptance gate.
+py-startup-gate:
+    uv run --project implementations/python python implementations/python/benchmark/startup_gate.py
+
+# Run Julia's full 160x96 startup acceptance gate.
+jl-startup-gate:
+    julia --threads=auto --project=implementations/julia implementations/julia/benchmark/startup_gate.jl
+
+# Run TypeScript's full 160x96 startup acceptance gate.
+ts-startup-gate:
+    npm --prefix implementations/typescript run gate:startup
+
 # Run Python's full 160x96 scheduled-control acceptance trajectory.
 py-scheduled-gate:
     uv run --project implementations/python python implementations/python/benchmark/scheduled_gate.py

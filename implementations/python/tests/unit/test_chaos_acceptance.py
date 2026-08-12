@@ -74,6 +74,14 @@ def test_chaos_acceptance_enforces_thresholds_and_participation(tmp_path: Path) 
     sweep_path.write_text(json.dumps(sweep), encoding="utf-8")
     sensitivity_path.write_text(json.dumps(sensitivity), encoding="utf-8")
     assert "python" in validate_chaos_acceptance([sweep_path, sensitivity_path])
+    assert "python" in validate_chaos_acceptance(
+        [sweep_path, sensitivity_path], required_languages=("python",)
+    )
+    with pytest.raises(ValueError, match="producer roster mismatch"):
+        validate_chaos_acceptance(
+            [sweep_path, sensitivity_path],
+            required_languages=("python", "julia", "typescript"),
+        )
 
     cast(dict[str, float], sweep[0]["metrics"])["probe_rms"] = 0.0
     sweep_path.write_text(json.dumps(sweep), encoding="utf-8")

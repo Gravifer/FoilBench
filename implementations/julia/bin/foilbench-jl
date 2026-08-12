@@ -12,7 +12,7 @@ function usage()
     println("Usage:")
     println("  foilbench-jl view SCENARIO [--solver SOLVER_ID]")
     println("  foilbench-jl bench MATRIX [--output DIRECTORY]")
-    println("  foilbench-jl compare RESULTS_DIRECTORY [--require-complete]")
+    println("  foilbench-jl compare RESULTS_DIRECTORY [--require-complete] [--require-languages LANGUAGES]")
     println("  foilbench-jl describe [--json]")
 end
 
@@ -37,11 +37,27 @@ function main(arguments::Vector{String})
         end
         return 0
     elseif command == "compare"
-        length(arguments) in (2, 3) || (println(stderr, "compare requires a results directory"); return 2)
-        require_complete = length(arguments) == 3
-        require_complete && arguments[3] != "--require-complete" &&
-            (println(stderr, "unexpected compare argument"); return 2)
-        println(format_benchmark_comparison(arguments[2]; require_complete))
+        length(arguments) >= 2 || (println(stderr, "compare requires a results directory"); return 2)
+        require_complete = false
+        required_languages = String[]
+        index = 3
+        while index <= length(arguments)
+            if arguments[index] == "--require-complete"
+                require_complete = true
+                index += 1
+            elseif arguments[index] == "--require-languages" && index < length(arguments)
+                required_languages = String.(split(arguments[index + 1], ','))
+                index += 2
+            else
+                println(stderr, "unexpected compare argument: $(arguments[index])")
+                return 2
+            end
+        end
+        println(format_benchmark_comparison(
+            arguments[2];
+            require_complete,
+            required_languages,
+        ))
         return 0
     elseif command == "bench"
         length(arguments) in (2, 4) || (println(stderr, "unexpected bench arguments"); return 2)

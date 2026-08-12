@@ -141,7 +141,16 @@ async function assertCompleteMatrices(results: readonly Readonly<Record<string, 
   }
 }
 
-export async function compareResults(directory: string, requireComplete = false): Promise<string> {
+function assertRequiredLanguages(results: readonly Readonly<Record<string, unknown>>[], requiredLanguages: readonly string[]): void {
+  const expected = new Set(requiredLanguages);
+  if (expected.size === 0 || expected.size !== requiredLanguages.length) throw new Error("required languages must be a non-empty unique roster");
+  const observed = new Set(results.map((result) => String(result["language"])));
+  const missing = [...expected].filter((language) => !observed.has(language)).sort();
+  const extra = [...observed].filter((language) => !expected.has(language)).sort();
+  if (missing.length > 0 || extra.length > 0) throw new Error(`benchmark producer roster mismatch: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
+}
+
+export async function compareResults(directory: string, requireComplete = false, requiredLanguages: readonly string[] = []): Promise<string> {
   const root = repositoryRoot();
   const selected = isAbsolute(directory) ? directory : join(root, directory);
   const files = await import("node:fs/promises").then(({readdir}) => readdir(selected, {recursive: true}));
@@ -169,6 +178,7 @@ export async function compareResults(directory: string, requireComplete = false)
     const throughput = Number(value["simulated_seconds_per_wall_second"]).toFixed(3);
     lines.push(`${language.padEnd(12)}${solver.padEnd(20)}${median.padStart(10)}${p95.padStart(12)}${throughput.padStart(12)} ${String(value["success"])}`);
   }
+  if (requiredLanguages.length > 0) assertRequiredLanguages(results, requiredLanguages);
   if (requireComplete) await assertCompleteMatrices(results);
   return lines.join("\n");
 }

@@ -21,7 +21,9 @@ def _documents(paths: Sequence[Path]) -> list[dict[str, object]]:
     return selected
 
 
-def validate_chaos_acceptance(paths: Sequence[Path]) -> str:
+def validate_chaos_acceptance(
+    paths: Sequence[Path], *, required_languages: Sequence[str] = ()
+) -> str:
     """Validate complete participation and classify every declared sweep case."""
 
     if not paths:
@@ -35,12 +37,11 @@ def validate_chaos_acceptance(paths: Sequence[Path]) -> str:
             )
         ),
     )
+    thresholds = cast(Mapping[str, object], acceptance["chaotic_extension"])
     cases = cast(
         dict[str, object],
         json.loads(
-            (root / "spec/conformance/chaotic-wake-cases.json").read_text(
-                encoding="utf-8"
-            )
+            (root / str(thresholds["fixture"])).read_text(encoding="utf-8")
         ),
     )
     schema = cast(
@@ -49,7 +50,6 @@ def validate_chaos_acceptance(paths: Sequence[Path]) -> str:
             (root / "spec/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
         ),
     )
-    thresholds = cast(Mapping[str, object], acceptance["chaotic_extension"])
     expected_cases = {
         (
             float(cast(float, entry["reynolds"])),
@@ -64,6 +64,17 @@ def validate_chaos_acceptance(paths: Sequence[Path]) -> str:
         validate_json(document, schema)
         grouped.setdefault(str(document["language"]), []).append(document)
     failures: list[str] = []
+    if required_languages:
+        expected_languages = set(required_languages)
+        if not expected_languages or len(expected_languages) != len(required_languages):
+            raise ValueError("required languages must be a non-empty unique roster")
+        observed_languages = set(grouped)
+        if observed_languages != expected_languages:
+            failures.append(
+                "chaotic-wake producer roster mismatch "
+                f"missing={sorted(expected_languages - observed_languages)!r} "
+                f"extra={sorted(observed_languages - expected_languages)!r}"
+            )
     for language, entries in grouped.items():
         observed_cases: set[tuple[float, float, tuple[int, ...]]] = set()
         sensitivity_count = 0

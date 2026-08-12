@@ -1806,6 +1806,14 @@ end
             "stable-fluids",
             format_benchmark_comparison(output; require_complete = true),
         )
+        @test occursin(
+            "stable-fluids",
+            format_benchmark_comparison(output; required_languages = ["julia"]),
+        )
+        @test_throws ArgumentError format_benchmark_comparison(
+            output;
+            required_languages = ["python", "julia"],
+        )
         rm(joinpath(output, first(artifacts)))
         @test_throws ArgumentError format_benchmark_comparison(
             output;

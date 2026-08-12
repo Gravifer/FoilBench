@@ -18,6 +18,7 @@
     "view": "tsx src/cli.ts view",
     "describe": "tsx src/cli.ts describe",
     "bench": "tsx src/cli.ts bench",
+    "gate:startup": "tsx src/benchmark/startupGate.ts",
     "gate:preview": "tsx src/benchmark/previewGate.ts",
     "gate:warm-switch": "tsx src/benchmark/warmSwitchGate.ts",
     "gate:scheduled": "tsx src/benchmark/scheduledGate.ts",

@@ -80,6 +80,8 @@ describe("benchmark artifact comparison", () => {
     await expect(compareResults(directory, true)).rejects.toThrow("incomplete typescript artifacts");
     for (const solver of ["lbm-d2q9", "pic-flip"]) { const artifact = result("typescript"); artifact["solver"] = solver; await writeFile(join(directory, `${solver}.json`), JSON.stringify(artifact), "utf8"); }
     await expect(compareResults(directory, true)).resolves.toContain("stable-fluids");
+    await expect(compareResults(directory, false, ["typescript"])).resolves.toContain("stable-fluids");
+    await expect(compareResults(directory, false, ["python", "typescript"])).rejects.toThrow("producer roster mismatch");
   });
 
   it("uses semantic numeric equality and key-order-independent identity", async () => {

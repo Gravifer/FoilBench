@@ -12,8 +12,7 @@
     "scenario": "scenarios/airfoil/default.json",
     "solver": "stable-fluids",
     "resolution": [160, 96],
-    "times": [5.0, 10.0, 22.0],
-    "fast_gate_times": [5.0, 10.0]
+    "times": [5.0, 10.0, 22.0]
   },
   "warm_switch": {
     "scenario": "scenarios/airfoil/default.json",

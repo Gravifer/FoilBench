@@ -48,7 +48,10 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === "compare") {
-    console.log(await compareResults(args[1] ?? "results/typescript", args.includes("--require-complete")));
+    const languageFlag = args.indexOf("--require-languages");
+    const requiredLanguages = languageFlag >= 0 ? (args[languageFlag + 1] ?? "").split(",").filter((value) => value.length > 0) : [];
+    if (languageFlag >= 0 && requiredLanguages.length === 0) throw new RangeError("--require-languages requires a comma-separated roster");
+    console.log(await compareResults(args[1] ?? "results/typescript", args.includes("--require-complete"), requiredLanguages));
     return;
   }
   if (command === "chaos-sweep" || command === "chaos-paired") {

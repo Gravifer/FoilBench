@@ -33,11 +33,19 @@ def _parser() -> argparse.ArgumentParser:
     compare = subcommands.add_parser("compare", help="compare result artifacts")
     compare.add_argument("results", type=Path)
     compare.add_argument("--require-complete", action="store_true")
+    compare.add_argument(
+        "--require-languages",
+        help="require an exact comma-separated producer roster",
+    )
 
     chaos = subcommands.add_parser(
         "chaos-validate", help="validate optional chaotic-wake result artifacts"
     )
     chaos.add_argument("artifacts", nargs="+", type=Path)
+    chaos.add_argument(
+        "--require-languages",
+        help="require an exact comma-separated producer roster",
+    )
     return parser
 
 
@@ -81,9 +89,29 @@ def main(argv: Sequence[str] | None = None) -> None:
         output = run_matrix(arguments.matrix, arguments.output)
         print(output)
     elif arguments.command == "compare":
-        print(format_comparison(arguments.results, require_complete=arguments.require_complete))
+        required_languages = (
+            tuple(str(arguments.require_languages).split(","))
+            if arguments.require_languages
+            else ()
+        )
+        print(
+            format_comparison(
+                arguments.results,
+                require_complete=arguments.require_complete,
+                required_languages=required_languages,
+            )
+        )
     elif arguments.command == "chaos-validate":
-        print(validate_chaos_acceptance(arguments.artifacts))
+        required_languages = (
+            tuple(str(arguments.require_languages).split(","))
+            if arguments.require_languages
+            else ()
+        )
+        print(
+            validate_chaos_acceptance(
+                arguments.artifacts, required_languages=required_languages
+            )
+        )
     else:
         raise AssertionError(f"unhandled command {arguments.command}")
 

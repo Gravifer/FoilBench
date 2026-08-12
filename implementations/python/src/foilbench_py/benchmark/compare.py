@@ -1,6 +1,7 @@
 """Human-readable comparison of schema-compatible benchmark results."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -54,6 +55,20 @@ def _assert_matched_identities(results: list[dict[str, object]]) -> None:
             )
 
 
+def _assert_required_languages(
+    results: list[dict[str, object]], required_languages: Sequence[str]
+) -> None:
+    expected = set(required_languages)
+    if not expected or len(expected) != len(required_languages):
+        raise ValueError("required languages must be a non-empty unique roster")
+    observed = {str(result["language"]) for result in results}
+    if observed != expected:
+        raise ValueError(
+            "benchmark producer roster mismatch: "
+            f"missing={sorted(expected - observed)!r} extra={sorted(observed - expected)!r}"
+        )
+
+
 def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
     root = find_repo_root(Path(__file__))
     matrix_paths: dict[str, Path] = {}
@@ -96,11 +111,18 @@ def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
             )
 
 
-def format_comparison(directory: str | Path, *, require_complete: bool = False) -> str:
+def format_comparison(
+    directory: str | Path,
+    *,
+    require_complete: bool = False,
+    required_languages: Sequence[str] = (),
+) -> str:
     results = collect_results(directory)
     if not results:
         return "No benchmark result JSON files found."
     _assert_matched_identities(results)
+    if required_languages:
+        _assert_required_languages(results, required_languages)
     if require_complete:
         _assert_complete_matrices(results)
     header = (
