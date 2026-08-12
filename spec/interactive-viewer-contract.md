@@ -575,7 +575,12 @@ The nearest-rank percentile uses zero-based index
 `ceil(0.995 * count) - 1`, clamped to the available range. An empty fluid set
 uses the floor scale. The published normalized array is finite, has semantic
 axes `y x`, lies in `[-1, 1]`, and remains exactly zero inside the current
-foil. Renderers must not renormalize it against their own frame maximum.
+foil. Index `[0, 0]` is the cell adjacent to the lower-left domain corner:
+the first index increases from `y_min` toward `y_max`, and the second from
+`x_min` toward `x_max`. Renderers must preserve that world orientation even
+when an image or canvas API numbers scanlines from the top; neither vertical
+reflection nor sign inversion is permitted. Renderers must not renormalize
+the field against their own frame maximum.
 
 Positive vorticity uses the shared warm/rust hue and negative vorticity the
 shared blue hue. Near-zero fluid remains visually close to the dark

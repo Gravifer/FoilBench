@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {vorticityRgba} from "./vorticityTexture.js";
 import {isSolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
 import type {ViewerCommandInput, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
@@ -53,7 +54,7 @@ function updateCamera(snapshot: ViewerSnapshot): void {
 
 function updateVorticity(snapshot: ViewerSnapshot): void {
   vortPlane.visible = snapshot.vorticityVisible; if (!snapshot.vorticityVisible || snapshot.vorticity.length === 0) return; const [nx, ny] = snapshot.resolution; vortCanvas.width = nx; vortCanvas.height = ny; const context = vortCanvas.getContext("2d"); if (context === null) return; const image = context.createImageData(nx, ny);
-  for (let index = 0; index < snapshot.vorticity.length; index += 1) { const normalized = Math.max(-1, Math.min(1, snapshot.vorticity[index] ?? 0)); const magnitude = Math.abs(normalized) ** 0.7; const ramp = Math.max(0, Math.min(1, (magnitude - 0.18) / (0.9 - 0.18))); const visibility = ramp * ramp * (3 - 2 * ramp); image.data[4 * index] = Math.round(255 * (normalized >= 0 ? 0.65 : 0.02)); image.data[4 * index + 1] = Math.round(255 * (normalized >= 0 ? 0.12 : 0.28)); image.data[4 * index + 2] = Math.round(255 * (normalized >= 0 ? 0.02 : 0.65)); image.data[4 * index + 3] = Math.round(255 * 0.38 * visibility); }
+  image.data.set(vorticityRgba(snapshot.vorticity, nx, ny));
   context.putImageData(image, 0, 0); vortTexture.needsUpdate = true; const [[x0, x1], [y0, y1]] = snapshot.bounds; vortPlane.scale.set(x1 - x0, y1 - y0, 1); vortPlane.position.set((x0 + x1) / 2, (y0 + y1) / 2, -1);
 }
 
