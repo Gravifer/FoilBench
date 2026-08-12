@@ -9,7 +9,7 @@
     "pwsh -NoProfile -File tools/verify.ps1 passed Python, Julia, TypeScript, GLMakie loading, the Vite production build, and live Chromium interaction on 2026-08-12",
     "The TypeScript-only full gate was rerun after the final convective-outlet correction and passed 113 tests, the production build, and live Chromium interaction",
     "Revision 4 conformance fixtures and artifacts are implemented by all three language peers",
-    "just verify-representative passed the representative full-size solver, interchange, fallback, paired-initialization, and optional-chaos gates at 3eba1818566e07a1dfa34f44194c95f2faf794ca",
+    "just verify-representative passed the representative full-size solver, exact-roster native interchange, fallback, paired-initialization, and optional-chaos gates at cdd9ba599f340f0f1510b650683a500000935d53",
     "docs/revision4-acceptance.md records the accepted evidence and runtime context"
   ],
   "compatibility": {

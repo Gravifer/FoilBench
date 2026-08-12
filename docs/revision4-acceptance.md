@@ -2,7 +2,7 @@
 
 Revision 4 became FoilBench's accepted three-language baseline on 2026-08-13.
 The implementation under test was commit
-`3eba1818566e07a1dfa34f44194c95f2faf794ca`; the documentation activation was
+`cdd9ba599f340f0f1510b650683a500000935d53`; this evidence refresh was
 committed afterward and did not alter executable behavior.
 
 ## Authoritative run
@@ -13,8 +13,9 @@ The single complete acceptance invocation was:
 just verify-representative
 ```
 
-It completed successfully in 3,538.6 seconds. Generated, gitignored evidence
-was written under `results/revision4-acceptance/20260813-015014/`. The evidence
+It completed successfully in approximately 3,287 seconds. Generated,
+gitignored evidence was written under
+`results/revision4-acceptance/20260813-042439/`. The evidence
 manifest records the exact tested commit, contract revision, producer roster,
 benchmark directories, preflight artifacts, and full chaotic-wake artifacts.
 
@@ -22,34 +23,38 @@ Runtime context:
 
 - Razer Blade 17 (2022), Intel Core i7-12800H, 34.0 GB physical memory;
 - Windows 11 Pro for Workstations, build 26200, 64-bit;
-- Python 3.12.12, Julia 1.12.6, Node.js 24.18.0, and npm 12.0.2; and
+- Python 3.14.6, Julia 1.12.6, Node.js 24.18.0, and npm 12.0.2; and
 - AC power connected for the accepted performance run. A preceding battery
   interval was rejected as externally power-limited evidence.
 
 ## Gate results
 
-Strict Ruff and Pyright passed with 172 Python tests. Julia's native suite,
+Strict Ruff and Pyright passed with 181 Python tests. Julia's native suite,
 the GLMakie load/smoke path, and all representative gates passed. TypeScript
-passed 126 Vitest tests, the Vite production build, live Chromium interaction,
+passed 134 Vitest tests, the Vite production build, live Chromium interaction,
 and all representative gates.
 
 The accepted 160 x 96 warmed preview rates were:
 
 | Language | Stable Fluids | D2Q9 LBM | PIC/FLIP |
 | --- | ---: | ---: | ---: |
-| Python | 57.73 steps/s | 35.44 steps/s | 19.00 steps/s |
-| Julia | 20.55 steps/s | 22.57 steps/s | 16.94 steps/s |
-| TypeScript | 17.57 steps/s | 15.04 steps/s | 13.61 steps/s |
+| Python | 35.51 steps/s | 27.66 steps/s | 14.66 steps/s |
+| Julia | 19.29 steps/s | 22.14 steps/s | 15.12 steps/s |
+| TypeScript | 15.85 steps/s | 14.03 steps/s | 12.18 steps/s |
 
 Every solver exceeded the unchanged 10 steps/s threshold. Startup,
 scheduled-control checkpoints, all twelve directed warm swaps, and fresh
 fallback success/rejection transactions at 14 and 25 degrees passed in every
-language.
+language. The TypeScript figures were recaptured immediately after the
+authoritative run at the identical commit because its buffered gate output did
+not retain the per-solver lines; the pass/fail result itself is part of the
+authoritative invocation.
 
 Each language independently emitted the complete smoke benchmark matrix.
 Python, Julia, and TypeScript comparers all accepted the combined exact
 three-producer roster with no missing matrix cells or physical-identity
-mismatch.
+mismatch. Every native canonical reader also loaded every producer/solver
+snapshot and imported it into all three native destination families.
 
 ## Paired-sensitivity correction and evidence
 

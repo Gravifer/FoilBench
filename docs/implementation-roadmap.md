@@ -293,11 +293,14 @@ counters and precedence. The shared representative gate is
 default tier, but contract acceptance must run and record the representative
 tier separately rather than implying that the fast tier covered it.
 
-The authoritative `just verify-representative` run passed at implementation
-commit `3eba1818566e07a1dfa34f44194c95f2faf794ca`. It included the exact
+The authoritative `just verify-representative` run was refreshed after the
+final QA corrections and passed at implementation commit
+`cdd9ba599f340f0f1510b650683a500000935d53`. It included the exact
 Python/Julia/TypeScript producer roster, all native comparers, all directed
 warm-switch and fresh-fallback transactions at 14 and 25 degrees, and all
-declared full-duration chaotic-wake cases. A new full-resolution 0.1-second
+declared full-duration chaotic-wake cases. Every native canonical reader also
+loaded all nine producer/solver snapshots and exercised all three native
+destination importers. A full-resolution 0.1-second
 preflight first proved symmetric canonical reconstruction: the three realized
 initial wake RMS separations were all approximately `8.326e-6` for requested
 epsilon `1e-4`. See [Revision 4 acceptance](revision4-acceptance.md).
