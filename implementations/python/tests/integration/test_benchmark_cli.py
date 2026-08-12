@@ -65,11 +65,22 @@ def test_smoke_benchmark_emits_comparable_artifacts() -> None:
         "chord": cast(dict[str, object], result["foil"])["chord"],
         "naca": cast(dict[str, object], result["foil"])["naca"],
     }
+    equivalent["output_dt"] = cast(float, result["output_dt"]) * (1.0 + 5.0e-7)
+    equivalent["effective_reynolds"] = cast(
+        float, result["effective_reynolds"]
+    ) * (1.0 - 5.0e-7)
     (output / "equivalent.json").write_text(
         json.dumps(equivalent), encoding="utf-8"
     )
     format_comparison(output)
     assert validate_result_semantics(equivalent) is None
+
+    equivalent["output_dt"] = cast(float, result["output_dt"]) * 1.01
+    (output / "equivalent.json").write_text(
+        json.dumps(equivalent), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="different physical inputs"):
+        format_comparison(output)
 
 
 def test_result_semantics_reject_cross_field_contradictions() -> None:

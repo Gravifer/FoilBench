@@ -26,8 +26,26 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-function physicalIdentity(value: Readonly<Record<string, unknown>>): string {
-  return JSON.stringify(canonicalize(Object.fromEntries(PHYSICAL_IDENTITY_FIELDS.map((field) => [field, value[field]]))));
+function physicalIdentity(value: Readonly<Record<string, unknown>>): unknown {
+  return canonicalize(Object.fromEntries(PHYSICAL_IDENTITY_FIELDS.map((field) => [field, value[field]])));
+}
+
+function physicalIdentitiesMatch(left: unknown, right: unknown, precision: unknown): boolean {
+  if (typeof left === "number" && typeof right === "number") {
+    if (Number.isInteger(left) && Number.isInteger(right)) return left === right;
+    const tolerance = precision === "float32" ? 2e-6 : 2e-12;
+    return Math.abs(left - right) <= tolerance * Math.max(1, Math.abs(left), Math.abs(right));
+  }
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((child, index) => physicalIdentitiesMatch(child, right[index], precision));
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
+    const leftEntries = Object.entries(left as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    const rightEntries = Object.entries(right as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return leftEntries.length === rightEntries.length && leftEntries.every(([key, child], index) => {
+      const rightEntry = rightEntries[index];
+      return rightEntry !== undefined && key === rightEntry[0] && physicalIdentitiesMatch(child, rightEntry[1], precision);
+    });
+  }
+  return typeof left === typeof right && left === right;
 }
 
 function solverConfiguration(scenario: Scenario): Record<string, unknown> {
@@ -87,7 +105,7 @@ export async function compareResults(directory: string): Promise<string> {
   const files = await import("node:fs/promises").then(({readdir}) => readdir(selected, {recursive: true}));
   const schema = await json(join(root, "spec/result.schema.json")) as object;
   const validator = new Ajv2020({strict: true, allErrors: true}).compile(schema);
-  const signatures = new Map<string, string>();
+  const signatures = new Map<string, unknown>();
   const lines = ["language    solver              median ms      p95 ms    sim/wall success"];
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
@@ -99,7 +117,7 @@ export async function compareResults(directory: string): Promise<string> {
     const key = JSON.stringify([value["benchmark_matrix_id"], value["scenario_id"], value["precision"], value["resolution"], value["solver"]]);
     const signature = physicalIdentity(value);
     const previous = signatures.get(key);
-    if (previous !== undefined && previous !== signature) throw new Error("benchmark artifacts reuse a matrix/scenario/resolution identity with different physical inputs");
+    if (previous !== undefined && !physicalIdentitiesMatch(previous, signature, value["precision"])) throw new Error("benchmark artifacts reuse a matrix/scenario/resolution identity with different physical inputs");
     signatures.set(key, signature);
     const language = typeof value["language"] === "string" ? value["language"] : "unknown";
     const median = (Number(value["median_step_seconds"]) * 1000).toFixed(3);

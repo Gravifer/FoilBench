@@ -572,6 +572,24 @@ const _BENCHMARK_IDENTITY_FIELDS = (
     "seed",
 )
 
+function _benchmark_identity_equal(left, right, precision::AbstractString)
+    if left isa Bool || right isa Bool
+        return typeof(left) === typeof(right) && left == right
+    elseif left isa Integer && right isa Integer
+        return left == right
+    elseif left isa Real && right isa Real
+        tolerance = precision == "float32" ? 2.0e-6 : 2.0e-12
+        return isapprox(Float64(left), Float64(right); rtol = tolerance, atol = tolerance)
+    elseif left isa AbstractDict && right isa AbstractDict
+        keys(left) == keys(right) || return false
+        return all(_benchmark_identity_equal(left[key], right[key], precision) for key in keys(left))
+    elseif left isa AbstractVector && right isa AbstractVector
+        length(left) == length(right) || return false
+        return all(_benchmark_identity_equal(a, b, precision) for (a, b) in zip(left, right))
+    end
+    return typeof(left) === typeof(right) && left == right
+end
+
 function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
     signatures = Dict{NTuple{5,String},Vector{Any}}()
     for result in results
@@ -584,7 +602,7 @@ function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
         )
         signature = [result[field] for field in _BENCHMARK_IDENTITY_FIELDS]
         previous = get!(signatures, key, signature)
-        previous == signature || throw(ArgumentError(
+        _benchmark_identity_equal(previous, signature, String(result["precision"])) || throw(ArgumentError(
             "benchmark artifacts reuse a matrix/scenario/resolution identity with " *
             "different physical inputs",
         ))

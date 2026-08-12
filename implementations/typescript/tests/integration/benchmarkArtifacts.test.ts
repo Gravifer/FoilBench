@@ -79,9 +79,14 @@ describe("benchmark artifact comparison", () => {
     const first = result("typescript");
     const second = result("python");
     second["foil"] = {pivot: [0, 0], chord: 1.0, naca: "2412"};
+    second["output_dt"] = 0.010000005;
+    second["effective_reynolds"] = 499.99975;
     await writeFile(join(directory, "first.json"), JSON.stringify(first), "utf8");
     await writeFile(join(directory, "second.json"), JSON.stringify(second), "utf8");
     await expect(compareResults(directory)).resolves.toContain("python");
+    second["output_dt"] = 0.011;
+    await writeFile(join(directory, "second.json"), JSON.stringify(second), "utf8");
+    await expect(compareResults(directory)).rejects.toThrow("different physical inputs");
   });
 
   it("rejects contradictory successful artifacts", () => {

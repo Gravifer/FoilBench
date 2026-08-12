@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 from typing import cast
 
-from foilbench_py.benchmark.artifact import physical_identity, validate_result_semantics
+from foilbench_py.benchmark.artifact import (
+    physical_identities_match,
+    physical_identity,
+    validate_result_semantics,
+)
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.scenario import find_repo_root
 
@@ -40,7 +44,9 @@ def _assert_matched_identities(results: list[dict[str, object]]) -> None:
         )
         signature = physical_identity(result)
         previous = signatures.setdefault(key, signature)
-        if previous != signature:
+        if not physical_identities_match(
+            previous, signature, precision=str(result["precision"])
+        ):
             raise ValueError(
                 "benchmark artifacts reuse a matrix/scenario/resolution identity "
                 "with different physical inputs"

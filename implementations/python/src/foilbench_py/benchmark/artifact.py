@@ -47,6 +47,44 @@ def physical_identity(result: Mapping[str, object]) -> dict[str, object]:
     return {field: result[field] for field in fields}
 
 
+def physical_identities_match(
+    left: object, right: object, *, precision: str
+) -> bool:
+    """Compare physical identities without confusing serialization noise for physics."""
+
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, int) and isinstance(right, int):
+        return left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        left_value = float(left)
+        right_value = float(right)
+        tolerance = 2.0e-6 if precision == "float32" else 2.0e-12
+        return math.isclose(left_value, right_value, rel_tol=tolerance, abs_tol=tolerance)
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        left_mapping = cast(Mapping[object, object], left)
+        right_mapping = cast(Mapping[object, object], right)
+        return left_mapping.keys() == right_mapping.keys() and all(
+            physical_identities_match(
+                left_mapping[key], right_mapping[key], precision=precision
+            )
+            for key in left_mapping
+        )
+    if (
+        isinstance(left, Sequence)
+        and not isinstance(left, (str, bytes, bytearray))
+        and isinstance(right, Sequence)
+        and not isinstance(right, (str, bytes, bytearray))
+    ):
+        left_sequence = cast(Sequence[object], left)
+        right_sequence = cast(Sequence[object], right)
+        return len(left_sequence) == len(right_sequence) and all(
+            physical_identities_match(a, b, precision=precision)
+            for a, b in zip(left_sequence, right_sequence, strict=True)
+        )
+    return type(left) is type(right) and left == right
+
+
 def _require_finite(value: object, path: str = "result") -> None:
     if isinstance(value, float):
         if not math.isfinite(value):

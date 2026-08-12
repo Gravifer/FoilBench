@@ -1691,10 +1691,22 @@ end
         open(joinpath(directory, "result.json"), "w") do io
             JSON3.pretty(io, result)
         end
-        @test length(collect_benchmark_results(directory)) == 1
+        rounded = deepcopy(result)
+        rounded["language"] = "typescript"
+        rounded["output_dt"] = Float64(result["output_dt"]) * (1 + 5.0e-7)
+        rounded["effective_reynolds"] = Float64(result["effective_reynolds"]) * (1 - 5.0e-7)
+        open(joinpath(directory, "rounded.json"), "w") do io
+            JSON3.pretty(io, rounded)
+        end
+        @test length(collect_benchmark_results(directory)) == 2
         comparison = format_benchmark_comparison(directory)
         @test occursin("stable-fluids", comparison)
         @test occursin("julia", comparison)
+        rounded["output_dt"] = Float64(result["output_dt"]) * 1.01
+        open(joinpath(directory, "rounded.json"), "w") do io
+            JSON3.pretty(io, rounded)
+        end
+        @test_throws ArgumentError format_benchmark_comparison(directory)
     end
 
     mktempdir() do directory
