@@ -163,8 +163,15 @@ smoothing window. It must not divide a large pose jump by an arbitrary render
 interval, the solver output interval, or a tiny hard-coded minimum event
 interval.
 
-The first pose sample in a gesture establishes pose and time but does not by
-itself establish angular velocity. At least two real timestamped samples are
+A primary-button press may acquire or capture the pointer, but must not emit a
+pose sample, change the foil pose, cancel scheduled angle events, or enter
+manual pose control. The first actual pointer-motion event while the button is
+held emits the gesture's first pose sample. Consequently, a press and release
+without pointer motion is observationally neutral to foil pose and angle
+scheduling.
+
+That first moved pose sample establishes pose and time but does not by itself
+establish angular velocity. At least two real timestamped motion samples are
 required before a nonzero measured angular velocity may be inferred.
 
 The visible pose should follow the user's clamped pointer pose without
@@ -723,7 +730,8 @@ Headless viewer tests should cover:
 - coalescing of rapid pose samples without dropping discrete commands;
 - ordering barriers around pose, release, reset, pause, switch, and shutdown;
 - the -30 to +30 degree interactive pose limit;
-- first-sample drag behavior and authoritative solver-facing angular velocity;
+- press-without-motion neutrality, first-moved-sample drag behavior, and
+  authoritative solver-facing angular velocity;
 - manual-drag and forced-recovery schedule cancellation;
 - schedule preservation across solver and Reynolds changes;
 - all directed warm switches, including warnings and classified rejections;

@@ -21,6 +21,17 @@ test("viewer renders and applies interactive controls", async ({page}) => {
 
   const bounds = await canvas.boundingBox();
   if (bounds === null) throw new Error("viewer canvas has no bounds");
+
+  await page.keyboard.press("Space");
+  await expect(overlay).toContainText("PAUSED");
+  const angleBeforeClick = (await overlay.textContent())?.match(/AoA=\s*(-?\d+(?:\.\d+)?)/)?.[1];
+  expect(angleBeforeClick).toBeDefined();
+  await page.mouse.click(bounds.x + 0.80 * bounds.width, bounds.y + 0.15 * bounds.height);
+  await page.waitForTimeout(100);
+  const angleAfterClick = (await overlay.textContent())?.match(/AoA=\s*(-?\d+(?:\.\d+)?)/)?.[1];
+  expect(angleAfterClick).toBe(angleBeforeClick);
+  await page.keyboard.press("Space");
+
   await page.mouse.move(bounds.x + 0.55 * bounds.width, bounds.y + 0.55 * bounds.height);
   await page.mouse.down();
   await page.mouse.move(bounds.x + 0.62 * bounds.width, bounds.y + 0.40 * bounds.height, {steps: 4});
