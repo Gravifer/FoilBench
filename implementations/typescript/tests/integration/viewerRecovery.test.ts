@@ -41,22 +41,34 @@ async function scenario(): Promise<Scenario> {
 const numericalFailure = (): NumericalFailure => new NumericalFailure("nonfinite_state", "injected numerical failure");
 
 describe("interactive recovery semantics", () => {
-  it("recovers numerical failure at the visible pose without advancing time", async () => {
+  it("publishes recovery only after a successful validation step at the visible pose", async () => {
     const model = new ViewerModel(await scenario(), "stable-fluids");
     model.step(); const completedTime = model.time;
     model.setAngle(20, 100); const before = model.tracers.positions.slice();
     model.solver = new FailingSolver(model.solver, numericalFailure());
     model.step(); const recovered = model.snapshot();
-    expect(model.time).toBe(completedTime);
+    expect(model.time).toBeCloseTo(completedTime + model.scenario.outputDt, 12);
     expect(recovered.angleDegrees).toBe(20);
     expect(recovered.recoveryEpoch).toBe(1);
     expect(recovered.scheduleActive).toBe(false);
     expect(recovered.stepRate).toBeNull();
-    expect(Object.keys(recovered.diagnostics)).toHaveLength(0);
+    expect(Object.keys(recovered.diagnostics).length).toBeGreaterThan(0);
     expect([...model.tracers.positions]).not.toEqual([...before]);
     expect(model.tracers.recycleCounters.forced_recovery).toBe(model.tracers.count);
     model.releaseAngle(); model.step();
-    expect(model.time).toBeCloseTo(completedTime + model.scenario.outputDt, 12);
+    expect(model.time).toBeCloseTo(completedTime + 2 * model.scenario.outputDt, 12);
+  });
+
+  it("retains the failed source and pauses when fresh recovery cannot validate", async () => {
+    let creations = 0;
+    const factory = (id: SolverId): FlowSolver => {
+      const solver = createSolver(id); creations += 1;
+      return creations === 1 ? solver : new FailingSolver(solver, new NumericalFailure("stability_limit", "fresh validation rejected"));
+    };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory);
+    const source = new FailingSolver(model.solver, numericalFailure()); model.solver = source; const completedTime = model.time;
+    model.step();
+    expect(model.paused).toBe(true); expect(model.solver).toBe(source); expect(model.time).toBe(completedTime); expect(model.snapshot().recoveryEpoch).toBe(0);
   });
 
   it("does not discard flow state for an unexpected programming error", async () => {

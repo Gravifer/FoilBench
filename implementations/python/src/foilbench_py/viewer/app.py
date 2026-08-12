@@ -20,6 +20,7 @@ from foilbench_py.core.models import (
     Scenario,
     StepReport,
 )
+from foilbench_py.core.protocol import FlowSolver
 from foilbench_py.core.state_io import midspan_velocity
 from foilbench_py.core.switching import SolverManager, classify_import_failure
 from foilbench_py.core.tracers import TracerSystem
@@ -458,6 +459,7 @@ class ViewerModel:
             current_control,
             validation_control,
             validation_dt,
+            self._apply_saved_tuning_to,
         )
         if not outcome.accepted:
             if outcome.reason in _TRANSIENT_IMPORT_FAILURES:
@@ -470,9 +472,9 @@ class ViewerModel:
                     fresh_control,
                     fresh_validation_control,
                     validation_dt,
+                    self._apply_saved_tuning_to,
                 )
                 if fresh.accepted:
-                    self._apply_saved_tuning()
                     self.solver_epoch += 1
                     self.angle_override = current_control.angle_degrees
                     self.previous_angle = current_control.angle_degrees
@@ -512,7 +514,6 @@ class ViewerModel:
             self.tuning_notice = None
             self.recovery_notice = f"warm import rejected ({outcome.reason}); source retained"
             return outcome
-        self._apply_saved_tuning()
         self.solver_epoch += 1
         self.recovery_notice = None
         self.tuning_notice = None
@@ -548,22 +549,38 @@ class ViewerModel:
         if reset_reynolds:
             self.reset_reynolds()
         recovery_control = ControlState(current_time, current_angle, 0.0)
-        self.manager.restart_at(recovery_control)
-        self._apply_saved_tuning()
+        validation_dt = self.scenario.output_dt * self.playback_rate
+        validation_time = current_time + validation_dt
+        validation_control = ControlState(validation_time, current_angle, 0.0)
+        outcome = self.manager.switch_fresh(
+            self.manager.solver.info.id,
+            recovery_control,
+            validation_control,
+            validation_dt,
+            self._apply_saved_tuning_to,
+        )
+        if not outcome.accepted:
+            raise NumericalFailure(
+                outcome.reason,
+                "fresh recovery could not complete its validation step",
+                "postcondition",
+            )
         self.solver_epoch += 1
+        self.time = validation_time
         self.angle_override = current_angle
         self.previous_angle = current_angle
         self.manual_angular_velocity_degrees = 0.0
         self.pose_samples.clear()
         self.last_pose_received_at = None
         self.tracers.reseed_all(current_angle, "forced_recovery")
-        self.last_report = None
-        self.last_diagnostics = None
+        self.last_report = self.manager.last_validation_report
+        self.last_diagnostics = self.manager.solver.diagnostics()
         self.presentation.diagnostic_elapsed = 0.0
-        self.solver_steps_per_second = 0.0
-        self.simulated_seconds_per_wall_second = 0.0
-        self.metrics_warming = True
-        self.warm_validation_pending = False
+        validation_elapsed = max(self.manager.last_validation_elapsed, 1.0e-9)
+        self.solver_steps_per_second = 1.0 / validation_elapsed
+        self.simulated_seconds_per_wall_second = validation_dt / validation_elapsed
+        self.metrics_warming = False
+        self.warm_validation_pending = True
         self.recovery_count += 1
         self.recovery_reason = classify_import_failure(failure)
         self.recovery_stage = "post-import" if post_import else "ordinary-step"
@@ -581,7 +598,6 @@ class ViewerModel:
             self._refresh_diagnostics()
         except Exception as error:
             self._pause_for_presentation_failure("diagnostic", error)
-        self.last_diagnostics = None
 
     def reset(self) -> None:
         solver_id = self.manager.solver.info.id
@@ -634,14 +650,19 @@ class ViewerModel:
             self.tuning_values[self.manager.solver.info.id] = tuning.value
         return tuning
 
-    def _apply_saved_tuning(self) -> InteractiveTuning | None:
-        solver = self.manager.solver
+    def _apply_saved_tuning_to(self, solver: FlowSolver) -> None:
         value = self.tuning_values.get(solver.info.id)
         tuning = solver.interactive_tuning()
         if value is not None and tuning is not None:
             tuning = solver.apply_interactive_tuning(value)
         if tuning is not None:
             self.tuning_values[solver.info.id] = tuning.value
+        return None
+
+    def _apply_saved_tuning(self) -> InteractiveTuning | None:
+        solver = self.manager.solver
+        self._apply_saved_tuning_to(solver)
+        tuning = solver.interactive_tuning()
         return tuning
 
     def _invalidate_solver_measurements(self) -> None:

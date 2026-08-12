@@ -20,6 +20,7 @@ from foilbench_py.core.models import (
 from foilbench_py.core.protocol import FlowSolver
 
 SolverFactory = Callable[[str], FlowSolver]
+SolverConfigurator = Callable[[FlowSolver], None]
 
 
 def classify_import_failure(
@@ -105,6 +106,7 @@ class SolverManager:
         control: ControlState,
         validation_control: ControlState,
         validation_dt: float,
+        configure_candidate: SolverConfigurator | None = None,
     ) -> ImportOutcome:
         if destination == self._solver.info.id:
             report = ImportReport(destination, destination, ())
@@ -133,6 +135,8 @@ class SolverManager:
         if report is None:
             raise RuntimeError("accepted warm import did not provide an import report")
         try:
+            if configure_candidate is not None:
+                configure_candidate(candidate)
             candidate.diagnostics()
             started = perf_counter()
             validation_report = candidate.advance(validation_control, validation_dt)
@@ -192,6 +196,7 @@ class SolverManager:
         control: ControlState,
         validation_control: ControlState,
         validation_dt: float,
+        configure_candidate: SolverConfigurator | None = None,
     ) -> ImportOutcome:
         """Atomically select a fresh destination after a transient warm rejection."""
         source = self._solver.info.id
@@ -226,6 +231,8 @@ class SolverManager:
                     "postcondition_failure",
                     warnings=("fresh destination disagreed with authoritative time or pose",),
                 )
+            if configure_candidate is not None:
+                configure_candidate(candidate)
             candidate.diagnostics()
             started = perf_counter()
             validation_report = candidate.advance(validation_control, validation_dt)

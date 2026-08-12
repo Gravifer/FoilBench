@@ -577,10 +577,10 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
 
     state = model.manager.solver.export_state()
     assert model.manager.solver.info.id == "pic-flip"
-    assert model.manager.last_import is None
-    assert state.time == pytest.approx(recovery_time)
+    assert model.manager.last_import is not None
+    assert state.time == pytest.approx(recovery_time + model.scenario.output_dt)
     assert state.angle_degrees == 30.0
-    assert model.time == pytest.approx(recovery_time)
+    assert model.time == pytest.approx(recovery_time + model.scenario.output_dt)
     assert model.angle_override == 30.0
     assert model.previous_angle == 30.0
     assert not np.array_equal(model.tracers.positions, positions)
@@ -600,7 +600,7 @@ def test_failed_warm_state_recovers_fresh_and_reseeds_tracers(
         np.testing.assert_array_equal(history_slice, model.tracers.positions)
     assert "recovered=fresh restart reason=nonfinite_state" in model.status()
     assert "recovery_epoch=1" in model.status()
-    assert "step=   —/s" in model.status()
+    assert "step=   —/s" not in model.status()
 
 
 def test_failed_solver_advance_does_not_commit_physical_time(
@@ -648,6 +648,7 @@ def test_first_ordinary_failure_after_switch_is_post_import(
         model.update(scenario.output_dt)
 
     assert model.warm_validation_pending
+    monkeypatch.undo()
     model.recover_solver(
         raised.value,
         post_import=model.warm_validation_pending,
@@ -655,7 +656,6 @@ def test_first_ordinary_failure_after_switch_is_post_import(
     assert model.recovery_stage == "post-import"
     assert "stage=post-import" in model.status()
 
-    monkeypatch.undo()
     assert model.switch_solver("pic-flip").accepted
     assert model.warm_validation_pending
     model.update(scenario.output_dt)

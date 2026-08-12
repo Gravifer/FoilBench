@@ -355,8 +355,13 @@ export class ViewerModel {
       this.applySavedTuning(replacement);
       const fresh = replacement.exportState();
       if (Math.abs(fresh.time - this.time) > 1e-9 || Math.abs(fresh.angleDegrees - angle) > 1e-9) throw new NumericalFailure("postcondition_failure", "fresh recovery restart disagrees with requested time or pose");
+      const validationDt = this.scenario.outputDt * this.playbackRate;
+      const validationReport = replacement.advance({time: this.time + validationDt, angleDegrees: angle, angularVelocityDegrees: 0}, validationDt);
+      const validationDiagnostics = replacement.diagnostics();
+      if (validationDiagnostics.stateRevision !== replacement.stateRevision) throw new NumericalFailure("postcondition_failure", "fresh recovery diagnostics describe a stale state revision");
       this.solver = replacement;
       this.solverEpoch += 1;
+      this.time += validationReport.advancedDt;
       if (resetReynolds) this.playbackRate = 1;
       this.manualAngle = angle;
       this.angularVelocity = 0;
@@ -368,6 +373,10 @@ export class ViewerModel {
       this.tracers.reseed(angle, "forced_recovery");
       this.status = `recovered=${String(this.presentation.recoveryEpoch)} reason=${error.reason} stage=ordinary-step discarded=solver-private${resetReynolds ? " Re=reset" : ""}${this.presentation.poseOnly ? " motion=pose-only" : ""}`;
       this.clearMeasurements();
+      this.lastReport = validationReport;
+      this.diagnosticsCache = validationDiagnostics.values;
+      this.diagnosticsCacheRevision = validationDiagnostics.stateRevision;
+      this.diagnosticsReady = true;
       this.recoveryPending = true;
       if (resetReynolds || poseOnlyRecovery) this.failureTimes = [];
     } catch (recoveryError) {

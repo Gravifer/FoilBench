@@ -1369,10 +1369,10 @@ end
     stable.u[1, 1] = NaN
     recover_solver!(model, ArgumentError("injected finite-state failure"))
     @test model.recovery_count == 1
-    @test model.simulation_time == recovery_time
+    @test model.simulation_time == recovery_time + scenario.output_dt
     @test all(isfinite, export_state(model.solver).velocity)
     @test occursin("fresh restart", model.status_message)
-    @test model.metrics_warming
+    @test !model.metrics_warming
     @test occursin("recovery_epoch=1", snapshot(model).status)
     @test stable_transport_mode(model.solver::StableFluidsSolver) == "skew-rk2"
 

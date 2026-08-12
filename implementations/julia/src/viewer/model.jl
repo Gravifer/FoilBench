@@ -946,13 +946,26 @@ function recover_solver!(
     )
     selected_reynolds = reset_reynolds ? model.scenario.reynolds : reynolds(model.solver)
     recovery_control = ControlState(current_time, current_angle, zero(T))
-    model.solver = _fresh_solver_at_control(
+    candidate = _fresh_solver_at_control(
         model,
         solver_info(model.solver).id,
         recovery_control;
         selected_reynolds,
     )
+    target_dt = model.scenario.output_dt * model.playback_rate
+    validation_control = ControlState(current_time + target_dt, current_angle, zero(T))
+    validation_started = time_ns()
+    validation_report = advance!(candidate, validation_control, target_dt)
+    candidate_diagnostics = diagnostics(candidate)
+    candidate_diagnostics.state_revision == state_revision(candidate) ||
+        throw(NumericalFailure(
+            :postcondition_failure,
+            "fresh recovery diagnostics describe a stale state revision",
+        ))
+    validation_elapsed = max((time_ns() - validation_started) / 1.0e9, 1.0e-9)
+    model.solver = candidate
     model.solver_epoch += 1
+    model.simulation_time += validation_report.advanced_dt
     moved = reseed_tracers!(
         model.tracers,
         model.scenario,
@@ -966,12 +979,15 @@ function recover_solver!(
     model.recovery_count += 1
     model.recovery_reason = classify_viewer_failure(failure)
     model.recovery_stage = post_import ? Symbol("post-import") : Symbol("ordinary-step")
-    model.step_rate = 0.0
-    model.simulated_seconds_per_wall_second = 0.0
-    model.last_substeps = 0
-    model.last_max_speed = zero(T)
-    model.metrics_warming = true
-    model.warm_validation_pending = false
+    model.step_rate = inv(validation_elapsed)
+    model.simulated_seconds_per_wall_second = target_dt / validation_elapsed
+    model.last_substeps = validation_report.substeps
+    model.last_max_speed = validation_report.max_speed
+    model.metrics_warming = false
+    model.warm_validation_pending = true
+    model.presentation.diagnostics = candidate_diagnostics
+    model.presentation.diagnostic_elapsed = zero(T)
+    model.presentation.diagnostic_revision += 1
     reset_notice = reset_reynolds ? "; Re reset" : ""
     reason = model.recovery_reason
     stage = model.recovery_stage
