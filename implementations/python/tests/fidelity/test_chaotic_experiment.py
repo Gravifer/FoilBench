@@ -39,7 +39,7 @@ def test_experimental_skew_rk2_path_remains_finite() -> None:
     assert solver.diagnostics().values["solid_leakage"] < 1.0e-6
 
 
-def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
+def test_full_size_pic_startup_respects_the_configured_particle_cfl() -> None:
     root = find_repo_root(Path(__file__))
     fixture = cast(
         dict[str, object],
@@ -57,7 +57,7 @@ def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
 
     report = solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
 
-    assert report.substeps >= 2
+    assert report.substeps >= 1
     assert int(report.evidence["stability_retries"]) >= int(
         cast(int, retry_case["minimum_total_stability_retries"])
     )

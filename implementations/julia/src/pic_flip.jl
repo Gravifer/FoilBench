@@ -286,7 +286,7 @@ function _pic_resolve_collisions!(solver::PicFlipSolver{T}, control::ControlStat
     radius_squared = radius^2
     pivot_x = scenario.foil.pivot[1]
     pivot_y = scenario.foil.pivot[2]
-    for particle in axes(solver.positions, 2)
+    Threads.@threads :static for particle in axes(solver.positions, 2)
         relative_x = solver.positions[1, particle] - pivot_x
         relative_y = solver.positions[2, particle] - pivot_y
         relative_x^2 + relative_y^2 <= radius_squared || continue

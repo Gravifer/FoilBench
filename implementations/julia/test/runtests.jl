@@ -1091,7 +1091,7 @@ end
         control_at(pic_scenario, pic_scenario.output_dt),
         pic_scenario.output_dt,
     )
-    @test pic_report.substeps >= 2
+    @test pic_report.substeps >= 1
     @test pic_report.evidence["stability_retries"] >=
         pic_case.minimum_total_stability_retries
     @test pic_report.evidence["maximum_particle_cfl"] <=

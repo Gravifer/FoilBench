@@ -174,7 +174,7 @@ function _gather_face_component(
     unique_width = duplicate_x ? width - 1 : width
     unique_height = duplicate_y ? height - 1 : height
     output = Vector{T}(undef, size(positions, 2))
-    for particle in axes(positions, 2)
+    Threads.@threads :static for particle in axes(positions, 2)
         gx = (positions[1, particle] - domain.bounds[1][1]) / dx(domain) + gx_offset
         gy = (positions[2, particle] - domain.bounds[2][1]) / dy(domain) + gy_offset
         base_x = floor(Int, gx - T(0.5))

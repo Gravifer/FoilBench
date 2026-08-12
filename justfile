@@ -26,6 +26,10 @@ ts-setup:
 verify:
     pwsh -NoProfile -File tools/verify.ps1
 
+# Run all checks plus the representative 160x96 preview gates.
+verify-representative:
+    pwsh -NoProfile -File tools/verify.ps1 -Representative
+
 # Run only the Python checks.
 verify-python:
     pwsh -NoProfile -File tools/verify.ps1 -Python
@@ -57,6 +61,10 @@ ts-bench matrix="benchmark-matrices/smoke.json":
 # Run the TypeScript 160x96 double-digit warmed-step acceptance gate.
 ts-preview-gate:
     npm --prefix implementations/typescript run gate:preview
+
+# Run the Python 160x96 double-digit warmed-step acceptance gate.
+py-preview-gate:
+    uv run --project implementations/python python implementations/python/benchmark/preview_gate.py
 
 # Compare TypeScript result artifacts.
 ts-compare results="results/typescript":

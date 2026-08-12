@@ -2,7 +2,8 @@
 param(
     [switch]$Python,
     [switch]$Julia,
-    [switch]$TypeScript
+    [switch]$TypeScript,
+    [switch]$Representative
 )
 
 Set-StrictMode -Version Latest
@@ -39,6 +40,13 @@ try {
             'run', '--project', 'implementations/python',
             'ruff', 'check', 'implementations/python', 'tools/generate_conformance.py'
         )
+        if ($Representative) {
+            Write-Host '==> Python: 160x96 preview gate'
+            Invoke-Checked uv @(
+                'run', '--project', 'implementations/python', 'python',
+                'implementations/python/benchmark/preview_gate.py'
+            )
+        }
 
         Write-Host '==> Python: strict Pyright'
         Invoke-Checked uv @(
@@ -60,6 +68,14 @@ try {
             '--project=implementations/julia',
             '-e', 'using Pkg; Pkg.test()'
         )
+        if ($Representative) {
+            Write-Host '==> Julia: 160x96 preview gate'
+            Invoke-Checked julia @(
+                '--threads=auto', '--startup-file=no', '--history-file=no',
+                '--project=implementations/julia',
+                'implementations/julia/benchmark/preview_gate.jl'
+            )
+        }
 
         Write-Host '==> Julia: viewer environment load'
         Invoke-Checked julia @(
@@ -80,6 +96,10 @@ try {
             Invoke-Checked npm @('run', 'build')
             Write-Host '==> TypeScript: Chromium viewer smoke test'
             Invoke-Checked npm @('run', 'test:browser')
+            if ($Representative) {
+                Write-Host '==> TypeScript: 160x96 preview gate'
+                Invoke-Checked npm @('run', 'gate:preview')
+            }
         }
         finally {
             Pop-Location
