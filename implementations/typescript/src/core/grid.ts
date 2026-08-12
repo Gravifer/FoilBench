@@ -109,13 +109,14 @@ export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: num
   };
   const epsilon = precision === "float32" ? 1e-7 : 1e-15; applyPreconditioner(residual, preconditioned);
   let rightNormSquared = 0; let residualDot = 0; for (let index = 0; index < residual.length; index += 1) { const right = rightHandSide[index] ?? 0; direction[index] = preconditioned[index] ?? 0; rightNormSquared += right * right; residualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0); }
+  const convergenceTarget = tolerance * (precision === "float32" ? 0.995 : 0.999999);
   const rightNorm = Math.sqrt(rightNormSquared); let performed = 0; let relativeResidual = rightNorm <= epsilon ? 0 : 1; let converged = rightNorm <= epsilon;
   for (let iteration = 0; iteration < iterations && !converged; iteration += 1) {
     applyOperator(direction, operatorDirection); let denominator = 0; for (let index = 0; index < direction.length; index += 1) denominator += (direction[index] ?? 0) * (operatorDirection[index] ?? 0);
     if (!(Number.isFinite(denominator) && denominator > 0 && Number.isFinite(residualDot))) break;
     const alpha = residualDot / denominator; let residualNormSquared = 0;
     for (let index = 0; index < pressure.length; index += 1) { pressure[index] = (pressure[index] ?? 0) + alpha * (direction[index] ?? 0); residual[index] = (residual[index] ?? 0) - alpha * (operatorDirection[index] ?? 0); residualNormSquared += (residual[index] ?? 0) ** 2; }
-    performed = iteration + 1; relativeResidual = Math.sqrt(residualNormSquared) / Math.max(rightNorm, epsilon); if (relativeResidual <= tolerance) { converged = true; break; }
+    performed = iteration + 1; relativeResidual = Math.sqrt(residualNormSquared) / Math.max(rightNorm, epsilon); if (relativeResidual <= convergenceTarget) { converged = true; break; }
     applyPreconditioner(residual, preconditioned); let nextResidualDot = 0; for (let index = 0; index < residual.length; index += 1) nextResidualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0);
     if (!(Number.isFinite(nextResidualDot) && residualDot !== 0)) break; const beta = nextResidualDot / residualDot; for (let index = 0; index < direction.length; index += 1) direction[index] = (preconditioned[index] ?? 0) + beta * (direction[index] ?? 0); residualDot = nextResidualDot;
   }
