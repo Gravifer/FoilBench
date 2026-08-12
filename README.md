@@ -105,7 +105,7 @@ See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-accep
 [Phase 2A acceptance](docs/phase2a-acceptance.md),
 [Phase 2B acceptance](docs/phase2b-acceptance.md),
 [Revision 4 acceptance](docs/revision4-acceptance.md),
-[benchmark methodology](docs/benchmark-methodology.md), and the
+[benchmarking guide](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
 The language-neutral specifications are indexed by the

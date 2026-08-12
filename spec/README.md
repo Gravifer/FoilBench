@@ -4,6 +4,26 @@ The machine-readable manifest [contract-version.json](contract-version.json)
 names the normative documents and schemas for the current contract revision.
 This page is the human routing guide; it does not duplicate their requirements.
 
+## Layout
+
+```text
+spec/
+  README.md              human routing guide
+  contract-version.json accepted revision and complete authority manifest
+  contracts/             normative prose and semantic requirements
+  schemas/               JSON syntax and structural validation
+  conformance/           language-neutral fixtures and executable values
+```
+
+Only files named by `contract-version.json` are normative contract documents
+or schemas. The `conformance_root` supplies shared examples and thresholds;
+its README explains which contract owns each fixture's meaning.
+
+Schema `$id` values are stable logical identifiers. They intentionally retain
+their accepted Revision 4 URIs even when a schema's repository location moves
+under `spec/schemas/`; consumers load the paths declared by the manifest and
+must not infer a filesystem path from `$id`.
+
 The words **must**, **should**, and **may** have their usual normative force
 throughout the suite: **must** is required for conformance, **should** may be
 deviated from only with a recorded justification and equivalent observable
@@ -30,6 +50,27 @@ Cross-references explain how the pieces interact; they do not create a second
 authority. For example, the viewer contract decides when a frontend may
 attempt recovery, while the solver validity contract decides whether the
 underlying numerical operation succeeded.
+
+## Recommended reading order
+
+For a new implementation:
+
+1. Read [the flow solver contract](contracts/solver-contract.md) for the public
+   protocol and failure vocabulary.
+2. Read [the solver repertoire](contracts/solver-repertoire-contract.md) and
+   [solver validity](contracts/solver-validity-contract.md) together for each
+   implemented family.
+3. Implement [canonical state](contracts/canonical-state.md), then exercise the
+   shared canonical fixtures in both C and Fortran storage order.
+4. Implement artifacts and native comparison according to
+   [benchmark methodology](contracts/benchmark-methodology.md).
+5. Add the [interactive viewer contract](contracts/interactive-viewer-contract.md)
+   after the native solver and state boundaries are stable.
+6. Claim the optional [chaotic-wake extension](contracts/chaotic-wake-contract.md)
+   only when its complete shared evidence can be produced.
+
+Schemas and conformance fixtures should be consulted alongside each step,
+not treated as substitutes for the semantic prose.
 
 ## Revision discipline
 
