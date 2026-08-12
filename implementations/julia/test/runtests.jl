@@ -1559,7 +1559,7 @@ end
         (20, 12),
     )
     solver_ids = ("stable-fluids", "lbm-d2q9", "pic-flip")
-    for angle in (4.0f0, 25.0f0), source in solver_ids, destination in solver_ids
+    for angle in (14.0f0, 25.0f0), source in solver_ids, destination in solver_ids
         source == destination && continue
         model = ViewerModel(
             scenario;

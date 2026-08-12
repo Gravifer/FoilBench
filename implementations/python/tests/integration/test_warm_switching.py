@@ -15,7 +15,7 @@ from tests.helpers import ScenarioFactory
     ("source", "destination"),
     list(itertools.permutations(solver_ids(), 2)),
 )
-@pytest.mark.parametrize("angle", [4.0, 25.0])
+@pytest.mark.parametrize("angle", [14.0, 25.0])
 def test_all_directed_warm_switches(
     source: str,
     destination: str,

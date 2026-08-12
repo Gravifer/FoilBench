@@ -9,7 +9,7 @@ import {ViewerModel} from "../../src/viewer/model.js";
 const ids: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
 
 describe("all directed TypeScript warm swaps", () => {
-  for (const angleDegrees of [4, 25] as const) for (const sourceId of ids) for (const destinationId of ids) if (sourceId !== destinationId) it(`${sourceId} -> ${destinationId} at ${String(angleDegrees)} degrees`, async () => {
+  for (const angleDegrees of [14, 25] as const) for (const sourceId of ids) for (const destinationId of ids) if (sourceId !== destinationId) it(`${sourceId} -> ${destinationId} at ${String(angleDegrees)} degrees`, async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown;
     const loaded = parseScenario(raw, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [40, 24]}, controls: [{time: 0, angleDegrees}]}; const control = controlAt(scenario, 0.01);
@@ -20,7 +20,7 @@ describe("all directed TypeScript warm swaps", () => {
     expect(destination.exportState().velocity.every(Number.isFinite)).toBe(true);
   });
 
-  for (const angleDegrees of [4, 25] as const) for (const sourceId of ids) for (const destinationId of ids) if (sourceId !== destinationId) it(`viewer ${sourceId} -> ${destinationId} at ${String(angleDegrees)} degrees`, async () => {
+  for (const angleDegrees of [14, 25] as const) for (const sourceId of ids) for (const destinationId of ids) if (sourceId !== destinationId) it(`viewer ${sourceId} -> ${destinationId} at ${String(angleDegrees)} degrees`, async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown;
     const loaded = parseScenario(raw, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [32, 20]}, controls: [{time: 0, angleDegrees}]};
