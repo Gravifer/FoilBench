@@ -263,7 +263,7 @@ def main() -> None:
             solver_options={**base.solver_options, "stable_advection": "skew-rk2"},
         )
     result_schema = json.loads(
-        (root / "spec" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+        (root / "spec" / "schemas" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
     )
     results: list[dict[str, object]] = []
     for case in cases:

@@ -27,7 +27,7 @@ async function main(args: readonly string[]): Promise<void> {
   }
   if (command === "scenario") {
     const path = resolve(repositoryRoot, args[1] ?? "scenarios/airfoil/default.json");
-    const schemaPath = join(repositoryRoot, "spec/scenario.schema.json");
+    const schemaPath = join(repositoryRoot, "spec/schemas/scenario.schema.json");
     const scenario = parseScenario(JSON.parse(await readFile(path, "utf8")) as unknown, JSON.parse(await readFile(schemaPath, "utf8")) as object);
     console.log(JSON.stringify(scenario, null, 2));
     return;
@@ -62,7 +62,7 @@ async function main(args: readonly string[]): Promise<void> {
       initialization_preflight: {duration: number; epsilon: number; case: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}};
     };
     const scenarioPath = resolve(repositoryRoot, args[1] ?? casesDocument.scenario);
-    const scenario = parseScenario(JSON.parse(await readFile(scenarioPath, "utf8")) as unknown, JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object);
+    const scenario = parseScenario(JSON.parse(await readFile(scenarioPath, "utf8")) as unknown, JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/scenario.schema.json"), "utf8")) as object);
     const selected = (value: {reynolds: number; angle_degrees: number; resolution: readonly [number, number]}): WakeCase => ({reynolds: value.reynolds, angleDegrees: value.angle_degrees, resolution: value.resolution});
     const paired = command === "chaos-preflight" ? casesDocument.initialization_preflight : casesDocument.sensitivity;
     const pairedDuration = args[3] === undefined ? paired.duration : Number(args[3]);
@@ -71,7 +71,7 @@ async function main(args: readonly string[]): Promise<void> {
     const results: readonly ExperimentEnvelope[] = command === "chaos-sweep"
       ? casesDocument.sweep.cases.map((value) => runChaoticWakeCase(scenario, selected(value), casesDocument.sweep.duration, casesDocument.sweep.burn_in))
       : [runChaosSensitivity(scenario, selected(paired.case), pairedDuration, pairedEpsilon)];
-    const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/chaotic-wake-result.schema.json"), "utf8")) as object;
+    const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/chaotic-wake-result.schema.json"), "utf8")) as object;
     for (const result of results) validateDocument(result, resultSchema);
     const text = JSON.stringify(command === "chaos-sweep" ? results : results[0], null, 2);
     if (args[2] !== undefined) await writeFile(resolve(repositoryRoot, args[2]), text, "utf8");
@@ -89,7 +89,7 @@ async function main(args: readonly string[]): Promise<void> {
     };
     const scenario = parseScenario(
       JSON.parse(await readFile(join(repositoryRoot, fixture.scenario), "utf8")) as unknown,
-      JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object,
+      JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/scenario.schema.json"), "utf8")) as object,
     );
     const result = {
       schema_version: 1,
@@ -103,7 +103,7 @@ async function main(args: readonly string[]): Promise<void> {
         ),
       ),
     };
-    validateDocument(result, JSON.parse(await readFile(join(repositoryRoot, "spec/drag-calibration-result.schema.json"), "utf8")) as object);
+    validateDocument(result, JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/drag-calibration-result.schema.json"), "utf8")) as object);
     const text = JSON.stringify(result, null, 2);
     if (args[1] !== undefined) await writeFile(resolve(repositoryRoot, args[1]), text, "utf8");
     console.log(text);

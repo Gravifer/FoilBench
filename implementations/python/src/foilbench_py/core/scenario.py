@@ -20,7 +20,7 @@ def find_repo_root(start: Path | None = None) -> Path:
     if current.is_file():
         current = current.parent
     for candidate in (current, *current.parents):
-        if (candidate / "spec" / "scenario.schema.json").exists():
+        if (candidate / "spec" / "schemas" / "scenario.schema.json").exists():
             return candidate
     raise FileNotFoundError("could not locate FoilBench repository root")
 
@@ -36,7 +36,7 @@ def load_scenario(path: str | Path) -> Scenario:
     scenario_path = Path(path).resolve()
     raw = _load_object(scenario_path)
     root = find_repo_root(scenario_path)
-    schema = _load_object(root / "spec" / "scenario.schema.json")
+    schema = _load_object(root / "spec" / "schemas" / "scenario.schema.json")
     validate_json(raw, schema)
 
     dimension = cast(int, raw["dimension"])

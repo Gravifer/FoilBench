@@ -137,7 +137,7 @@ def main() -> None:
         "runs": runs,
     }
     validate_json(
-        result, _object(root / "spec" / "drag-calibration-result.schema.json")
+        result, _object(root / "spec" / "schemas" / "drag-calibration-result.schema.json")
     )
     text = json.dumps(result, indent=2)
     if arguments.output is not None:

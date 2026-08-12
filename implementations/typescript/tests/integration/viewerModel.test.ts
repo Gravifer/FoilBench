@@ -15,13 +15,13 @@ describe("headless viewer model", () => {
     const unmasked = normalizeViewerVorticity(raw, new Uint8Array(raw.length));
     expect(unmasked[count]).toBeCloseTo(Math.tanh(outlier / fluidScale), 6); expect(unmasked[count - 1]).toBeCloseTo(Math.tanh(1.99 / fluidScale), 6);
   });
-  it("commits validation time and advances preserved tracers exactly once", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); model.step(); const time = model.time; const before = model.tracers.positions.slice(); const epoch = model.solverEpoch; expect(model.switchSolver("lbm-d2q9")).toBe(true); expect(model.time).toBeCloseTo(time + scenario.outputDt, 12); expect(model.tracers.positions.length).toBe(before.length); expect([...model.tracers.positions]).not.toEqual([...before]); const snapshot = model.snapshot(); expect(snapshot.revision).toBe(1); expect(snapshot.solverEpoch).toBe(epoch + 1); expect(snapshot.solverStateRevision).toBe(model.solver.stateRevision); expect(snapshot.vorticityVisible).toBe(true); });
-  it("clamps manual pose and toggles presentation state", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); model.setAngle(80, 100); expect(model.control(0).angleDegrees).toBe(30); model.vorticityVisible = false; expect(model.snapshot().vorticity.every((value) => value === 0)).toBe(true); });
-  it("rejects non-finite drag samples without mutating viewer state", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); const before = model.control(0); expect(() => model.setAngle(Number.NaN, 100)).toThrow("pose angle"); expect(() => model.setAngle(5, Number.POSITIVE_INFINITY)).toThrow("pose timestamp"); expect(model.control(0)).toEqual(before); });
+  it("commits validation time and advances preserved tracers exactly once", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); model.step(); const time = model.time; const before = model.tracers.positions.slice(); const epoch = model.solverEpoch; expect(model.switchSolver("lbm-d2q9")).toBe(true); expect(model.time).toBeCloseTo(time + scenario.outputDt, 12); expect(model.tracers.positions.length).toBe(before.length); expect([...model.tracers.positions]).not.toEqual([...before]); const snapshot = model.snapshot(); expect(snapshot.revision).toBe(1); expect(snapshot.solverEpoch).toBe(epoch + 1); expect(snapshot.solverStateRevision).toBe(model.solver.stateRevision); expect(snapshot.vorticityVisible).toBe(true); });
+  it("clamps manual pose and toggles presentation state", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); model.setAngle(80, 100); expect(model.control(0).angleDegrees).toBe(30); model.vorticityVisible = false; expect(model.snapshot().vorticity.every((value) => value === 0)).toBe(true); });
+  it("rejects non-finite drag samples without mutating viewer state", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const model = new ViewerModel(scenario, "stable-fluids"); const before = model.control(0); expect(() => model.setAngle(Number.NaN, 100)).toThrow("pose angle"); expect(() => model.setAngle(5, Number.POSITIVE_INFINITY)).toThrow("pose timestamp"); expect(model.control(0)).toEqual(before); });
 
-  it("publishes robustly normalized vorticity instead of boundary-dominated raw curl", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown; const loaded = parseScenario(raw, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [80, 48]}}; const model = new ViewerModel(scenario, "stable-fluids"); for (let step = 0; step < 4; step += 1) model.step(); const vorticity = model.snapshot().vorticity; expect(vorticity.length).toBe(80 * 48); expect(vorticity.every(Number.isFinite)).toBe(true); expect(Math.max(...vorticity.map(Math.abs))).toBeLessThanOrEqual(1); expect(vorticity.some((value) => Math.abs(value) > 0.2)).toBe(true); });
+  it("publishes robustly normalized vorticity instead of boundary-dominated raw curl", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown; const loaded = parseScenario(raw, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [80, 48]}}; const model = new ViewerModel(scenario, "stable-fluids"); for (let step = 0; step < 4; step += 1) model.step(); const vorticity = model.snapshot().vorticity; expect(vorticity.length).toBe(80 * 48); expect(vorticity.every(Number.isFinite)).toBe(true); expect(Math.max(...vorticity.map(Math.abs))).toBeLessThanOrEqual(1); expect(vorticity.some((value) => Math.abs(value) > 0.2)).toBe(true); });
   it("treats non-monotonic drag events as a new zero-velocity sample", async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids");
@@ -31,7 +31,7 @@ describe("headless viewer model", () => {
     expect(model.control(0).angularVelocityDegrees).toBe(0);
   });
   it("scenario reset resumes a paused owner without resetting presentation choices", async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids");
@@ -40,7 +40,7 @@ describe("headless viewer model", () => {
     expect(model.snapshot().diagnosticMode).toBe("every-step");
   });
   it("keeps diagnostic cadence and per-solver tuning as presentation state", async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids");
@@ -55,7 +55,7 @@ describe("headless viewer model", () => {
     expect(model.snapshot().solverTuning).toBe("adv=maccormack");
   });
   it("fills reusable snapshot storage without exposing mutable solver arrays", async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids"); const storage = model.createSnapshotStorage();
@@ -65,7 +65,7 @@ describe("headless viewer model", () => {
     expect(second.tracerPositions.buffer).not.toBe(model.tracers.positions.buffer);
   });
   it("uses quarter-decade Reynolds controls and measures owner cycles", async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids");

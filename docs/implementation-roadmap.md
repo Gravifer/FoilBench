@@ -129,7 +129,7 @@ cap, smoothing, and hysteresis constants remain deliberately unfrozen, while
 the contract fixes their observable safety and pose semantics. Pixel-level
 visual closeness and a broader cross-platform GPU stress matrix remain useful
 future experiential work, not Phase 2 acceptance gates. The remaining scope is
-recorded in [the interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+recorded in [the interactive viewer contract](../spec/contracts/interactive-viewer-contract.md#open-decisions).
 
 ## Phase 2B: TypeScript
 
@@ -320,7 +320,7 @@ than silently decided by an implementation:
 
 Exact drag cap/smoothing constants and cross-renderer visual-closeness criteria
 remain the experiential open decisions already recorded in the
-[interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+[interactive viewer contract](../spec/contracts/interactive-viewer-contract.md#open-decisions).
 
 ## Phase 3: Rust and WASM
 

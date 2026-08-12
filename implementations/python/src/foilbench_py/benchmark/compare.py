@@ -17,7 +17,7 @@ from foilbench_py.core.scenario import find_repo_root
 
 def collect_results(directory: str | Path) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
-    schema_path = find_repo_root(Path(__file__)) / "spec" / "result.schema.json"
+    schema_path = find_repo_root(Path(__file__)) / "spec" / "schemas" / "result.schema.json"
     schema_value = json.loads(schema_path.read_text(encoding="utf-8"))
     if not isinstance(schema_value, dict):
         raise TypeError("result schema must contain an object")

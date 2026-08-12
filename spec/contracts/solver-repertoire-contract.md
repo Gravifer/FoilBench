@@ -11,7 +11,7 @@ It does not prescribe language-native memory layout, loop organization,
 parallelism, linear-solver library, renderer architecture, or optimization.
 [The flow solver contract](solver-contract.md) owns the protocol,
 [the solver validity contract](solver-validity-contract.md) owns accepted-step
-criteria, and [benchmark methodology](../docs/benchmark-methodology.md) owns
+criteria, and [benchmark methodology](benchmark-methodology.md) owns
 measured fidelity and performance.
 
 ## Shared Phase 2 repertoire
@@ -135,7 +135,7 @@ and outcome-based evidence. Phase 2 uses the shared cases:
 - dynamic NACA 2412 with wake and recovery diagnostics.
 
 Scenario meanings and measurement procedure belong to
-[benchmark methodology](../docs/benchmark-methodology.md). Thresholds belong
+[benchmark methodology](benchmark-methodology.md). Thresholds belong
 to shared conformance or benchmark fixtures rather than this document. A
 finite field, a visually plausible screenshot, or protocol completion alone
 does not establish solver-family fidelity.

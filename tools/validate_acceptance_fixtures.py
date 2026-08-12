@@ -18,12 +18,12 @@ def main() -> None:
     _validate(
         root,
         "spec/conformance/fullsize-acceptance.json",
-        "spec/fullsize-acceptance.schema.json",
+        "spec/schemas/fullsize-acceptance.schema.json",
     )
     _validate(
         root,
         "spec/conformance/chaotic-wake-cases.json",
-        "spec/chaotic-wake-cases.schema.json",
+        "spec/schemas/chaotic-wake-cases.schema.json",
     )
     print("Revision 4 acceptance fixtures are schema-valid")
 

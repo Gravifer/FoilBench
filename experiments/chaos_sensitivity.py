@@ -201,7 +201,7 @@ def main() -> None:
         "wall_seconds": wall_seconds,
     }
     result_schema = json.loads(
-        (root / "spec" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+        (root / "spec" / "schemas" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
     )
     validate_json(envelope, result_schema)
     print(

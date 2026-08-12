@@ -10,9 +10,9 @@ describe("matched drag calibration", () => {
     const root = resolve("../..");
     const scenario = parseScenario(
       JSON.parse(await readFile(resolve(root, "scenarios/airfoil/chaotic-experimental.json"), "utf8")) as unknown,
-      JSON.parse(await readFile(resolve(root, "spec/scenario.schema.json"), "utf8")) as object,
+      JSON.parse(await readFile(resolve(root, "spec/schemas/scenario.schema.json"), "utf8")) as object,
     );
-    const schema = JSON.parse(await readFile(resolve(root, "spec/drag-calibration-result.schema.json"), "utf8")) as object;
+    const schema = JSON.parse(await readFile(resolve(root, "spec/schemas/drag-calibration-result.schema.json"), "utf8")) as object;
     const candidate = {id: "conservative", tip_speed_cap: 4, smoothing_window_seconds: 0.08};
     const trace = {id: "gentle", samples: [[0, 0], [0.1, 4], [0.2, 8]] as const};
     const solvers: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];

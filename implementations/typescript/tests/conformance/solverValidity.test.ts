@@ -18,7 +18,7 @@ interface ValidityFixture {
 }
 
 async function loadScenario(path: string): Promise<Scenario> {
-  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
   const document = JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
   const scenario = parseScenario(document, schema);
   return {...scenario, domain: {...scenario.domain, resolution: [32, 16]}};

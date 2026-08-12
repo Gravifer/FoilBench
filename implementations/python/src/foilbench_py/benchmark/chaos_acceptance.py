@@ -142,7 +142,7 @@ def validate_chaos_acceptance(
     schema = cast(
         dict[str, object],
         json.loads(
-            (root / "spec/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+            (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
         ),
     )
     expected_cases = {
@@ -251,7 +251,7 @@ def validate_chaos_preflight(
     schema = cast(
         dict[str, object],
         json.loads(
-            (root / "spec/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+            (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
         ),
     )
     grouped: dict[str, list[dict[str, object]]] = {}

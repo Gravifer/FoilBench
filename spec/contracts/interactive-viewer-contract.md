@@ -29,7 +29,7 @@ questions:
   numerical operation is admissible as a successful step or import.
 
 [Canonical state](canonical-state.md) owns serialized field meaning and
-[benchmark methodology](../docs/benchmark-methodology.md) owns timed-run and
+[benchmark methodology](benchmark-methodology.md) owns timed-run and
 fidelity measurement. If a subject appears in more than one document, the
 document whose scope names it above is authoritative; cross-references in the
 other documents are explanatory rather than competing definitions.
@@ -810,7 +810,7 @@ requirements remain binding in the meantime. The implementation defects found
 by the post-reconciliation QA pass are not open policy decisions; their
 agent-actionable queue and the additional deferred experiential work are
 recorded in the
-[implementation roadmap](../docs/implementation-roadmap.md#post-reconciliation-qa-queue).
+[implementation roadmap](../../docs/implementation-roadmap.md#post-reconciliation-qa-queue).
 
 ### Drag resolution parameters
 

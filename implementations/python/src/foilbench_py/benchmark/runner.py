@@ -47,7 +47,7 @@ def load_matrix(path: str | Path) -> BenchmarkMatrix:
     matrix_path = Path(path).resolve()
     raw = _json_object(matrix_path)
     root = find_repo_root(matrix_path)
-    validate_json(raw, _json_object(root / "spec" / "benchmark-matrix.schema.json"))
+    validate_json(raw, _json_object(root / "spec" / "schemas" / "benchmark-matrix.schema.json"))
     scenario_path = root / str(raw["scenario"])
     raw_resolutions = cast(list[list[int]], raw["resolutions"])
     return BenchmarkMatrix(
@@ -175,7 +175,7 @@ def run_matrix(
     )
     destination.mkdir(parents=True, exist_ok=True)
     scenario_base = load_scenario(matrix.scenario_path)
-    result_schema = _json_object(root / "spec" / "result.schema.json")
+    result_schema = _json_object(root / "spec" / "schemas" / "result.schema.json")
     rows: list[dict[str, object]] = []
     process = psutil.Process()
 

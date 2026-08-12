@@ -11,7 +11,7 @@ end
 function find_repository_root(path::AbstractString)
     selected = isdir(path) ? abspath(path) : dirname(abspath(path))
     while true
-        isfile(joinpath(selected, "spec", "scenario.schema.json")) &&
+        isfile(joinpath(selected, "spec", "schemas", "scenario.schema.json")) &&
             isdir(joinpath(selected, "implementations")) && return selected
         parent = dirname(selected)
         parent == selected && throw(ArgumentError("could not locate FoilBench repository root"))
@@ -22,7 +22,7 @@ end
 function load_benchmark_matrix(path::AbstractString)
     document = JSON3.read(read(path, String), Dict{String,Any})
     root = find_repository_root(path)
-    validate_json_file(document, joinpath(root, "spec", "benchmark-matrix.schema.json"))
+    validate_json_file(document, joinpath(root, "spec", "schemas", "benchmark-matrix.schema.json"))
     resolutions = NTuple{2,Int}[
         (Int(value[1]), Int(value[2])) for value in document["resolutions"]
     ]
@@ -343,7 +343,7 @@ function run_benchmark_matrix(
     mkpath(destination)
     scenario_base = load_scenario(matrix.scenario_path)
     dimension(scenario_base) == 2 || throw(ArgumentError("Phase 2A benchmarks support only 2D"))
-    schema_path = joinpath(root, "spec", "result.schema.json")
+    schema_path = joinpath(root, "spec", "schemas", "result.schema.json")
     rows = Vector{Vector{String}}()
     for resolution in matrix.resolutions
         scenario = scenario_with_run(scenario_base, resolution, matrix.duration)
@@ -560,7 +560,7 @@ end
 
 function collect_benchmark_results(directory::AbstractString)
     results = Dict{String,Any}[]
-    schema_path = joinpath(find_repository_root(@__DIR__), "spec", "result.schema.json")
+    schema_path = joinpath(find_repository_root(@__DIR__), "spec", "schemas", "result.schema.json")
     for (root, _, files) in walkdir(directory), file in sort(files)
         endswith(file, ".json") || continue
         value = JSON3.read(read(joinpath(root, file), String), Dict{String,Any})

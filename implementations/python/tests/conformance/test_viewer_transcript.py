@@ -31,7 +31,7 @@ def _object(path: Path) -> dict[str, object]:
 def test_shared_viewer_transcript() -> None:
     root = find_repo_root()
     transcript = _object(root / "spec" / "conformance" / "viewer-basic.json")
-    validate_json(transcript, _object(root / "spec" / "viewer-transcript.schema.json"))
+    validate_json(transcript, _object(root / "spec" / "schemas" / "viewer-transcript.schema.json"))
     scenario = load_scenario(root / cast(str, transcript["scenario"]))
     model = ViewerModel.create(scenario, cast(str, transcript["solver"]))
     stopped = False

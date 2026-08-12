@@ -134,7 +134,7 @@ end
 
 function load_scenario(path::AbstractString)
     document = JSON3.read(read(path, String), Dict{String,Any})
-    schema_path = normpath(joinpath(@__DIR__, "..", "..", "..", "spec", "scenario.schema.json"))
+    schema_path = normpath(joinpath(@__DIR__, "..", "..", "..", "spec", "schemas", "scenario.schema.json"))
     validate_json_file(document, schema_path)
     dimension = Int(document["dimension"])
     dimension in (2, 3) || throw(ArgumentError("scenario dimension must be two or three"))

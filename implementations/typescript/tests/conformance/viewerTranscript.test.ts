@@ -26,11 +26,11 @@ describe("shared viewer transcript", () => {
   it("replays the language-neutral basic control sequence", async () => {
     const root = resolve("../..");
     const document = JSON.parse(await readFile(resolve(root, "spec/conformance/viewer-basic.json"), "utf8")) as unknown;
-    const transcriptSchema = JSON.parse(await readFile(resolve(root, "spec/viewer-transcript.schema.json"), "utf8")) as object;
+    const transcriptSchema = JSON.parse(await readFile(resolve(root, "spec/schemas/viewer-transcript.schema.json"), "utf8")) as object;
     expect(new Ajv2020({strict: true}).compile(transcriptSchema)(document)).toBe(true);
     const transcript = document as Transcript;
     const scenarioDocument = JSON.parse(await readFile(resolve(root, transcript.scenario), "utf8")) as unknown;
-    const scenarioSchema = JSON.parse(await readFile(resolve(root, "spec/scenario.schema.json"), "utf8")) as object;
+    const scenarioSchema = JSON.parse(await readFile(resolve(root, "spec/schemas/scenario.schema.json"), "utf8")) as object;
     const scenario = parseScenario(scenarioDocument, scenarioSchema);
     const model = new ViewerModel(scenario, transcript.solver);
     let stopped = false; let lastSequence = 0;

@@ -27,7 +27,7 @@ worker.onmessage = (event: MessageEvent<ViewerEvent>): void => {
 };
 worker.onerror = (event): void => { overlay.textContent = `worker failure: ${event.message}`; };
 
-const query = new URLSearchParams(location.search); const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href; const schemaUrl = new URL("../../../../spec/scenario.schema.json", import.meta.url).href;
+const query = new URLSearchParams(location.search); const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href; const schemaUrl = new URL("../../../../spec/schemas/scenario.schema.json", import.meta.url).href;
 const [scenarioDocument, schemaDocument] = await Promise.all([fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>), fetch(schemaUrl).then(async (response) => response.json() as Promise<object>)]); const scenario = parseScenario(scenarioDocument, schemaDocument); const requestedSolver = query.get("solver") ?? "stable-fluids"; if (!isSolverId(requestedSolver)) throw new Error(`unsupported solver id: ${requestedSolver}`); send({kind: "initialize", scenario, solverId: requestedSolver});
 
 function updateGeometry(geometry: THREE.BufferGeometry, values: Float32Array): void {

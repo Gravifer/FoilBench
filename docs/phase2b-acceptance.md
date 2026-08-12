@@ -128,7 +128,7 @@ Vite production build and live Chromium interaction. Exact drag constants,
 pixel-level visual closeness, Firefox/Safari support, and a broader manual GPU
 matrix remain nonblocking follow-up work under the accepted observable
 minimums in the
-[interactive viewer contract](../spec/interactive-viewer-contract.md#open-decisions).
+[interactive viewer contract](../spec/contracts/interactive-viewer-contract.md#open-decisions).
 
 ## Revision 3 closure evidence
 

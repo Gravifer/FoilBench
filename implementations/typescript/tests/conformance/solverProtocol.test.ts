@@ -10,14 +10,14 @@ import {createSolver} from "../../src/solvers/factory.js";
 const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
 
 async function uniformScenario(): Promise<Scenario> {
-  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
   const document = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
   const scenario = parseScenario(document, schema);
   return {...scenario, domain: {...scenario.domain, resolution: [24, 12]}};
 }
 
 async function airfoilScenario(): Promise<Scenario> {
-  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
   const document = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown;
   const scenario = parseScenario(document, schema);
   return {...scenario, domain: {...scenario.domain, resolution: [64, 32]}};

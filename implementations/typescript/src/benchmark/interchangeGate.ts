@@ -8,7 +8,7 @@ import {loadCanonicalSnapshot} from "./runner.js";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const resultsRoot = resolve(process.argv[2] ?? "results");
-const schema = JSON.parse(await readFile(join(repositoryRoot, "spec/scenario.schema.json"), "utf8")) as object;
+const schema = JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/scenario.schema.json"), "utf8")) as object;
 const base = parseScenario(JSON.parse(await readFile(join(repositoryRoot, "scenarios/airfoil/default.json"), "utf8")) as unknown, schema);
 const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
 const expected = new Set(["python", "julia", "typescript"].flatMap((language) => solverIds.map((solver) => `${language}/${solver}`)));

@@ -7,7 +7,7 @@ import {createSolver} from "../solvers/factory.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const fixture = JSON.parse(await readFile(join(root, "spec/conformance/fullsize-acceptance.json"), "utf8")) as {startup: {scenario: string; resolution: readonly [number, number]; steps: number; solvers: readonly SolverId[]}};
-const schema = JSON.parse(await readFile(join(root, "spec/scenario.schema.json"), "utf8")) as object;
+const schema = JSON.parse(await readFile(join(root, "spec/schemas/scenario.schema.json"), "utf8")) as object;
 const gate = fixture.startup;
 const scenario = parseScenario(JSON.parse(await readFile(join(root, gate.scenario), "utf8")) as unknown, schema);
 if (scenario.domain.resolution[0] !== gate.resolution[0] || scenario.domain.resolution[1] !== gate.resolution[1]) throw new Error("startup fixture resolution disagrees with its scenario");

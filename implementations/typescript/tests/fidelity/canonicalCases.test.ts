@@ -8,7 +8,7 @@ import {createSolver} from "../../src/solvers/factory.js";
 const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
 
 async function validationScenario(name: string, resolution: readonly [number, number], duration: number): Promise<Scenario> {
-  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
   const document = JSON.parse(await readFile(resolve(`../../scenarios/validation/${name}`), "utf8")) as unknown;
   const scenario = parseScenario(document, schema);
   return {...scenario, domain: {...scenario.domain, resolution}, duration};
@@ -61,7 +61,7 @@ describe("matched canonical fidelity cases", () => {
   });
 
   for (const solverId of solverIds) it(`${solverId} reports finite dynamic NACA 2412 metrics`, async () => {
-    const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object; const document = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown; const loaded = parseScenario(document, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [32, 20]}, duration: 0.05}; const diagnostics = advance(solverId, scenario, 3).diagnostics().values;
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const document = JSON.parse(await readFile(resolve("../../scenarios/airfoil/default.json"), "utf8")) as unknown; const loaded = parseScenario(document, schema); const scenario = {...loaded, domain: {...loaded.domain, resolution: [32, 20]}, duration: 0.05}; const diagnostics = advance(solverId, scenario, 3).diagnostics().values;
     for (const name of ["wake_width", "recirculation_area", "enstrophy", "solid_leakage"] as const) expect(Number.isFinite(diagnostics[name])).toBe(true);
   });
 });

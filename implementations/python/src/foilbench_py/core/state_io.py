@@ -94,7 +94,7 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     try:
         validate_json(
             manifest,
-            _json_object(root / "spec" / "canonical-manifest.schema.json"),
+            _json_object(root / "spec" / "schemas" / "canonical-manifest.schema.json"),
         )
     except ValidationError as error:
         raise ValueError(

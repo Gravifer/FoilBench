@@ -32,7 +32,7 @@ class RejectingImportSolver extends FailingSolver {
 }
 
 async function scenario(): Promise<Scenario> {
-  const schema = JSON.parse(await readFile(resolve("../../spec/scenario.schema.json"), "utf8")) as object;
+  const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
   const document = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
   const parsed = parseScenario(document, schema);
   return {...parsed, domain: {...parsed.domain, resolution: [24, 12]}};

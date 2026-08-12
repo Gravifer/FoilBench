@@ -1908,7 +1908,7 @@ end
         "failure" => nothing,
         "warnings" => String[],
     )
-    schema_path = joinpath(REPOSITORY_ROOT, "spec", "result.schema.json")
+    schema_path = joinpath(REPOSITORY_ROOT, "spec", "schemas", "result.schema.json")
     @test isnothing(validate_benchmark_result(result, schema_path))
     equivalent = deepcopy(result)
     equivalent["language"] = "typescript"

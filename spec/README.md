@@ -16,14 +16,14 @@ met.
 
 | Subject | Authoritative document |
 | --- | --- |
-| Solver identifiers, capabilities, operations, reports, and failure vocabulary | [Flow solver contract](solver-contract.md) |
-| Optional skew-RK2 wake and paired-sensitivity evidence | [Chaotic-wake experiment contract](chaotic-wake-contract.md) |
-| Numerical stages required by each named solver family | [Solver repertoire contract](solver-repertoire-contract.md) |
-| Successful-step, import, stability, convergence, and rollback criteria | [Solver validity contract](solver-validity-contract.md) |
-| Interactive commands, ownership, recovery UX, visible tracers, diagnostics, and snapshots | [Interactive viewer contract](interactive-viewer-contract.md) |
-| Canonical serialized field semantics and layout | [Canonical state](canonical-state.md) |
+| Solver identifiers, capabilities, operations, reports, and failure vocabulary | [Flow solver contract](contracts/solver-contract.md) |
+| Optional skew-RK2 wake and paired-sensitivity evidence | [Chaotic-wake experiment contract](contracts/chaotic-wake-contract.md) |
+| Numerical stages required by each named solver family | [Solver repertoire contract](contracts/solver-repertoire-contract.md) |
+| Successful-step, import, stability, convergence, and rollback criteria | [Solver validity contract](contracts/solver-validity-contract.md) |
+| Interactive commands, ownership, recovery UX, visible tracers, diagnostics, and snapshots | [Interactive viewer contract](contracts/interactive-viewer-contract.md) |
+| Canonical serialized field semantics and layout | [Canonical state](contracts/canonical-state.md) |
 | Scenario, result, manifest, matrix, and transcript syntax | The JSON schema named in [contract-version.json](contract-version.json) |
-| Timed-run procedure and measured fidelity meanings | [Benchmark methodology](../docs/benchmark-methodology.md) |
+| Timed-run procedure and measured fidelity meanings | [Benchmark methodology](contracts/benchmark-methodology.md) |
 | Exact cross-language examples and thresholds | [Conformance fixtures](conformance/README.md) |
 
 Cross-references explain how the pieces interact; they do not create a second
