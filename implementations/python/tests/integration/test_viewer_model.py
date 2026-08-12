@@ -19,6 +19,7 @@ from foilbench_py.solvers.stable_fluids import StableFluidsSolver
 from foilbench_py.types import PointCloud
 from foilbench_py.viewer.app import (
     ViewerModel,
+    normalize_vorticity_display,
     viewer_bounds,
     viewer_crop_enabled_by_default,
 )
@@ -31,6 +32,32 @@ class _RotationSampler(StableFluidsSolver):
         sampled[:, 0] = -points[:, 1]
         sampled[:, 1] = points[:, 0]
         return sampled
+
+
+def test_shared_vorticity_display_fixture() -> None:
+    fixture_path = Path(__file__).parents[4] / "spec" / "conformance" / "vorticity-display.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    recipe = fixture["synthetic"]
+    raw = np.arange(recipe["linear_count"], dtype=np.float32) * np.float32(recipe["linear_step"])
+    raw = np.concatenate((raw, np.asarray([recipe["outlier"]], dtype=np.float32)))
+
+    solid = np.zeros_like(raw, dtype=np.bool_)
+    solid[-1] = True
+    masked = normalize_vorticity_display(raw.reshape(1, -1), solid.reshape(1, -1))
+    assert masked[0, -1] == 0.0
+    assert masked[0, -2] == pytest.approx(
+        np.tanh(1.99 / recipe["solid_outlier_expected_scale"]), abs=1.0e-6
+    )
+
+    unmasked = normalize_vorticity_display(
+        raw.reshape(1, -1), np.zeros((1, raw.size), dtype=np.bool_)
+    )
+    assert unmasked[0, -1] == pytest.approx(
+        np.tanh(recipe["outlier"] / recipe["fluid_outlier_expected_scale"]), abs=1.0e-6
+    )
+    assert unmasked[0, -2] == pytest.approx(
+        np.tanh(1.99 / recipe["fluid_outlier_expected_scale"]), abs=1.0e-6
+    )
 
 
 def test_viewer_bounds_can_crop_only_the_presentation(

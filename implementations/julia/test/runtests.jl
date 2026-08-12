@@ -1001,6 +1001,34 @@ end
         T(fixture.integrator.absolute_tolerance)
 end
 
+@testset "Shared Revision 4 vorticity-display fixture" begin
+    fixture = JSON3.read(read(joinpath(FIXTURES, "vorticity-display.json"), String))
+    @test fixture.contract_id == "foilbench-phase2-v1"
+    @test fixture.contract_revision == 4
+    recipe = fixture.synthetic
+    raw = reshape(
+        vcat(
+            Float32.(0:(recipe.linear_count - 1)) .* Float32(recipe.linear_step),
+            Float32(recipe.outlier),
+        ),
+        :,
+        1,
+    )
+
+    solid = falses(size(raw))
+    solid[end] = true
+    masked = FoilBenchJulia._normalize_viewer_vorticity!(copy(raw), solid)
+    @test masked[end] == 0f0
+    @test masked[end - 1] ≈
+        tanh(1.99f0 / Float32(recipe.solid_outlier_expected_scale)) atol = 1f-6
+
+    unmasked = FoilBenchJulia._normalize_viewer_vorticity!(copy(raw), falses(size(raw)))
+    @test unmasked[end] ≈
+        tanh(Float32(recipe.outlier / recipe.fluid_outlier_expected_scale)) atol = 1f-6
+    @test unmasked[end - 1] ≈
+        tanh(1.99f0 / Float32(recipe.fluid_outlier_expected_scale)) atol = 1f-6
+end
+
 @testset "Stable Fluids validation modes" begin
     taylor_green = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json")),

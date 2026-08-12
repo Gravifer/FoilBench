@@ -540,6 +540,52 @@ the initial historical reference.
 Vorticity, cropping, tracers, and overlays are presentation features. They
 must not alter solver state or benchmark results.
 
+### Vorticity presentation field
+
+The vorticity underlay is a contracted pedagogical diagnostic, not an
+arbitrary renderer effect. Every implementation constructs it from the
+cell-centred velocity exported by one completed solver revision and identifies
+that source revision in the published snapshot. In 2D its signed raw field is
+`omega = dv/dx - du/dy`; derivative stencils may be language-native at the
+outer domain edge, but the interior must use centred differences with the
+scenario grid spacing.
+
+Before normalization, implementations evaluate the foil mask at the
+authoritative pose belonging to that solver revision and set every solid-cell
+vorticity value exactly to zero. Solid values, including immersed-boundary
+and stair-step outliers, must not enter the display scale. Overwriting the
+solid after a scale computed from the full field is nonconforming because it
+can visually erase the fluid wake.
+
+For the remaining finite fluid magnitudes, the shared display scale is
+
+```text
+scale = max(nearest-rank percentile_99.5(|omega_fluid|),
+            0.2 * max(|omega_fluid|),
+            1e-6)
+omega_display = tanh(omega / scale)
+```
+
+The nearest-rank percentile uses zero-based index
+`ceil(0.995 * count) - 1`, clamped to the available range. An empty fluid set
+uses the floor scale. The published normalized array is finite, has semantic
+axes `y x`, lies in `[-1, 1]`, and remains exactly zero inside the current
+foil. Renderers must not renormalize it against their own frame maximum.
+
+Positive vorticity uses the shared warm/rust hue and negative vorticity the
+shared blue hue. Near-zero fluid remains visually close to the dark
+background; opacity/visibility rises smoothly from magnitude `0.18` toward
+full diagnostic strength at `0.9`, with maximum blend/alpha approximately
+`0.38`. Exact pixel colour management and interpolation are renderer-native,
+but the sign mapping, subtle baseline, and single application of opacity are
+observable requirements. A texture alpha and a second material opacity must
+not accidentally attenuate the field twice.
+
+The parameters and synthetic outlier cases are frozen in
+`spec/conformance/vorticity-display.json`. Tests must include an extreme
+solid-cell outlier and an extreme fluid-cell outlier so both masking order and
+the maximum-fraction guard are exercised.
+
 When vorticity is hidden, ordinary evolution should not compute or upload a
 new vorticity field. It should also avoid repeatedly copying an unchanged full
 field into snapshots or renderer observables. Toggling it on, resetting,

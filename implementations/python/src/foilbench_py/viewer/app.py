@@ -24,7 +24,7 @@ from foilbench_py.core.state_io import midspan_velocity
 from foilbench_py.core.switching import SolverManager, classify_import_failure
 from foilbench_py.core.tracers import TracerSystem
 from foilbench_py.solvers.factory import create_solver, solver_ids
-from foilbench_py.types import ScalarField
+from foilbench_py.types import MaskField, ScalarField
 
 _POSE_ONLY_RELEASE_SPEED_RATIO = 0.5
 _POSE_ONLY_RELEASE_STEPS = 2
@@ -47,6 +47,26 @@ _TRANSIENT_IMPORT_FAILURES: frozenset[ImportFailureReason] = frozenset(
 type DiagnosticMode = Literal["cadenced", "every-step"]
 type ViewerPhase = Literal["warming", "running", "recovering", "paused", "failed"]
 type MotionMode = Literal["resolved", "pose-only"]
+
+
+def normalize_vorticity_display(
+    omega: ScalarField,
+    solid: MaskField,
+) -> ScalarField:
+    """Mask and robustly normalize the contracted pedagogical curl field."""
+    selected = np.asarray(omega, dtype=np.float64).copy()
+    selected[solid] = 0.0
+    fluid_magnitude = np.abs(selected[~solid])
+    if fluid_magnitude.size:
+        percentile_index = min(
+            fluid_magnitude.size - 1,
+            max(0, int(np.ceil(0.995 * fluid_magnitude.size)) - 1),
+        )
+        percentile = float(np.partition(fluid_magnitude, percentile_index)[percentile_index])
+        scale = max(percentile, 0.2 * float(np.max(fluid_magnitude)), 1.0e-6)
+    else:
+        scale = 1.0e-6
+    return np.asarray(np.tanh(selected / scale), dtype=np.float32)
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,21 +258,7 @@ class ViewerModel:
         omega = vorticity(midspan_velocity(state), self.scenario.domain)
         control = self.control(self.scenario.output_dt)
         solid = self.geometry.mask(self.scenario.domain, control.angle_degrees)
-        omega = omega.copy()
-        omega[solid] = 0.0
-        fluid_magnitude = np.abs(omega[~solid])
-        scale = (
-            max(
-                float(np.percentile(fluid_magnitude, 99.5)),
-                0.2 * float(np.max(fluid_magnitude)),
-            )
-            if fluid_magnitude.size
-            else 1.0
-        )
-        self.vorticity_display = np.asarray(
-            np.tanh(omega / max(scale, 1.0e-6)),
-            dtype=np.float32,
-        )
+        self.vorticity_display = normalize_vorticity_display(omega, solid)
         self.vorticity_revision += 1
         self.vorticity_solver_state_revision = solver.state_revision
 

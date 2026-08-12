@@ -569,6 +569,13 @@ function _viewer_vorticity(
 ) where {T<:AbstractFloat}
     omega = vorticity(velocity, scenario.domain)
     solid = solid_mask(geometry, scenario.domain, angle_degrees)
+    return _normalize_viewer_vorticity!(omega, solid)
+end
+
+function _normalize_viewer_vorticity!(
+    omega::AbstractMatrix{T},
+    solid::AbstractMatrix{Bool},
+) where {T<:AbstractFloat}
     omega[solid] .= zero(T)
     fluid_magnitude = abs.(omega[.!solid])
     isempty(fluid_magnitude) && return omega

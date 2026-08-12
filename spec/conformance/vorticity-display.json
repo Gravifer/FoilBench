@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 4,
+  "raw_definition": "dv_dx_minus_du_dy",
+  "solid_value": 0.0,
+  "percentile": 0.995,
+  "percentile_method": "nearest-rank-higher",
+  "maximum_fraction": 0.2,
+  "minimum_scale": 0.000001,
+  "transform": "tanh",
+  "output_minimum": -1.0,
+  "output_maximum": 1.0,
+  "positive_hue": "warm-rust",
+  "negative_hue": "blue",
+  "visibility_start": 0.18,
+  "visibility_full": 0.9,
+  "maximum_alpha": 0.38,
+  "synthetic": {
+    "linear_count": 200,
+    "linear_step": 0.01,
+    "outlier": 100.0,
+    "solid_outlier_expected_scale": 1.98,
+    "fluid_outlier_expected_scale": 20.0
+  }
+}

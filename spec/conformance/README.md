@@ -18,11 +18,14 @@ implementation must reproduce before solver comparisons are meaningful.
   observable recycle, pose, continuity, and per-language determinism policy.
 - `solver-validity.json` fixes the shared requested-time, bounded-motion,
   revision, rollback, and accepted-evidence probes for all three solver IDs.
+- `vorticity-display.json` fixes authoritative-pose solid masking, robust
+  fluid-only normalization, signed display range, and renderer sign/opacity
+  meaning for the pedagogical vorticity underlay.
 
-Revision 2 requires the shared tracer-lifecycle and solver-validity fixtures
-above. Their normative meanings remain defined by the interactive viewer and
-solver-validity contracts; the JSON files supply executable values rather
-than creating another source of policy.
+Revision 4 requires the shared tracer-lifecycle, solver-validity, and
+vorticity-display fixtures above. Their normative meanings remain defined by
+the interactive viewer and solver-validity contracts; the JSON files supply
+executable values rather than creating another source of policy.
 
 Tracer fixtures assert per-language deterministic replay, exact lifecycle
 semantics, analytic integration tolerances, and statistically comparable
