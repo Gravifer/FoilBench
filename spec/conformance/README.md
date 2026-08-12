@@ -27,6 +27,12 @@ vorticity-display fixtures above. Their normative meanings remain defined by
 the interactive viewer and solver-validity contracts; the JSON files supply
 executable values rather than creating another source of policy.
 
+`fullsize-acceptance.json` is consumed by each language's preview,
+warm-switch, and scheduled-control gates. Run the complete representative
+tier with `just verify-representative`, or run the individual `*-preview-gate`,
+`*-switch-gate`, and `*-scheduled-gate` recipes while diagnosing one language.
+The ordinary `just verify` tier intentionally omits these long-running gates.
+
 Tracer fixtures assert per-language deterministic replay, exact lifecycle
 semantics, analytic integration tolerances, and statistically comparable
 coverage. They do not require cross-language bit-identical tracer RNG draws,

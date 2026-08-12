@@ -51,6 +51,11 @@ try {
                 'run', '--project', 'implementations/python', 'python',
                 'implementations/python/benchmark/warm_switch_gate.py'
             )
+            Write-Host '==> Python: 160x96 scheduled-control gate'
+            Invoke-Checked uv @(
+                'run', '--project', 'implementations/python', 'python',
+                'implementations/python/benchmark/scheduled_gate.py'
+            )
         }
 
         Write-Host '==> Python: strict Pyright'
@@ -86,6 +91,12 @@ try {
                 '--project=implementations/julia',
                 'implementations/julia/benchmark/warm_switch_gate.jl'
             )
+            Write-Host '==> Julia: 160x96 scheduled-control gate'
+            Invoke-Checked julia @(
+                '--threads=auto', '--startup-file=no', '--history-file=no',
+                '--project=implementations/julia',
+                'implementations/julia/benchmark/scheduled_gate.jl'
+            )
         }
 
         Write-Host '==> Julia: viewer environment load'
@@ -112,6 +123,8 @@ try {
                 Invoke-Checked npm @('run', 'gate:preview')
                 Write-Host '==> TypeScript: 160x96 warm-switch gate'
                 Invoke-Checked npm @('run', 'gate:warm-switch')
+                Write-Host '==> TypeScript: 160x96 scheduled-control gate'
+                Invoke-Checked npm @('run', 'gate:scheduled')
             }
         }
         finally {

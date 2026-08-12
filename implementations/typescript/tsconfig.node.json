@@ -14,6 +14,7 @@
     "src/cli.ts",
     "src/benchmark/runner.ts",
     "src/benchmark/previewGate.ts",
-    "src/benchmark/warmSwitchGate.ts"
+    "src/benchmark/warmSwitchGate.ts",
+    "src/benchmark/scheduledGate.ts"
   ]
 }
