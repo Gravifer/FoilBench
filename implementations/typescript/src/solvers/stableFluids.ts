@@ -202,6 +202,13 @@ export class StableFluidsSolver implements FlowSolver {
     return acceptedImport(["pressure history"]);
   }
 
+  public stageParticleFaces(u: FloatArray, v: FloatArray): void {
+    const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain);
+    if (u.length !== ny * (nx + 1) || v.length !== (ny + 1) * nx) throw new NumericalFailure("transfer_failure", "particle face transfer has the wrong shape", "particle-transfer");
+    if (!u.every(Number.isFinite) || !v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "particle face transfer is non-finite", "particle-transfer");
+    this.u = u; this.v = v; this.applyDomainBoundaries(this.u, this.v); this.enforceSolidFaces(this.control);
+  }
+
   public advanceProjected(control: ControlState, targetDt: number): StepReport {
     if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); this.requireCompletionTime(control, targetDt); const saved = this.transactionCheckpoint();
     try { this.projectedSubstep(control, targetDt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "projected grid step produced non-finite velocity"); }
