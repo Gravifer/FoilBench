@@ -73,6 +73,15 @@ describe("benchmark artifact comparison", () => {
     await expect(compareResults(directory)).rejects.toThrow("different physical inputs");
   });
 
+  it("rejects an incomplete known matrix in strict comparison mode", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "foilbench-ts-incomplete-"));
+    directories.push(directory);
+    await writeFile(join(directory, "stable.json"), JSON.stringify(result("typescript")), "utf8");
+    await expect(compareResults(directory, true)).rejects.toThrow("incomplete typescript artifacts");
+    for (const solver of ["lbm-d2q9", "pic-flip"]) { const artifact = result("typescript"); artifact["solver"] = solver; await writeFile(join(directory, `${solver}.json`), JSON.stringify(artifact), "utf8"); }
+    await expect(compareResults(directory, true)).resolves.toContain("stable-fluids");
+  });
+
   it("uses semantic numeric equality and key-order-independent identity", async () => {
     const directory = await mkdtemp(join(tmpdir(), "foilbench-ts-equivalent-"));
     directories.push(directory);

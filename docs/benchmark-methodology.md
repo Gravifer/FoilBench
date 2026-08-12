@@ -31,6 +31,14 @@ matrix independently emitted by every implementation and successfully reading
 that directory through every comparer; cloned or synthetically respelled
 artifacts are insufficient interchange evidence.
 
+Exploratory comparison permits partial and historical directories. Acceptance
+invokes each comparer with `--require-complete`; in that mode, every observed
+language must contribute exactly one artifact for every solver, resolution,
+and repetition declared by the identified benchmark matrix. Missing, extra,
+duplicate, or unknown-matrix cells are hard failures. Independently of this
+mode, each artifact's median, p95, simulated/wall throughput, and cell/particle
+update rates are recomputed from its raw timings and counters.
+
 The runner records cold initialization and the first cold solver step
 separately from steady-state work. Initialization-time compilation is therefore
 visible in `initialization_seconds`, while first-use compilation is visible in

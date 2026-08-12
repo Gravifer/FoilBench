@@ -628,10 +628,55 @@ function _assert_matched_benchmark_identities(results::Vector{Dict{String,Any}})
     return nothing
 end
 
-function format_benchmark_comparison(directory::AbstractString)
+function _assert_complete_benchmark_matrices(results::Vector{Dict{String,Any}})
+    root = find_repository_root(@__DIR__)
+    matrix_paths = Dict{String,String}()
+    for path in readdir(joinpath(root, "benchmark-matrices"); join = true)
+        endswith(path, ".json") || continue
+        document = JSON3.read(read(path, String), Dict{String,Any})
+        haskey(document, "id") && (matrix_paths[String(document["id"])] = path)
+    end
+    grouped = Dict{Tuple{String,String},Vector{Dict{String,Any}}}()
+    for result in results
+        key = (String(result["benchmark_matrix_id"]), String(result["language"]))
+        push!(get!(grouped, key, Dict{String,Any}[]), result)
+    end
+    for ((matrix_id, language), selected) in grouped
+        haskey(matrix_paths, matrix_id) ||
+            throw(ArgumentError("cannot verify completeness of unknown matrix $matrix_id"))
+        matrix = load_benchmark_matrix(matrix_paths[matrix_id])
+        expected = Set(
+            (solver, resolution, repetition)
+            for solver in matrix.solvers
+            for resolution in matrix.resolutions
+            for repetition in 1:matrix.repetitions
+        )
+        observed_values = [
+            (
+                String(result["solver"]),
+                (Int(result["resolution"][1]), Int(result["resolution"][2])),
+                Int(result["repetition"]),
+            )
+            for result in selected
+        ]
+        observed = Set(observed_values)
+        length(observed) == length(observed_values) ||
+            throw(ArgumentError("duplicate $language artifacts for matrix $matrix_id"))
+        missing = setdiff(expected, observed)
+        extra = setdiff(observed, expected)
+        isempty(missing) && isempty(extra) || throw(ArgumentError(
+            "incomplete $language artifacts for matrix $matrix_id: " *
+            "missing=$(collect(missing)) extra=$(collect(extra))",
+        ))
+    end
+    return nothing
+end
+
+function format_benchmark_comparison(directory::AbstractString; require_complete::Bool = false)
     results = collect_benchmark_results(directory)
     isempty(results) && return "No benchmark result JSON files found."
     _assert_matched_benchmark_identities(results)
+    require_complete && _assert_complete_benchmark_matrices(results)
     header = rpad("language", 12) * rpad("solver", 20) * lpad("median ms", 12) *
         lpad("p95 ms", 12) * lpad("sim/wall", 12) * lpad("success", 10)
     lines = [header, repeat('-', length(header))]

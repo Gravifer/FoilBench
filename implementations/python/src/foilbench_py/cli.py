@@ -31,6 +31,7 @@ def _parser() -> argparse.ArgumentParser:
 
     compare = subcommands.add_parser("compare", help="compare result artifacts")
     compare.add_argument("results", type=Path)
+    compare.add_argument("--require-complete", action="store_true")
     return parser
 
 
@@ -74,7 +75,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         output = run_matrix(arguments.matrix, arguments.output)
         print(output)
     elif arguments.command == "compare":
-        print(format_comparison(arguments.results))
+        print(format_comparison(arguments.results, require_complete=arguments.require_complete))
     else:
         raise AssertionError(f"unhandled command {arguments.command}")
 

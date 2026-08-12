@@ -48,7 +48,7 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === "compare") {
-    console.log(await compareResults(args[1] ?? "results/typescript"));
+    console.log(await compareResults(args[1] ?? "results/typescript", args.includes("--require-complete")));
     return;
   }
   if (command === "chaos-sweep" || command === "chaos-paired") {

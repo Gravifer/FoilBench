@@ -45,6 +45,14 @@ def test_smoke_benchmark_emits_comparable_artifacts(tmp_path: Path) -> None:
     assert "stable-fluids" in comparison
     assert "lbm-d2q9" in comparison
     assert "pic-flip" in comparison
+    assert "stable-fluids" in format_comparison(output, require_complete=True)
+    missing_directory = tmp_path / "test-artifacts-incomplete"
+    missing_directory.mkdir()
+    (missing_directory / result_files[0].name).write_text(
+        result_files[0].read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="incomplete python artifacts"):
+        format_comparison(missing_directory, require_complete=True)
 
     first = dict(result)
     second = dict(result)

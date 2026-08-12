@@ -1787,6 +1787,15 @@ end
             @test document["final_state_revision"] == document["last_step"]["state_revision"]
             @test document["diagnostics"]["wake_probe_samples"] >= 8
         end
+        @test occursin(
+            "stable-fluids",
+            format_benchmark_comparison(output; require_complete = true),
+        )
+        rm(joinpath(output, first(artifacts)))
+        @test_throws ArgumentError format_benchmark_comparison(
+            output;
+            require_complete = true,
+        )
     end
 end
 

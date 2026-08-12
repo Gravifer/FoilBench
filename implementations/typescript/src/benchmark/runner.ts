@@ -120,13 +120,35 @@ function encodeNpy(values: readonly number[], precision: "float32" | "float64", 
 
 async function saveCanonicalSnapshot(directory: string, snapshot: BrowserCanonicalSnapshot, solverId: SolverId, schema: object): Promise<void> { await mkdir(directory, {recursive: true}); const [nx, ny] = snapshot.resolution; if (nx === undefined || ny === undefined) throw new RangeError("2D snapshot resolution missing"); const velocityMetadata = {file: "velocity.npy", axes: ["z", "y", "x", "component"], order: "C"}; const densityMetadata = snapshot.density === null ? null : {file: "density.npy", axes: ["z", "y", "x"], order: "C"}; const manifest = {schema_version: 1, dimension: 2, bounds: snapshot.bounds, resolution: snapshot.resolution, periodic_axes: snapshot.periodicAxes, time: snapshot.time, precision: snapshot.precision, angle_degrees: snapshot.angleDegrees, angular_velocity_degrees: snapshot.angularVelocityDegrees, source_language: "typescript", source_solver: solverId, velocity: velocityMetadata, density: densityMetadata}; validateDocument(manifest, schema); await writeFile(join(directory, "velocity.npy"), encodeNpy(snapshot.velocity, snapshot.precision, [1, ny, nx, 2])); if (snapshot.density !== null) await writeFile(join(directory, "density.npy"), encodeNpy(snapshot.density, snapshot.precision, [1, ny, nx])); await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8"); }
 
-export async function compareResults(directory: string): Promise<string> {
+async function assertCompleteMatrices(results: readonly Readonly<Record<string, unknown>>[]): Promise<void> {
+  const root = repositoryRoot();
+  const matrixFiles = (await import("node:fs/promises").then(({readdir}) => readdir(join(root, "benchmark-matrices")))).filter((name) => name.endsWith(".json"));
+  const matrices = new Map<string, BenchmarkMatrix>();
+  for (const file of matrixFiles) { const matrix = await loadMatrix(join(root, "benchmark-matrices", file)); matrices.set(matrix.id, matrix); }
+  const grouped = new Map<string, Readonly<Record<string, unknown>>[]>();
+  for (const result of results) { const key = JSON.stringify([result["benchmark_matrix_id"], result["language"]]); const selected = grouped.get(key) ?? []; selected.push(result); grouped.set(key, selected); }
+  for (const selected of grouped.values()) {
+    const first = selected[0]; if (first === undefined) continue;
+    const matrixId = String(first["benchmark_matrix_id"]); const language = String(first["language"]); const matrix = matrices.get(matrixId);
+    if (matrix === undefined) throw new Error(`cannot verify completeness of unknown matrix ${matrixId}`);
+    const expected = new Set<string>();
+    for (const solver of matrix.solvers) for (const resolution of matrix.resolutions) for (let repetition = 1; repetition <= matrix.repetitions; repetition += 1) expected.add(JSON.stringify([solver, resolution, repetition]));
+    const observedValues = selected.map((result) => JSON.stringify([result["solver"], result["resolution"], result["repetition"]]));
+    const observed = new Set(observedValues);
+    if (observed.size !== observedValues.length) throw new Error(`duplicate ${language} artifacts for matrix ${matrixId}`);
+    const missing = [...expected].filter((key) => !observed.has(key)); const extra = [...observed].filter((key) => !expected.has(key));
+    if (missing.length > 0 || extra.length > 0) throw new Error(`incomplete ${language} artifacts for matrix ${matrixId}: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
+  }
+}
+
+export async function compareResults(directory: string, requireComplete = false): Promise<string> {
   const root = repositoryRoot();
   const selected = isAbsolute(directory) ? directory : join(root, directory);
   const files = await import("node:fs/promises").then(({readdir}) => readdir(selected, {recursive: true}));
   const schema = await json(join(root, "spec/result.schema.json")) as object;
   const validator = new Ajv2020({strict: true, allErrors: true}).compile(schema);
   const signatures = new Map<string, unknown>();
+  const results: Readonly<Record<string, unknown>>[] = [];
   const lines = ["language    solver              median ms      p95 ms    sim/wall success"];
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
@@ -135,6 +157,7 @@ export async function compareResults(directory: string): Promise<string> {
     if (typeof solver !== "string") continue;
     if (!validator(value)) throw new TypeError(new Ajv2020().errorsText(validator.errors));
     validateResultSemantics(value);
+    results.push(value);
     const key = JSON.stringify([value["benchmark_matrix_id"], value["scenario_id"], value["precision"], value["resolution"], value["solver"]]);
     const signature = physicalIdentity(value);
     const previous = signatures.get(key);
@@ -146,5 +169,6 @@ export async function compareResults(directory: string): Promise<string> {
     const throughput = Number(value["simulated_seconds_per_wall_second"]).toFixed(3);
     lines.push(`${language.padEnd(12)}${solver.padEnd(20)}${median.padStart(10)}${p95.padStart(12)}${throughput.padStart(12)} ${String(value["success"])}`);
   }
+  if (requireComplete) await assertCompleteMatrices(results);
   return lines.join("\n");
 }

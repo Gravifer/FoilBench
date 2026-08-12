@@ -9,6 +9,7 @@ from foilbench_py.benchmark.artifact import (
     physical_identity,
     validate_result_semantics,
 )
+from foilbench_py.benchmark.runner import load_matrix
 from foilbench_py.core._schema_adapter import validate_json
 from foilbench_py.core.scenario import find_repo_root
 
@@ -53,11 +54,55 @@ def _assert_matched_identities(results: list[dict[str, object]]) -> None:
             )
 
 
-def format_comparison(directory: str | Path) -> str:
+def _assert_complete_matrices(results: list[dict[str, object]]) -> None:
+    root = find_repo_root(Path(__file__))
+    matrix_paths: dict[str, Path] = {}
+    for path in (root / "benchmark-matrices").glob("*.json"):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(document, dict) and isinstance(document.get("id"), str):
+            matrix_paths[str(document["id"])] = path
+    grouped: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for result in results:
+        grouped.setdefault(
+            (str(result["benchmark_matrix_id"]), str(result["language"])), []
+        ).append(result)
+    for (matrix_id, language), selected in grouped.items():
+        path = matrix_paths.get(matrix_id)
+        if path is None:
+            raise ValueError(f"cannot verify completeness of unknown matrix {matrix_id}")
+        matrix = load_matrix(path)
+        expected = {
+            (solver, resolution, repetition)
+            for solver in matrix.solvers
+            for resolution in matrix.resolutions
+            for repetition in range(1, matrix.repetitions + 1)
+        }
+        observed = [
+            (
+                str(result["solver"]),
+                tuple(cast(list[int], result["resolution"])),
+                int(cast(int, result["repetition"])),
+            )
+            for result in selected
+        ]
+        if len(observed) != len(set(observed)):
+            raise ValueError(f"duplicate {language} artifacts for matrix {matrix_id}")
+        missing = expected - set(observed)
+        extra = set(observed) - expected
+        if missing or extra:
+            raise ValueError(
+                f"incomplete {language} artifacts for matrix {matrix_id}: "
+                f"missing={sorted(missing)!r} extra={sorted(extra)!r}"
+            )
+
+
+def format_comparison(directory: str | Path, *, require_complete: bool = False) -> str:
     results = collect_results(directory)
     if not results:
         return "No benchmark result JSON files found."
     _assert_matched_identities(results)
+    if require_complete:
+        _assert_complete_matrices(results)
     header = (
         f"{'language':<12} {'solver':<18} {'median ms':>11} "
         f"{'p95 ms':>11} {'sim/wall':>11} {'success':>8}"
