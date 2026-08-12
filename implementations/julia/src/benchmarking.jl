@@ -250,6 +250,24 @@ function validate_benchmark_result_semantics(result::AbstractDict)
         result["failure"] isa AbstractDict ||
             throw(ArgumentError("failed benchmark result lacks structured failure evidence"))
     end
+    step_seconds = Float64.(result["step_seconds"])
+    if !isempty(step_seconds)
+        total_wall = sum(step_seconds)
+        substeps = Int(result["substeps"])
+        cells = prod(Int.(result["resolution"]))
+        particle_count = Float64(get(result["diagnostics"], "particle_count", 0.0))
+        expected = Dict(
+            "median_step_seconds" => _percentile(step_seconds, 0.5),
+            "p95_step_seconds" => _percentile(step_seconds, 0.95),
+            "simulated_seconds_per_wall_second" => Float64(result["simulated_duration"]) / total_wall,
+            "cell_updates_per_second" => cells * substeps / total_wall,
+            "particle_updates_per_second" => particle_count * substeps / total_wall,
+        )
+        for (field, expected_value) in expected
+            isapprox(Float64(result[field]), expected_value; rtol = 1.0e-10, atol = 1.0e-12) ||
+                throw(ArgumentError("benchmark result contains inconsistent derived field $field"))
+        end
+    end
     (result["memory_measurement"] == "unavailable") ==
         (result["peak_rss_bytes"] === nothing) ||
         throw(ArgumentError("memory measurement kind and RSS value disagree"))

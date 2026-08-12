@@ -121,6 +121,7 @@ def validate_result_semantics(result: Mapping[str, object]) -> None:
     final_revision = cast(int, result["final_state_revision"])
     diagnostic_revision = result["diagnostic_state_revision"]
     steps = cast(Sequence[object], result["step_seconds"])
+    step_seconds = [float(cast(float, value)) for value in steps]
     requested = float(cast(float, result["requested_duration"]))
     simulated = float(cast(float, result["simulated_duration"]))
     tolerance = (1.0e-6 if result["precision"] == "float32" else 1.0e-12) * max(
@@ -139,6 +140,33 @@ def validate_result_semantics(result: Mapping[str, object]) -> None:
             raise ValueError("successful benchmark result did not complete requested duration")
     elif not isinstance(failure, Mapping):
         raise ValueError("failed benchmark result lacks structured failure evidence")
+    if step_seconds:
+        ordered = sorted(step_seconds)
+
+        def percentile(fraction: float) -> float:
+            position = fraction * (len(ordered) - 1)
+            lower = math.floor(position)
+            upper = math.ceil(position)
+            weight = position - lower
+            return ordered[lower] + (ordered[upper] - ordered[lower]) * weight
+
+        total_wall = sum(step_seconds)
+        resolution = cast(Sequence[object], result["resolution"])
+        cells = math.prod(int(cast(int, value)) for value in resolution)
+        substeps = int(cast(int, result["substeps"]))
+        diagnostics = cast(Mapping[str, object], result["diagnostics"])
+        particle_count = float(cast(float, diagnostics.get("particle_count", 0.0)))
+        expected = {
+            "median_step_seconds": percentile(0.5),
+            "p95_step_seconds": percentile(0.95),
+            "simulated_seconds_per_wall_second": simulated / total_wall,
+            "cell_updates_per_second": cells * substeps / total_wall,
+            "particle_updates_per_second": particle_count * substeps / total_wall,
+        }
+        for field, expected_value in expected.items():
+            actual = float(cast(float, result[field]))
+            if not math.isclose(actual, expected_value, rel_tol=1.0e-10, abs_tol=1.0e-12):
+                raise ValueError(f"benchmark result contains inconsistent derived field {field}")
     memory_kind = result["memory_measurement"]
     peak_rss = result["peak_rss_bytes"]
     if (memory_kind == "unavailable") != (peak_rss is None):

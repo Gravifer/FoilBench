@@ -107,6 +107,10 @@ def test_result_semantics_reject_cross_field_contradictions(tmp_path: Path) -> N
     stale["diagnostic_state_revision"] = -1
     with pytest.raises(ValueError, match="stale revision"):
         validate_result_semantics(stale)
+    inconsistent = dict(result)
+    inconsistent["median_step_seconds"] = 123.0
+    with pytest.raises(ValueError, match="inconsistent derived field"):
+        validate_result_semantics(inconsistent)
 
 
 def test_describe_reports_python_capabilities(capsys: pytest.CaptureFixture[str]) -> None:

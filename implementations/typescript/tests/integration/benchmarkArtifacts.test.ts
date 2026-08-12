@@ -96,5 +96,8 @@ describe("benchmark artifact comparison", () => {
     const stale = result("typescript");
     stale["diagnostic_state_revision"] = 0;
     expect(() => validateResultSemantics(stale)).toThrow("stale revision");
+    const inconsistent = result("typescript");
+    inconsistent["median_step_seconds"] = 123;
+    expect(() => validateResultSemantics(inconsistent)).toThrow("inconsistent derived field");
   });
 });

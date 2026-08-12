@@ -1690,9 +1690,9 @@ end
         "cold_step_seconds" => 0.2,
         "step_seconds" => [0.01, 0.02],
         "median_step_seconds" => 0.015,
-        "p95_step_seconds" => 0.02,
-        "simulated_seconds_per_wall_second" => 1.0,
-        "cell_updates_per_second" => 10.0,
+        "p95_step_seconds" => 0.0195,
+        "simulated_seconds_per_wall_second" => 0.1 / 0.03,
+        "cell_updates_per_second" => 16 * 8 * 2 / 0.03,
         "particle_updates_per_second" => 0.0,
         "peak_rss_bytes" => 1,
         "memory_measurement" => "rss",
@@ -1725,6 +1725,9 @@ end
     stale = deepcopy(result)
     stale["diagnostic_state_revision"] = 0
     @test_throws ArgumentError validate_benchmark_result(stale, schema_path)
+    inconsistent = deepcopy(result)
+    inconsistent["median_step_seconds"] = 123.0
+    @test_throws ArgumentError validate_benchmark_result(inconsistent, schema_path)
     invalid = copy(result)
     invalid["unexpected"] = true
     @test_throws ArgumentError validate_benchmark_result(invalid, schema_path)

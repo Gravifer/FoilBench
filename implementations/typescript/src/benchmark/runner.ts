@@ -72,18 +72,39 @@ export function validateResultSemantics(value: Readonly<Record<string, unknown>>
   requireFinite(value);
   const success = value["success"] === true;
   const lastStep = value["last_step"];
-  const steps = value["step_seconds"];
+  const rawSteps = value["step_seconds"];
+  const steps: readonly unknown[] = Array.isArray(rawSteps) ? rawSteps : [];
   const finalRevision = value["final_state_revision"];
   const precision = value["precision"];
   const requested = Number(value["requested_duration"]);
   const simulated = Number(value["simulated_duration"]);
   const tolerance = (precision === "float32" ? 1e-6 : 1e-12) * Math.max(1, Math.abs(requested));
   if (success) {
-    if (value["failure"] !== null || lastStep === null || typeof lastStep !== "object" || !Array.isArray(steps) || steps.length === 0) throw new TypeError("successful benchmark result lacks completed-step semantics");
+    if (value["failure"] !== null || lastStep === null || typeof lastStep !== "object" || !Array.isArray(rawSteps) || steps.length === 0) throw new TypeError("successful benchmark result lacks completed-step semantics");
     const stepRevision = (lastStep as Record<string, unknown>)["state_revision"];
     if (value["diagnostic_state_revision"] !== finalRevision || stepRevision !== finalRevision) throw new TypeError("successful benchmark result contains stale revision evidence");
     if (Math.abs(simulated - requested) > tolerance) throw new TypeError("successful benchmark result did not complete requested duration");
   } else if (value["failure"] === null || typeof value["failure"] !== "object") throw new TypeError("failed benchmark result lacks structured failure evidence");
+  if (steps.length > 0) {
+    const stepSeconds = steps.map(Number);
+    const totalWall = stepSeconds.reduce((left, right) => left + right, 0);
+    const resolution = value["resolution"] as readonly number[];
+    const cells = resolution.reduce((left, right) => left * right, 1);
+    const substeps = Number(value["substeps"]);
+    const diagnostics = value["diagnostics"] as Readonly<Record<string, unknown>>;
+    const particleCount = Number(diagnostics["particle_count"] ?? 0);
+    const expected: Readonly<Record<string, number>> = {
+      median_step_seconds: percentile(stepSeconds, 0.5),
+      p95_step_seconds: percentile(stepSeconds, 0.95),
+      simulated_seconds_per_wall_second: simulated / totalWall,
+      cell_updates_per_second: cells * substeps / totalWall,
+      particle_updates_per_second: particleCount * substeps / totalWall,
+    };
+    for (const [field, expectedValue] of Object.entries(expected)) {
+      const actual = Number(value[field]);
+      if (Math.abs(actual - expectedValue) > 1e-12 + 1e-10 * Math.max(Math.abs(actual), Math.abs(expectedValue))) throw new TypeError(`benchmark result contains inconsistent derived field ${field}`);
+    }
+  }
   if ((value["memory_measurement"] === "unavailable") !== (value["peak_rss_bytes"] === null)) throw new TypeError("memory measurement kind and RSS value disagree");
 }
 
