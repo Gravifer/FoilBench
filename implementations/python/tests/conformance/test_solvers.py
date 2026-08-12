@@ -225,6 +225,39 @@ def test_stable_import_admissibility_is_not_tied_to_output_interval() -> None:
     assert outcome.status == "accepted"
 
 
+def test_lbm_canonical_reconstruction_is_output_cadence_independent(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    base = scenario_factory(resolution=(32, 16))
+    short = replace(base, output_dt=0.01)
+    long = replace(base, output_dt=1.0)
+    geometry = NacaFoil(base.foil)
+    source = LBMSolver()
+    source.initialize(short, geometry, short.seed)
+    exported = source.export_state()
+    velocity = exported.velocity.copy()
+    velocity[..., 0] = 10.0
+    velocity[..., 1] = 0.0
+    state = replace(exported, velocity=velocity)
+    control = ControlState(state.time, state.angle_degrees, 0.0)
+    destinations = []
+    for scenario in (short, long):
+        destination = LBMSolver()
+        destination.initialize(scenario, geometry, scenario.seed)
+        outcome = destination.import_state(state, control)
+        assert outcome.status == "accepted"
+        destinations.append(destination)
+
+    first, second = destinations
+    np.testing.assert_array_equal(
+        first.export_state().velocity,
+        second.export_state().velocity,
+    )
+    assert first.diagnostics().values["effective_reynolds"] == pytest.approx(
+        second.diagnostics().values["effective_reynolds"]
+    )
+
+
 def test_shared_revision_3_validity_fixture() -> None:
     fixture = _validity_fixture()
     assert fixture["contract_id"] == "foilbench-phase2-v1"

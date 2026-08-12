@@ -75,6 +75,23 @@ function resized_scenario(scenario::Scenario{D,T}, resolution::NTuple{D,Int}) wh
     )
 end
 
+function scenario_with_output_dt(scenario::Scenario{D,T}, output_dt::Real) where {D,T}
+    return Scenario(
+        scenario.schema_version,
+        scenario.id,
+        scenario.domain,
+        scenario.reynolds,
+        scenario.freestream,
+        scenario.foil,
+        scenario.controls,
+        scenario.duration,
+        T(output_dt),
+        scenario.precision,
+        scenario.seed,
+        copy(scenario.solver_options),
+    )
+end
+
 function wait_for_snapshot(
     worker::ViewerWorker;
     after_revision::Integer = 0,
@@ -861,6 +878,31 @@ end
         @test outcome.reason == :nonfinite_state
         @test state_revision(density_destination) == 0
     end
+
+
+    short_cadence = scenario_with_output_dt(scenario, 0.01)
+    long_cadence = scenario_with_output_dt(scenario, 1.0)
+    cadence_source = LBMSolver(Float32)
+    initialize!(cadence_source, short_cadence, geometry, scenario.seed)
+    cadence_state = export_state(cadence_source)
+    cadence_state.velocity[:, :, :, 1] .= 10.0f0
+    cadence_state.velocity[:, :, :, 2] .= 0.0f0
+    cadence_control = ControlState(
+        cadence_state.time,
+        cadence_state.angle_degrees,
+        0.0f0,
+    )
+    cadence_destinations = LBMSolver{Float32}[]
+    for cadence_scenario in (short_cadence, long_cadence)
+        destination = LBMSolver(Float32)
+        initialize!(destination, cadence_scenario, geometry, scenario.seed)
+        @test accepted(import_state!(destination, cadence_state, cadence_control))
+        push!(cadence_destinations, destination)
+    end
+    @test export_state(cadence_destinations[1]).velocity ==
+        export_state(cadence_destinations[2]).velocity
+    @test diagnostics(cadence_destinations[1]).values["effective_reynolds"] ≈
+        diagnostics(cadence_destinations[2]).values["effective_reynolds"]
 
     shorter = LBMSolver(Float32)
     longer = LBMSolver(Float32)

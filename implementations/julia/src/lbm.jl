@@ -306,6 +306,25 @@ function _lbm_configure_temporal_scaling!(
     return substeps
 end
 
+function _lbm_configure_import_scaling!(
+    solver::LBMSolver{T},
+    maximum_physical_speed::T,
+) where {T}
+    scenario, _ = _lbm_require(solver)
+    selected_maximum = max(maximum_physical_speed, solver.reference_speed)
+    lattice_speed = T(LBM_MAXIMUM_LATTICE_SPEED) * solver.reference_speed /
+        selected_maximum
+    lattice_dt = lattice_speed * dx(scenario.domain) / solver.reference_speed
+    solver.scaling = _lbm_scaling_at_speed(
+        scenario,
+        solver.reynolds_value,
+        lattice_dt,
+        lattice_speed,
+    )
+    _lbm_rebuild_boundary_equilibrium!(solver)
+    return nothing
+end
+
 function initialize!(
     solver::LBMSolver{T},
     scenario::Scenario{D,T},
@@ -733,8 +752,9 @@ function import_state!(
         physical = T.(canonical_to_cell(state))
         maximum_speed = _maximum_speed(physical)
         wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * geometry.spec.chord
-        _lbm_configure_temporal_scaling!(
-            solver, scenario.output_dt, max(maximum_speed, wall_speed, solver.reference_speed),
+        _lbm_configure_import_scaling!(
+            solver,
+            max(maximum_speed, wall_speed, solver.reference_speed),
         )
         density = ones(T, nx(scenario.domain), ny(scenario.domain))
         if state.density !== nothing

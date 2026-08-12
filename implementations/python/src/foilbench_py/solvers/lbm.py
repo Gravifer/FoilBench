@@ -377,6 +377,22 @@ class LBMSolver:
         self._rebuild_boundary_equilibrium()
         return substeps
 
+    def _configure_import_scaling(self, maximum_physical_speed: float) -> None:
+        """Choose a canonical reconstruction scale independent of output cadence."""
+        scenario, _, populations, _ = self._require()
+        del populations
+        selected_maximum = max(maximum_physical_speed, self._reference_speed)
+        self._lattice_speed = (
+            self._MAXIMUM_LATTICE_SPEED
+            * self._reference_speed
+            / selected_maximum
+        )
+        self._lattice_dt = (
+            self._lattice_speed * scenario.domain.dx / self._reference_speed
+        )
+        self._configure_relaxation()
+        self._rebuild_boundary_equilibrium()
+
     def _equilibrium(
         self,
         density: ScalarField,
@@ -893,10 +909,7 @@ class LBMSolver:
                 abs(np.deg2rad(control.angular_velocity_degrees))
                 * geometry.maximum_radius
             )
-            self._configure_temporal_scaling(
-                scenario.output_dt,
-                max(maximum, wall_speed),
-            )
+            self._configure_import_scaling(max(maximum, wall_speed))
             lattice = physical * (self._lattice_speed / self._reference_speed)
             density = (
                 np.ones((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)

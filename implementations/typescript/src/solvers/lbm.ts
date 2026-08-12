@@ -65,6 +65,12 @@ export class LbmSolver implements FlowSolver {
     return substeps;
   }
 
+  private configureImportScaling(maximumPhysicalSpeed: number): void {
+    const selectedMaximum = Math.max(maximumPhysicalSpeed, this.referenceSpeed);
+    this.latticeSpeed = MAXIMUM_LATTICE_SPEED * this.referenceSpeed / selectedMaximum;
+    this.configureRelaxation();
+  }
+
   private rescalePopulations(selectedSpeed: number): void {
     const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const count = nx * ny;
     const {density, velocity} = this.latticeFields(); const ratio = selectedSpeed / this.latticeSpeed;
@@ -157,7 +163,7 @@ export class LbmSolver implements FlowSolver {
     let maximum = 0; for (let cell = 0; cell < nx * ny; cell += 1) maximum = Math.max(maximum, Math.hypot(state.velocity[2 * cell] ?? 0, state.velocity[2 * cell + 1] ?? 0));
     const saved = this.populations; const savedScratch = this.scratch; const savedOutlet = this.outlet.slice(); const savedSolid = this.solid; const savedTime = this.time; const savedControl = this.control; const savedSpeed = this.latticeSpeed; const savedOmegaPlus = this.omegaPlus; const savedOmegaMinus = this.omegaMinus; const savedEffectiveReynolds = this.effectiveReynolds;
     try {
-      const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; this.configureTemporalScaling(scenario.outputDt, Math.max(maximum, wallSpeed));
+      const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord; this.configureImportScaling(Math.max(maximum, wallSpeed));
       if (Math.max(maximum, wallSpeed) * this.latticeSpeed / (this.referenceSpeed * LATTICE_SOUND_SPEED) > MAXIMUM_MACH + 1e-12) throw new NumericalFailure("excessive_velocity", "LBM import exceeds its Mach limit", "canonical-import", {maximum_fluid_speed: maximum, maximum_wall_speed: wallSpeed, maximum_mach: MAXIMUM_MACH});
       const count = nx * ny; const density = state.density; this.populations = allocate(scenario.precision, 9 * count);
       for (let cell = 0; cell < count; cell += 1) for (let q = 0; q < 9; q += 1) this.populations[q * count + cell] = this.equilibrium(q, importedSolid[cell] !== 0 ? 1 : (density?.[cell] ?? 1), (state.velocity[2 * cell] ?? 0) * this.latticeSpeed / this.referenceSpeed, (state.velocity[2 * cell + 1] ?? 0) * this.latticeSpeed / this.referenceSpeed);

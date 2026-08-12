@@ -115,4 +115,21 @@ describe("shared solver protocol", () => {
     }
     expect(solidCells).toBeGreaterThan(0);
   });
+
+  it("LBM canonical reconstruction is independent of output cadence", async () => {
+    const base = await uniformScenario();
+    const short = {...base, outputDt: 0.01}; const long = {...base, outputDt: 1};
+    const source = createSolver("lbm-d2q9"); source.initialize(short, 0);
+    const exported = source.exportState(); const velocity = new Float64Array(exported.velocity.length);
+    for (let index = 0; index < velocity.length; index += 2) velocity[index] = 10;
+    const state = {...exported, velocity}; const control = {time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: 0};
+    const destinations = [short, long].map((scenario) => {
+      const solver = createSolver("lbm-d2q9"); solver.initialize(scenario, 0);
+      expect(solver.importState(state, control).status).toBe("accepted"); return solver;
+    });
+    const [first, second] = destinations;
+    if (first === undefined || second === undefined) throw new Error("missing cadence destination");
+    expect([...first.exportState().velocity]).toEqual([...second.exportState().velocity]);
+    expect(first.diagnostics().values["effective_reynolds"]).toBeCloseTo(second.diagnostics().values["effective_reynolds"] ?? Number.NaN, 12);
+  });
 });
