@@ -19,6 +19,7 @@ jl-setup:
 
 # Install the TypeScript implementation.
 ts-setup:
+    @$client = [System.Net.Sockets.TcpClient]::new(); $viewerRunning = $false; try { $client.Connect('127.0.0.1', 4173); $viewerRunning = $true } catch [System.Net.Sockets.SocketException] { } finally { $client.Dispose() }; if ($viewerRunning) { throw 'FoilBench TypeScript viewer is running on port 4173. Stop ts-view before ts-setup so npm ci can replace native modules on Windows.' }
     npm --prefix implementations/typescript ci
     npm --prefix implementations/typescript run setup:browser
 
