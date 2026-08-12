@@ -554,6 +554,17 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     end
 end
 
+function _pic_maximum_speed(solver::PicFlipSolver{T}, scenario::Scenario{2,T}) where {T}
+    return max(
+        maximum(hypot(solver.grid_velocity[i, j, 1], solver.grid_velocity[i, j, 2]) for
+            i in axes(solver.grid_velocity, 1), j in axes(solver.grid_velocity, 2)),
+        maximum(hypot(solver.particle_velocity[1, particle], solver.particle_velocity[2, particle]) for
+            particle in axes(solver.particle_velocity, 2)),
+        abs(scenario.freestream[1]),
+        T(1.0e-6),
+    )
+end
+
 function _advance_pic_once!(
     solver::PicFlipSolver{T},
     control::ControlState,
@@ -569,14 +580,7 @@ function _advance_pic_once!(
             "PIC/FLIP input state is non-finite",
             :postcondition,
         ))
-    maximum_speed = max(
-        maximum(hypot(solver.grid_velocity[i, j, 1], solver.grid_velocity[i, j, 2]) for
-            i in axes(solver.grid_velocity, 1), j in axes(solver.grid_velocity, 2)),
-        maximum(hypot(solver.particle_velocity[i, 1], solver.particle_velocity[i, 2]) for
-            i in axes(solver.particle_velocity, 1)),
-        abs(scenario.freestream[1]),
-        T(1.0e-6),
-    )
+    maximum_speed = _pic_maximum_speed(solver, scenario)
     boundary_angular_velocity = T(control.angular_velocity_degrees)
     pose_sweep_angular_velocity =
         (T(control.angle_degrees) - solver.control.angle_degrees) / target

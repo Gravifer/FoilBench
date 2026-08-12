@@ -377,8 +377,20 @@ def _derivative(
     spacing: float,
     axis: int,
     periodic: bool,
+    *,
+    duplicate_endpoint: bool = False,
 ) -> Float[np.ndarray, "field_y field_x"]:
     if periodic:
+        if duplicate_endpoint:
+            logical = np.take(field, np.arange(field.shape[axis] - 1), axis=axis)
+            logical_derivative = (
+                np.roll(logical, -1, axis=axis) - np.roll(logical, 1, axis=axis)
+            ) / (2.0 * spacing)
+            first = np.take(logical_derivative, [0], axis=axis)
+            return np.asarray(
+                np.concatenate((logical_derivative, first), axis=axis),
+                dtype=field.dtype,
+            )
         return np.asarray(
             (np.roll(field, -1, axis=axis) - np.roll(field, 1, axis=axis)) / (2.0 * spacing),
             dtype=field.dtype,
@@ -389,17 +401,28 @@ def _derivative(
 def _cross_velocity_on_faces(
     u: FaceVelocityX,
     v: FaceVelocityY,
+    domain: DomainSpec,
 ) -> tuple[FaceVelocityX, FaceVelocityY]:
     cell_u = 0.5 * (u[:, :-1] + u[:, 1:])
     cell_v = 0.5 * (v[:-1, :] + v[1:, :])
     v_on_u = np.empty_like(u)
     v_on_u[:, 1:-1] = 0.5 * (cell_v[:, :-1] + cell_v[:, 1:])
-    v_on_u[:, 0] = cell_v[:, 0]
-    v_on_u[:, -1] = cell_v[:, -1]
+    if "x" in domain.periodic_axes:
+        periodic_v = 0.5 * (cell_v[:, -1] + cell_v[:, 0])
+        v_on_u[:, 0] = periodic_v
+        v_on_u[:, -1] = periodic_v
+    else:
+        v_on_u[:, 0] = cell_v[:, 0]
+        v_on_u[:, -1] = cell_v[:, -1]
     u_on_v = np.empty_like(v)
     u_on_v[1:-1, :] = 0.5 * (cell_u[:-1, :] + cell_u[1:, :])
-    u_on_v[0, :] = cell_u[0, :]
-    u_on_v[-1, :] = cell_u[-1, :]
+    if "y" in domain.periodic_axes:
+        periodic_u = 0.5 * (cell_u[-1, :] + cell_u[0, :])
+        u_on_v[0, :] = periodic_u
+        u_on_v[-1, :] = periodic_u
+    else:
+        u_on_v[0, :] = cell_u[0, :]
+        u_on_v[-1, :] = cell_u[-1, :]
     return v_on_u, u_on_v
 
 
@@ -409,7 +432,7 @@ def skew_face_advection_rate(
     domain: DomainSpec,
 ) -> float:
     """Return the native staggered-grid rate used by the skew-RK2 CFL."""
-    v_on_u, u_on_v = _cross_velocity_on_faces(u, v)
+    v_on_u, u_on_v = _cross_velocity_on_faces(u, v, domain)
     u_rate = np.abs(u) / domain.dx + np.abs(v_on_u) / domain.dy
     v_rate = np.abs(u_on_v) / domain.dx + np.abs(v) / domain.dy
     return max(float(np.max(u_rate)), float(np.max(v_rate)))
@@ -420,20 +443,26 @@ def _skew_symmetric_convection(
     v: FaceVelocityY,
     domain: DomainSpec,
 ) -> tuple[FaceVelocityX, FaceVelocityY]:
-    v_on_u, u_on_v = _cross_velocity_on_faces(u, v)
+    v_on_u, u_on_v = _cross_velocity_on_faces(u, v, domain)
     periodic_x = "x" in domain.periodic_axes
     periodic_y = "y" in domain.periodic_axes
-    du_dx = _derivative(u, domain.dx, 1, periodic_x)
+    du_dx = _derivative(
+        u, domain.dx, 1, periodic_x, duplicate_endpoint=periodic_x
+    )
     du_dy = _derivative(u, domain.dy, 0, periodic_y)
     dv_dx = _derivative(v, domain.dx, 1, periodic_x)
-    dv_dy = _derivative(v, domain.dy, 0, periodic_y)
+    dv_dy = _derivative(
+        v, domain.dy, 0, periodic_y, duplicate_endpoint=periodic_y
+    )
     advective_u = u * du_dx + v_on_u * du_dy
     advective_v = u_on_v * dv_dx + v * dv_dy
-    conservative_u = _derivative(u * u, domain.dx, 1, periodic_x) + _derivative(
+    conservative_u = _derivative(
+        u * u, domain.dx, 1, periodic_x, duplicate_endpoint=periodic_x
+    ) + _derivative(
         v_on_u * u, domain.dy, 0, periodic_y
     )
     conservative_v = _derivative(u_on_v * v, domain.dx, 1, periodic_x) + _derivative(
-        v * v, domain.dy, 0, periodic_y
+        v * v, domain.dy, 0, periodic_y, duplicate_endpoint=periodic_y
     )
     return (
         np.asarray(0.5 * (advective_u + conservative_u), dtype=u.dtype),

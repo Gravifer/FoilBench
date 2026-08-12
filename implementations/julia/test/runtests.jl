@@ -467,6 +467,24 @@ end
     @test FoilBenchJulia.skew_face_advection_rate(
         cancellation_u, cancellation_v, cancellation_domain,
     ) ≈ 4.0f0
+
+    phase_x = Float32.(2pi .* (0:domain.resolution[1]) ./ domain.resolution[1])
+    periodic_u = repeat(reshape(sin.(phase_x), :, 1), 1, domain.resolution[2])
+    derivative_u = FoilBenchJulia._derivative_x(
+        periodic_u, dx(domain), true; duplicate_endpoint = true,
+    )
+    expected_x = sin(Float32(2pi / domain.resolution[1])) / dx(domain)
+    @test derivative_u[1, :] ≈ fill(expected_x, domain.resolution[2]) atol = 1.0f-6
+    @test derivative_u[end, :] ≈ derivative_u[1, :] atol = 1.0f-6
+
+    phase_y = Float32.(2pi .* (0:domain.resolution[2]) ./ domain.resolution[2])
+    periodic_v = repeat(reshape(sin.(phase_y), 1, :), domain.resolution[1], 1)
+    derivative_v = FoilBenchJulia._derivative_y(
+        periodic_v, dy(domain), true; duplicate_endpoint = true,
+    )
+    expected_y = sin(Float32(2pi / domain.resolution[2])) / dy(domain)
+    @test derivative_v[:, 1] ≈ fill(expected_y, domain.resolution[1]) atol = 5.0f-6
+    @test derivative_v[:, end] ≈ derivative_v[:, 1] atol = 1.0f-6
 end
 
 @testset "Stable Fluids solver contract" begin
@@ -713,6 +731,12 @@ end
     @test first_solver.positions == second_solver.positions
     @test first_solver.particle_velocity == second_solver.particle_velocity
     @test size(first_solver.positions) == (2, 4 * 20 * 10)
+    speed_probe = PicFlipSolver(Float64)
+    initialize!(speed_probe, uniform, geometry, 17)
+    speed_probe.grid_velocity .= 0
+    speed_probe.particle_velocity .= 0
+    speed_probe.particle_velocity[1, end] = 100
+    @test FoilBenchJulia._pic_maximum_speed(speed_probe, uniform) == 100
     @test pic_flip_blend(first_solver) ≈ 0.95
     @test set_pic_flip_blend!(first_solver, 2.0) == 1.0
     @test set_pic_flip_blend!(first_solver, 0.95) ≈ 0.95

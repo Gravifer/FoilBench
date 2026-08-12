@@ -3,6 +3,7 @@ import pytest
 
 from foilbench_py.core._scipy_adapter import solve_masked_poisson
 from foilbench_py.core.grid import (
+    _derivative,
     advect_faces,
     advect_faces_skew_rk2,
     advect_velocity,
@@ -109,6 +110,27 @@ def test_periodic_face_diffusion_matches_discrete_fourier_decay() -> None:
     assert report.converged
     np.testing.assert_allclose(diffused_u[:, :-1], factor * original[:, :-1], atol=1.0e-8)
     np.testing.assert_allclose(diffused_u[:, 0], diffused_u[:, -1], atol=1.0e-12)
+
+
+def test_periodic_face_derivative_uses_unique_logical_endpoints() -> None:
+    domain = DomainSpec(2, ((0.0, 2.0), (0.0, 1.0)), (32, 16), ("x", "y"))
+    phase_x = 2.0 * np.pi * np.arange(domain.nx + 1) / domain.nx
+    u = np.broadcast_to(np.sin(phase_x), (domain.ny, domain.nx + 1)).copy()
+    derivative_u = _derivative(
+        u, domain.dx, 1, True, duplicate_endpoint=True
+    )
+    expected_x = np.sin(2.0 * np.pi / domain.nx) / domain.dx
+    np.testing.assert_allclose(derivative_u[:, 0], expected_x, atol=1.0e-12)
+    np.testing.assert_allclose(derivative_u[:, -1], derivative_u[:, 0], atol=1.0e-12)
+
+    phase_y = 2.0 * np.pi * np.arange(domain.ny + 1) / domain.ny
+    v = np.broadcast_to(np.sin(phase_y)[:, None], (domain.ny + 1, domain.nx)).copy()
+    derivative_v = _derivative(
+        v, domain.dy, 0, True, duplicate_endpoint=True
+    )
+    expected_y = np.sin(2.0 * np.pi / domain.ny) / domain.dy
+    np.testing.assert_allclose(derivative_v[0, :], expected_y, atol=1.0e-12)
+    np.testing.assert_allclose(derivative_v[-1, :], derivative_v[0, :], atol=1.0e-12)
 
 
 def test_masked_projection_rejects_non_finite_rhs_before_cg() -> None:

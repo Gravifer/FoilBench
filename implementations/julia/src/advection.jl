@@ -145,11 +145,20 @@ function advect_faces(
     return corrected_u, corrected_v
 end
 
-function _derivative_x(field::AbstractMatrix{T}, spacing::T, periodic::Bool) where {T}
+function _derivative_x(
+    field::AbstractMatrix{T},
+    spacing::T,
+    periodic::Bool;
+    duplicate_endpoint::Bool = false,
+) where {T}
     output = similar(field)
+    logical_size = size(field, 1) - (periodic && duplicate_endpoint ? 1 : 0)
     for j in axes(field, 2), i in axes(field, 1)
         if periodic
-            output[i, j] = (field[mod1(i + 1, size(field, 1)), j] - field[mod1(i - 1, size(field, 1)), j]) / (T(2) * spacing)
+            logical_i = i > logical_size ? 1 : i
+            output[i, j] = (field[mod1(logical_i + 1, logical_size), j] -
+                            field[mod1(logical_i - 1, logical_size), j]) /
+                           (T(2) * spacing)
         elseif i == 1
             output[i, j] = (field[2, j] - field[1, j]) / spacing
         elseif i == size(field, 1)
@@ -161,11 +170,20 @@ function _derivative_x(field::AbstractMatrix{T}, spacing::T, periodic::Bool) whe
     return output
 end
 
-function _derivative_y(field::AbstractMatrix{T}, spacing::T, periodic::Bool) where {T}
+function _derivative_y(
+    field::AbstractMatrix{T},
+    spacing::T,
+    periodic::Bool;
+    duplicate_endpoint::Bool = false,
+) where {T}
     output = similar(field)
+    logical_size = size(field, 2) - (periodic && duplicate_endpoint ? 1 : 0)
     for j in axes(field, 2), i in axes(field, 1)
         if periodic
-            output[i, j] = (field[i, mod1(j + 1, size(field, 2))] - field[i, mod1(j - 1, size(field, 2))]) / (T(2) * spacing)
+            logical_j = j > logical_size ? 1 : j
+            output[i, j] = (field[i, mod1(logical_j + 1, logical_size)] -
+                            field[i, mod1(logical_j - 1, logical_size)]) /
+                           (T(2) * spacing)
         elseif j == 1
             output[i, j] = (field[i, 2] - field[i, 1]) / spacing
         elseif j == size(field, 2)
@@ -184,16 +202,30 @@ function _skew_symmetric_convection(
 ) where {T}
     cell = faces_to_cell(u, v)
     v_on_u, u_on_v = cell_to_faces(cell[:, :, [2, 1]])
-    du_dx = _derivative_x(u, dx(domain), :x in domain.periodic_axes)
+    periodic_x = :x in domain.periodic_axes
+    periodic_y = :y in domain.periodic_axes
+    if periodic_x
+        periodic_v = T(0.5) .* (cell[end, :, 2] .+ cell[1, :, 2])
+        v_on_u[1, :] .= periodic_v
+        v_on_u[end, :] .= periodic_v
+    end
+    if periodic_y
+        periodic_u = T(0.5) .* (cell[:, end, 1] .+ cell[:, 1, 1])
+        u_on_v[:, 1] .= periodic_u
+        u_on_v[:, end] .= periodic_u
+    end
+    du_dx = _derivative_x(u, dx(domain), periodic_x; duplicate_endpoint = periodic_x)
     du_dy = _derivative_y(u, dy(domain), :y in domain.periodic_axes)
     dv_dx = _derivative_x(v, dx(domain), :x in domain.periodic_axes)
-    dv_dy = _derivative_y(v, dy(domain), :y in domain.periodic_axes)
+    dv_dy = _derivative_y(v, dy(domain), periodic_y; duplicate_endpoint = periodic_y)
     advective_u = u .* du_dx .+ v_on_u .* du_dy
     advective_v = u_on_v .* dv_dx .+ v .* dv_dy
-    conservative_u = _derivative_x(u .* u, dx(domain), :x in domain.periodic_axes) .+
+    conservative_u = _derivative_x(
+        u .* u, dx(domain), periodic_x; duplicate_endpoint = periodic_x,
+    ) .+
         _derivative_y(v_on_u .* u, dy(domain), :y in domain.periodic_axes)
     conservative_v = _derivative_x(u_on_v .* v, dx(domain), :x in domain.periodic_axes) .+
-        _derivative_y(v .* v, dy(domain), :y in domain.periodic_axes)
+        _derivative_y(v .* v, dy(domain), periodic_y; duplicate_endpoint = periodic_y)
     return T(0.5) .* (advective_u .+ conservative_u),
         T(0.5) .* (advective_v .+ conservative_v)
 end
@@ -205,6 +237,16 @@ function skew_face_advection_rate(
 ) where {T<:AbstractFloat}
     cell = faces_to_cell(u, v)
     v_on_u, u_on_v = cell_to_faces(cell[:, :, [2, 1]])
+    if :x in domain.periodic_axes
+        periodic_v = T(0.5) .* (cell[end, :, 2] .+ cell[1, :, 2])
+        v_on_u[1, :] .= periodic_v
+        v_on_u[end, :] .= periodic_v
+    end
+    if :y in domain.periodic_axes
+        periodic_u = T(0.5) .* (cell[:, end, 1] .+ cell[:, 1, 1])
+        u_on_v[:, 1] .= periodic_u
+        u_on_v[:, end] .= periodic_u
+    end
     selected = zero(T)
     for index in eachindex(u, v_on_u)
         selected = max(selected, abs(u[index]) / dx(domain) + abs(v_on_u[index]) / dy(domain))
