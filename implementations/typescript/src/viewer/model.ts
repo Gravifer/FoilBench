@@ -393,6 +393,10 @@ export class ViewerModel {
       const dudy = ((velocity[2 * ((y + 1) * nx + x)] ?? 0) - (velocity[2 * ((y - 1) * nx + x)] ?? 0)) / (2 * dy);
       output[y * nx + x] = dvdx - dudy;
     }
+    const control = this.control(this.time); const {x: bx, y: by} = bounds2d(this.scenario.domain); const magnitudes: number[] = []; let maximum = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const index = y * nx + x; const px = bx[0] + (x + 0.5) * dx; const py = by[0] + (y + 0.5) * dy; if (this.presentationFoil.signedDistance(px, py, control.angleDegrees) <= 0) { output[index] = 0; continue; } const magnitude = Math.abs(output[index] ?? 0); magnitudes.push(magnitude); maximum = Math.max(maximum, magnitude); }
+    magnitudes.sort((left, right) => left - right); const percentileIndex = Math.max(0, Math.min(magnitudes.length - 1, Math.ceil(0.995 * magnitudes.length) - 1)); const percentile = magnitudes[percentileIndex] ?? 0; const scale = Math.max(percentile, 0.2 * maximum, 1e-6);
+    for (let index = 0; index < output.length; index += 1) output[index] = Math.tanh((output[index] ?? 0) / scale);
     this.vorticityCache = output;
     this.vorticityCacheRevision = this.solver.stateRevision;
     this.nextVorticityTime = this.time + 0.1;
