@@ -56,7 +56,7 @@ describe("revision-2 solver validity evidence", () => {
 
   it("reports family-specific accepted-step evidence", async () => {
     const fixture = JSON.parse(await readFile(resolve("../../spec/conformance/solver-validity.json"), "utf8")) as ValidityFixture;
-    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(3);
+    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(4);
     const scenario = await loadScenario(`../../${fixture.scenario}`);
     const reports = Object.fromEntries(solverIds.map((solverId) => { const solver = createSolver(solverId); solver.initialize(scenario, 0); return [solverId, solver.advance({time: fixture.target_dt, angleDegrees: 0, angularVelocityDegrees: 0}, fixture.target_dt)]; })) as Record<SolverId, ReturnType<ReturnType<typeof createSolver>["advance"]>>;
     for (const solverId of solverIds) for (const key of fixture.accepted_evidence[solverId]) {

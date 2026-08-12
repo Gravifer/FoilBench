@@ -62,7 +62,7 @@ class SampleSolver implements FlowSolver {
 describe("visible tracer contract", () => {
   it("uses the shared frozen-field explicit-midpoint fixture rather than Euler", async () => {
     const fixture = JSON.parse(await readFile(resolve("../../spec/conformance/tracer-lifecycle.json"), "utf8")) as {contract_id: string; contract_revision: number; integrator: {initial_position: [number, number]; target_dt: number; expected_position: [number, number]; absolute_tolerance: number}};
-    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(3);
+    expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(4);
     const tracers = new TracerSystem(scenario, 1, 3);
     tracers.positions[0] = fixture.integrator.initial_position[0]; tracers.positions[1] = fixture.integrator.initial_position[1];
     tracers.ages[0] = 0; tracers.lifetimes[0] = 10;

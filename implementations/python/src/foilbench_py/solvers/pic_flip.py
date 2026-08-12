@@ -622,6 +622,54 @@ class PicFlipSolver:
             self._resolve_particle_collisions(control)
 
     def advance(self, control: ControlState, target_dt: float) -> StepReport:
+        minimum_substeps = 1
+        stability_retries = 0
+        while True:
+            try:
+                return self._advance_once(
+                    control,
+                    target_dt,
+                    minimum_substeps,
+                    stability_retries,
+                )
+            except NumericalFailure as error:
+                accepted = error.evidence.get("accepted_cfl")
+                maximum = error.evidence.get("maximum_cfl")
+                attempted = error.evidence.get("substeps")
+                if not (
+                    error.reason == "stability_limit"
+                    and isinstance(accepted, float)
+                    and isinstance(maximum, float)
+                    and isinstance(attempted, int)
+                    and accepted > maximum > 0.0
+                ):
+                    raise
+                next_substeps = max(
+                    attempted + 1,
+                    int(np.ceil(1.05 * attempted * accepted / maximum)),
+                )
+                if next_substeps > 512:
+                    raise NumericalFailure(
+                        "stability_limit",
+                        "PIC/FLIP retry requires too many internal substeps",
+                        "particle-advection",
+                        {
+                            **error.evidence,
+                            "required_substeps": next_substeps,
+                            "maximum_substeps": 512,
+                            "stability_retries": stability_retries,
+                        },
+                    ) from error
+                stability_retries += 1
+                minimum_substeps = next_substeps
+
+    def _advance_once(
+        self,
+        control: ControlState,
+        target_dt: float,
+        minimum_substeps: int,
+        stability_retries: int,
+    ) -> StepReport:
         scenario, geometry, positions, particle_velocity, grid_velocity, _ = self._require()
         centers = self._centers
         if centers is None:
@@ -656,7 +704,7 @@ class PicFlipSolver:
             * min(scenario.domain.dx, scenario.domain.dy)
             / max(transport_speed, 1.0e-6)
         )
-        substeps = max(1, int(np.ceil(target_dt / stable_dt)))
+        substeps = max(minimum_substeps, int(np.ceil(target_dt / stable_dt)))
         if substeps > 512:
             raise NumericalFailure(
                 "stability_limit",
@@ -825,6 +873,7 @@ class PicFlipSolver:
                     {
                         "accepted_cfl": accepted_cfl,
                         "maximum_cfl": self._cfl,
+                        "substeps": substeps,
                     },
                 )
         except Exception:
@@ -896,6 +945,7 @@ class PicFlipSolver:
                 "maximum_particle_speed": float(
                     np.max(np.linalg.norm(particle_velocity, axis=1))
                 ),
+                "stability_retries": stability_retries,
                 "maximum_wall_speed": wall_speed,
                 "maximum_particle_cfl": dt * report_speed / min(
                     scenario.domain.dx,

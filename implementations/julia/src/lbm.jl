@@ -624,6 +624,7 @@ function advance!(solver::LBMSolver{T}, control::ControlState, target_dt::Real) 
         target, target, substeps, maximum_speed, warnings, solver.revision,
         Dict{String,Any}(
             "maximum_fluid_speed" => maximum_speed,
+            "stability_retries" => 0,
             "maximum_physical_speed" => maximum_speed,
             "maximum_wall_speed" => wall_speed,
             "maximum_geometry_sweep_speed" => sweep_speed,

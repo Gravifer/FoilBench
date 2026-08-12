@@ -17,7 +17,8 @@ def test_experimental_skew_rk2_path_remains_finite() -> None:
             (root / "spec" / "conformance" / "solver-validity.json").read_text(encoding="utf-8")
         ),
     )
-    retry_case = cast(dict[str, object], fixture["stable_retry_case"])
+    retry_cases = cast(dict[str, object], fixture["planning_retry_cases"])
+    retry_case = cast(dict[str, object], retry_cases["stable-fluids"])
     scenario = load_scenario(root / "scenarios" / "airfoil" / "chaotic-experimental.json")
     solver = create_solver("stable-fluids")
     solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
@@ -35,3 +36,29 @@ def test_experimental_skew_rk2_path_remains_finite() -> None:
     assert total_retries >= int(cast(int, retry_case["minimum_total_stability_retries"]))
     assert np.isfinite(state.velocity).all()
     assert solver.diagnostics().values["solid_leakage"] < 1.0e-6
+
+
+def test_full_size_pic_startup_recovers_a_stale_particle_plan() -> None:
+    root = find_repo_root(Path(__file__))
+    fixture = cast(
+        dict[str, object],
+        json.loads(
+            (root / "spec" / "conformance" / "solver-validity.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    retry_cases = cast(dict[str, object], fixture["planning_retry_cases"])
+    retry_case = cast(dict[str, object], retry_cases["pic-flip"])
+    scenario = load_scenario(root / str(retry_case["scenario"]))
+    solver = create_solver("pic-flip")
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+
+    report = solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+
+    assert report.substeps >= 2
+    assert int(report.evidence["stability_retries"]) >= 1
+    assert float(report.evidence["maximum_particle_cfl"]) <= float(
+        scenario.solver_options["pic_cfl"]
+    ) * (1.0 + 1.0e-6)
+    assert np.isfinite(solver.export_state().velocity).all()

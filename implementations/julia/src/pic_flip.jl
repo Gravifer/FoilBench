@@ -512,6 +512,51 @@ function _pic_maintain_population!(solver::PicFlipSolver{T}, control::ControlSta
 end
 
 function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Real) where {T}
+    minimum_substeps = 1
+    stability_retries = 0
+    while true
+        try
+            return _advance_pic_once!(
+                solver, control, target_dt, minimum_substeps, stability_retries,
+            )
+        catch error
+            if !(error isa NumericalFailure && error.reason == :stability_limit &&
+                 haskey(error.evidence, "accepted_cfl") &&
+                 haskey(error.evidence, "maximum_cfl") &&
+                 haskey(error.evidence, "substeps"))
+                rethrow()
+            end
+            accepted = Float64(error.evidence["accepted_cfl"])
+            maximum_allowed = Float64(error.evidence["maximum_cfl"])
+            attempted = Int(error.evidence["substeps"])
+            accepted > maximum_allowed > 0 || rethrow()
+            next_substeps = max(
+                attempted + 1,
+                ceil(Int, 1.05 * attempted * accepted / maximum_allowed),
+            )
+            next_substeps <= 512 || throw(NumericalFailure(
+                :stability_limit,
+                "PIC/FLIP retry requires too many internal substeps",
+                Symbol("particle-advection"),
+                merge(error.evidence, Dict{String,Any}(
+                    "required_substeps" => next_substeps,
+                    "maximum_substeps" => 512,
+                    "stability_retries" => stability_retries,
+                )),
+            ))
+            stability_retries += 1
+            minimum_substeps = next_substeps
+        end
+    end
+end
+
+function _advance_pic_once!(
+    solver::PicFlipSolver{T},
+    control::ControlState,
+    target_dt::Real,
+    minimum_substeps::Int,
+    stability_retries::Int,
+) where {T}
     scenario, geometry = _pic_require(solver)
     target = validate_advance_request(solver.time, control, target_dt)
     all(isfinite, solver.positions) && all(isfinite, solver.particle_velocity) &&
@@ -537,7 +582,7 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
     )
     transport_speed = max(maximum_speed, wall_speed)
     stable_dt = solver.cfl * min(dx(scenario.domain), dy(scenario.domain)) / max(transport_speed, T(1.0e-6))
-    substeps = max(1, ceil(Int, target / stable_dt))
+    substeps = max(minimum_substeps, ceil(Int, target / stable_dt))
     substeps <= 512 || throw(NumericalFailure(
         :stability_limit,
         "PIC/FLIP motion requires too many internal substeps",
@@ -679,6 +724,7 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
                 Dict{String,Any}(
                     "accepted_cfl" => maximum_particle_cfl,
                     "maximum_cfl" => solver.cfl,
+                    "substeps" => substeps,
                 ),
             ))
     catch
@@ -713,6 +759,7 @@ function advance!(solver::PicFlipSolver{T}, control::ControlState, target_dt::Re
         target, target, substeps, final_speed, warnings, solver.revision,
         Dict{String,Any}(
             "maximum_particle_speed" => particle_speed,
+            "stability_retries" => stability_retries,
             "maximum_wall_speed" => wall_speed,
             "maximum_particle_cfl" => maximum_particle_cfl,
             "maximum_characteristic_displacement" => maximum_particle_cfl,

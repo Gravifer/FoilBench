@@ -452,7 +452,7 @@ function run_benchmark_matrix(
             result = Dict{String,Any}(
                 "schema_version" => 1,
                 "contract_id" => "foilbench-phase2-v1",
-                "contract_revision" => 3,
+                "contract_revision" => 4,
                 "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,
                 "repetition" => repetition,

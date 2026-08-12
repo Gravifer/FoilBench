@@ -8,7 +8,7 @@ function result(language: string): Record<string, unknown> {
   return {
     schema_version: 1,
     contract_id: "foilbench-phase2-v1",
-    contract_revision: 3,
+    contract_revision: 4,
     benchmark_matrix_id: "test",
     scenario_id: "default-airfoil",
     repetition: 1,

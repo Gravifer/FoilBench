@@ -22,7 +22,7 @@ export interface StableCheckpoint {
 
 interface IterativeReport {readonly criterion: "update-linf"; readonly tolerance: number; readonly iterations: number; readonly finalResidual: number; readonly converged: boolean}
 
-const emptyProjection = (): ProjectionReport => ({criterion: "pressure-change-linf", tolerance: 0, iterations: 0, finalResidual: 0, relativeResidual: 0, divergenceLinf: 0, converged: true});
+const emptyProjection = (): ProjectionReport => ({criterion: "relative-residual-l2", tolerance: 0, iterations: 0, finalResidual: 0, relativeResidual: 0, divergenceLinf: 0, converged: true});
 const emptyIteration = (): IterativeReport => ({criterion: "update-linf", tolerance: 0, iterations: 0, finalResidual: 0, converged: true});
 
 export class StableFluidsSolver implements FlowSolver {

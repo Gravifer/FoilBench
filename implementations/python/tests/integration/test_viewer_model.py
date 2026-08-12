@@ -113,7 +113,7 @@ def test_shared_tracer_fixture_uses_frozen_field_midpoint(
         ),
     )
     assert document["contract_id"] == "foilbench-phase2-v1"
-    assert document["contract_revision"] == 3
+    assert document["contract_revision"] == 4
     integrator = cast(dict[str, object], document["integrator"])
     initial = cast(list[float], integrator["initial_position"])
     expected = cast(list[float], integrator["expected_position"])

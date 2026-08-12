@@ -156,7 +156,7 @@ def test_lbm_import_ignores_finite_solid_density(
 def test_shared_revision_3_validity_fixture() -> None:
     fixture = _validity_fixture()
     assert fixture["contract_id"] == "foilbench-phase2-v1"
-    assert fixture["contract_revision"] == 3
+    assert fixture["contract_revision"] == 4
     scenario = load_scenario(_REPOSITORY_ROOT / fixture["scenario"])
     resolution = fixture["resolution"]
     scenario = replace(

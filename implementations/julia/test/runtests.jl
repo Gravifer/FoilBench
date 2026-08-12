@@ -841,10 +841,10 @@ end
     end
 end
 
-@testset "Shared Revision 3 solver-validity fixture" begin
+@testset "Shared Revision 4 solver-validity fixture" begin
     fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
     @test fixture.contract_id == "foilbench-phase2-v1"
-    @test fixture.contract_revision == 3
+    @test fixture.contract_revision == 4
     fixture_scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, fixture.scenario)),
         (Int(fixture.resolution[1]), Int(fixture.resolution[2])),
@@ -975,10 +975,10 @@ end
     end
 end
 
-@testset "Shared Revision 3 tracer fixture" begin
+@testset "Shared Revision 4 tracer fixture" begin
     fixture = JSON3.read(read(joinpath(FIXTURES, "tracer-lifecycle.json"), String))
     @test fixture.contract_id == "foilbench-phase2-v1"
-    @test fixture.contract_revision == 3
+    @test fixture.contract_revision == 4
     scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json")),
         (32, 16),
@@ -1030,7 +1030,7 @@ end
     end
 
     retry_fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
-    retry_case = retry_fixture.stable_retry_case
+    retry_case = retry_fixture.planning_retry_cases["stable-fluids"]
     chaotic = load_scenario(
         joinpath(REPOSITORY_ROOT, String(retry_case.scenario)),
     )
@@ -1053,6 +1053,21 @@ end
     @test export_state(chaotic_solver).time == retry_case.duration
     @test total_retries >= retry_case.minimum_total_stability_retries
     @test all(isfinite, export_state(chaotic_solver).velocity)
+
+    pic_case = retry_fixture.planning_retry_cases["pic-flip"]
+    pic_scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(pic_case.scenario)))
+    pic_solver = PicFlipSolver(Float32)
+    initialize!(pic_solver, pic_scenario, NacaFoil(pic_scenario.foil), pic_scenario.seed)
+    pic_report = advance!(
+        pic_solver,
+        control_at(pic_scenario, pic_scenario.output_dt),
+        pic_scenario.output_dt,
+    )
+    @test pic_report.substeps >= 2
+    @test pic_report.evidence["stability_retries"] >= 1
+    @test pic_report.evidence["maximum_particle_cfl"] <=
+        option(pic_scenario, "pic_cfl", 0.75) * (1 + 1.0e-6)
+    @test all(isfinite, export_state(pic_solver).velocity)
 end
 
 @testset "Headless viewer model and worker" begin
@@ -1585,7 +1600,7 @@ end
     result = Dict{String,Any}(
         "schema_version" => 1,
         "contract_id" => "foilbench-phase2-v1",
-        "contract_revision" => 3,
+        "contract_revision" => 4,
         "benchmark_matrix_id" => "test",
         "scenario_id" => "test",
         "repetition" => 1,
@@ -1697,7 +1712,7 @@ end
             @test document["periodic_axes"] isa Vector
             @test isnothing(validate_benchmark_result(document, schema_path))
             @test document["contract_id"] == "foilbench-phase2-v1"
-            @test document["contract_revision"] == 3
+            @test document["contract_revision"] == 4
             @test isnothing(document["failure"])
             @test document["final_state_revision"] == document["diagnostic_state_revision"]
             @test document["final_state_revision"] == document["last_step"]["state_revision"]

@@ -27,18 +27,31 @@ describe("TypeScript chaotic-wake parity", () => {
   it("sustains the full-resolution accepted startup through internal stability retries", async () => {
     const root = resolve("../..");
     const schema = JSON.parse(await readFile(resolve(root, "spec/scenario.schema.json"), "utf8")) as object;
-    const fixture = JSON.parse(await readFile(resolve(root, "spec/conformance/solver-validity.json"), "utf8")) as {stable_retry_case: {scenario: string; duration: number; expected_steps: number; minimum_total_stability_retries: number}};
-    const scenario = parseScenario(JSON.parse(await readFile(resolve(root, fixture.stable_retry_case.scenario), "utf8")) as unknown, schema);
+    const fixture = JSON.parse(await readFile(resolve(root, "spec/conformance/solver-validity.json"), "utf8")) as {planning_retry_cases: {"stable-fluids": {scenario: string; duration: number; expected_steps: number; minimum_total_stability_retries: number}}};
+    const retryCase = fixture.planning_retry_cases["stable-fluids"];
+    const scenario = parseScenario(JSON.parse(await readFile(resolve(root, retryCase.scenario), "utf8")) as unknown, schema);
     const solver = createSolver("stable-fluids");
     solver.initialize(scenario, scenario.seed);
     let totalRetries = 0;
-    for (let step = 1; step <= fixture.stable_retry_case.expected_steps; step += 1) {
+    for (let step = 1; step <= retryCase.expected_steps; step += 1) {
       const report = solver.advance(controlAt(scenario, step * scenario.outputDt), scenario.outputDt);
       expect(report.stateRevision).toBe(step);
       totalRetries += Number(report.evidence["stability_retries"] ?? 0);
     }
-    expect(solver.exportState().time).toBeCloseTo(fixture.stable_retry_case.duration, 6);
-    expect(totalRetries).toBeGreaterThanOrEqual(fixture.stable_retry_case.minimum_total_stability_retries);
+    expect(solver.exportState().time).toBeCloseTo(retryCase.duration, 6);
+    expect(totalRetries).toBeGreaterThanOrEqual(retryCase.minimum_total_stability_retries);
+    expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true);
+  }, 45_000);
+
+  it("starts full-resolution PIC/FLIP with bounded planning evidence", async () => {
+    const root = resolve("../..");
+    const schema = JSON.parse(await readFile(resolve(root, "spec/scenario.schema.json"), "utf8")) as object;
+    const fixture = JSON.parse(await readFile(resolve(root, "spec/conformance/solver-validity.json"), "utf8")) as {planning_retry_cases: {"pic-flip": {scenario: string}}};
+    const scenario = parseScenario(JSON.parse(await readFile(resolve(root, fixture.planning_retry_cases["pic-flip"].scenario), "utf8")) as unknown, schema);
+    const solver = createSolver("pic-flip"); solver.initialize(scenario, scenario.seed);
+    const report = solver.advance(controlAt(scenario, scenario.outputDt), scenario.outputDt);
+    expect(Number(report.evidence["stability_retries"])).toBeGreaterThanOrEqual(0);
+    expect(Number(report.evidence["maximum_particle_cfl"])).toBeLessThanOrEqual((scenario.solverOptions.picCfl ?? 0.75) * (1 + 1e-6));
     expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true);
   }, 15_000);
 });

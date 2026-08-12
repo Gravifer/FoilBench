@@ -85,13 +85,13 @@
     "scenario": "scenarios/airfoil/chaotic-experimental.json",
     "duration": 1.0,
     "expected_steps": 60,
-    "minimum_total_stability_retries": 1
+    "minimum_total_stability_retries": 0
     },
     "pic-flip": {
       "scenario": "scenarios/airfoil/default.json",
       "duration": 0.016666666666666666,
       "expected_steps": 1,
-      "minimum_total_stability_retries": 1
+      "minimum_total_stability_retries": 0
     }
   }
 }

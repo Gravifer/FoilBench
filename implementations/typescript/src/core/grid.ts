@@ -63,7 +63,7 @@ export function divergence(u: FloatArray, v: FloatArray, nx: number, ny: number,
 }
 
 export interface ProjectionReport {
-  readonly criterion: "pressure-change-linf";
+  readonly criterion: "relative-residual-l2";
   readonly tolerance: number;
   readonly iterations: number;
   readonly finalResidual: number;
@@ -73,38 +73,58 @@ export interface ProjectionReport {
 }
 
 export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: number, ny: number, dx: number, dy: number, precision: Precision, iterations: number, tolerance: number, periodicX = false, periodicY = false): ProjectionReport {
-  const rhs = divergence(u, v, nx, ny, dx, dy, precision); const pressure = allocate(precision, nx * ny); const next = allocate(precision, nx * ny);
+  const divergenceBefore = divergence(u, v, nx, ny, dx, dy, precision); const pressure = allocate(precision, nx * ny); const rightHandSide = allocate(precision, nx * ny); const diagonal = allocate(precision, nx * ny);
   const invDx2 = 1 / (dx * dx); const invDy2 = 1 / (dy * dy);
-  let fluidCount = 0; let rhsMean = 0; for (let index = 0; index < rhs.length; index += 1) if (solid[index] === 0) { rhsMean += rhs[index] ?? 0; fluidCount += 1; } rhsMean /= Math.max(1, fluidCount); for (let index = 0; index < rhs.length; index += 1) if (solid[index] === 0) rhs[index] = (rhs[index] ?? 0) - rhsMean;
-  let performed = 0; let finalChange = Number.POSITIVE_INFINITY; let converged = false;
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    let maxChange = 0;
+  let fluidCount = 0; let rightMean = 0;
+  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+    const index = y * nx + x; if (solid[index] !== 0) { diagonal[index] = 1; rightHandSide[index] = 0; continue; }
+    fluidCount += 1; const right = -(divergenceBefore[index] ?? 0); rightHandSide[index] = right; rightMean += right;
+    let value = 0;
+    const left = x > 0 ? index - 1 : periodicX ? index + nx - 1 : -1; const rightIndex = x + 1 < nx ? index + 1 : periodicX ? index - nx + 1 : -1;
+    const bottom = y > 0 ? index - nx : periodicY ? index + nx * (ny - 1) : -1; const top = y + 1 < ny ? index + nx : periodicY ? index - nx * (ny - 1) : -1;
+    if (left >= 0) { if (solid[left] === 0) value += invDx2; } else value += invDx2;
+    if (rightIndex >= 0) { if (solid[rightIndex] === 0) value += invDx2; } else value += invDx2;
+    if (bottom >= 0) { if (solid[bottom] === 0) value += invDy2; } else value += invDy2;
+    if (top >= 0) { if (solid[top] === 0) value += invDy2; } else value += invDy2;
+    diagonal[index] = Math.max(value, precision === "float32" ? 1e-7 : 1e-15);
+  }
+  if (periodicX && periodicY && fluidCount > 0) { rightMean /= fluidCount; for (let index = 0; index < rightHandSide.length; index += 1) if (solid[index] === 0) rightHandSide[index] = (rightHandSide[index] ?? 0) - rightMean; }
+  const applyOperator = (source: FloatArray, destination: FloatArray): void => {
     for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
-      const index = y * nx + x;
-      if (solid[index] !== 0) { next[index] = 0; continue; }
-      let sum = 0; let weight = 0;
+      const index = y * nx + x; if (solid[index] !== 0) { destination[index] = source[index] ?? 0; continue; }
+      let value = (diagonal[index] ?? 0) * (source[index] ?? 0);
       const left = x > 0 ? index - 1 : periodicX ? index + nx - 1 : -1; const right = x + 1 < nx ? index + 1 : periodicX ? index - nx + 1 : -1;
       const bottom = y > 0 ? index - nx : periodicY ? index + nx * (ny - 1) : -1; const top = y + 1 < ny ? index + nx : periodicY ? index - nx * (ny - 1) : -1;
-      if (left >= 0 && solid[left] === 0) { sum += (pressure[left] ?? 0) * invDx2; weight += invDx2; }
-      if (right >= 0 && solid[right] === 0) { sum += (pressure[right] ?? 0) * invDx2; weight += invDx2; }
-      if (bottom >= 0 && solid[bottom] === 0) { sum += (pressure[bottom] ?? 0) * invDy2; weight += invDy2; }
-      if (top >= 0 && solid[top] === 0) { sum += (pressure[top] ?? 0) * invDy2; weight += invDy2; }
-      const value = weight > 0 ? (sum - (rhs[index] ?? 0)) / weight : 0;
-      maxChange = Math.max(maxChange, Math.abs(value - (pressure[index] ?? 0))); next[index] = value;
+      if (left >= 0 && solid[left] === 0) value -= invDx2 * (source[left] ?? 0);
+      if (right >= 0 && solid[right] === 0) value -= invDx2 * (source[right] ?? 0);
+      if (bottom >= 0 && solid[bottom] === 0) value -= invDy2 * (source[bottom] ?? 0);
+      if (top >= 0 && solid[top] === 0) value -= invDy2 * (source[top] ?? 0);
+      destination[index] = value;
     }
-    pressure.set(next); performed = iteration + 1; finalChange = maxChange; if (maxChange < tolerance) { converged = true; break; }
+  };
+  const residual = rightHandSide.slice(); const preconditioned = allocate(precision, nx * ny); const preconditionerScratch = allocate(precision, nx * ny); const direction = allocate(precision, nx * ny); const operatorDirection = allocate(precision, nx * ny);
+  const applyPreconditioner = (source: FloatArray, destination: FloatArray): void => {
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const index = y * nx + x; if (solid[index] !== 0) { preconditionerScratch[index] = source[index] ?? 0; continue; } let value = source[index] ?? 0; if (x > 0 && solid[index - 1] === 0) value += invDx2 * (preconditionerScratch[index - 1] ?? 0); if (y > 0 && solid[index - nx] === 0) value += invDy2 * (preconditionerScratch[index - nx] ?? 0); preconditionerScratch[index] = value / Math.max(diagonal[index] ?? 0, epsilon); }
+    for (let y = ny - 1; y >= 0; y -= 1) for (let x = nx - 1; x >= 0; x -= 1) { const index = y * nx + x; if (solid[index] !== 0) { destination[index] = preconditionerScratch[index] ?? 0; continue; } let value = (diagonal[index] ?? 0) * (preconditionerScratch[index] ?? 0); if (x + 1 < nx && solid[index + 1] === 0) value += invDx2 * (destination[index + 1] ?? 0); if (y + 1 < ny && solid[index + nx] === 0) value += invDy2 * (destination[index + nx] ?? 0); destination[index] = value / Math.max(diagonal[index] ?? 0, epsilon); }
+  };
+  const epsilon = precision === "float32" ? 1e-7 : 1e-15; applyPreconditioner(residual, preconditioned);
+  let rightNormSquared = 0; let residualDot = 0; for (let index = 0; index < residual.length; index += 1) { const right = rightHandSide[index] ?? 0; direction[index] = preconditioned[index] ?? 0; rightNormSquared += right * right; residualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0); }
+  const rightNorm = Math.sqrt(rightNormSquared); let performed = 0; let relativeResidual = rightNorm <= epsilon ? 0 : 1; let converged = rightNorm <= epsilon;
+  for (let iteration = 0; iteration < iterations && !converged; iteration += 1) {
+    applyOperator(direction, operatorDirection); let denominator = 0; for (let index = 0; index < direction.length; index += 1) denominator += (direction[index] ?? 0) * (operatorDirection[index] ?? 0);
+    if (!(Number.isFinite(denominator) && denominator > 0 && Number.isFinite(residualDot))) break;
+    const alpha = residualDot / denominator; let residualNormSquared = 0;
+    for (let index = 0; index < pressure.length; index += 1) { pressure[index] = (pressure[index] ?? 0) + alpha * (direction[index] ?? 0); residual[index] = (residual[index] ?? 0) - alpha * (operatorDirection[index] ?? 0); residualNormSquared += (residual[index] ?? 0) ** 2; }
+    performed = iteration + 1; relativeResidual = Math.sqrt(residualNormSquared) / Math.max(rightNorm, epsilon); if (relativeResidual <= tolerance) { converged = true; break; }
+    applyPreconditioner(residual, preconditioned); let nextResidualDot = 0; for (let index = 0; index < residual.length; index += 1) nextResidualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0);
+    if (!(Number.isFinite(nextResidualDot) && residualDot !== 0)) break; const beta = nextResidualDot / residualDot; for (let index = 0; index < direction.length; index += 1) direction[index] = (preconditioned[index] ?? 0) + beta * (direction[index] ?? 0); residualDot = nextResidualDot;
   }
+  if (periodicX && periodicY && fluidCount > 0) { let mean = 0; for (let index = 0; index < pressure.length; index += 1) if (solid[index] === 0) mean += pressure[index] ?? 0; mean /= fluidCount; for (let index = 0; index < pressure.length; index += 1) if (solid[index] === 0) pressure[index] = (pressure[index] ?? 0) - mean; }
   for (let y = 0; y < ny; y += 1) for (let x = 1; x < nx; x += 1) if (solid[y * nx + x - 1] === 0 && solid[y * nx + x] === 0) u[y * (nx + 1) + x] = (u[y * (nx + 1) + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[y * nx + x - 1] ?? 0)) / dx;
   for (let y = 1; y < ny; y += 1) for (let x = 0; x < nx; x += 1) if (solid[(y - 1) * nx + x] === 0 && solid[y * nx + x] === 0) v[y * nx + x] = (v[y * nx + x] ?? 0) - ((pressure[y * nx + x] ?? 0) - (pressure[(y - 1) * nx + x] ?? 0)) / dy;
   if (periodicX) for (let y = 0; y < ny; y += 1) { const left = y * nx + nx - 1; const right = y * nx; if (solid[left] === 0 && solid[right] === 0) { const value = (u[y * (nx + 1)] ?? 0) - ((pressure[right] ?? 0) - (pressure[left] ?? 0)) / dx; u[y * (nx + 1)] = value; u[y * (nx + 1) + nx] = value; } }
   if (periodicY) for (let x = 0; x < nx; x += 1) { const bottom = (ny - 1) * nx + x; const top = x; if (solid[bottom] === 0 && solid[top] === 0) { const value = (v[x] ?? 0) - ((pressure[top] ?? 0) - (pressure[bottom] ?? 0)) / dy; v[x] = value; v[ny * nx + x] = value; } }
-  let residualSquared = 0; let rhsSquared = 0;
-  for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
-    const index = y * nx + x; if (solid[index] !== 0) continue; let sum = 0; let weight = 0;
-    const left = x > 0 ? index - 1 : periodicX ? index + nx - 1 : -1; const right = x + 1 < nx ? index + 1 : periodicX ? index - nx + 1 : -1; const bottom = y > 0 ? index - nx : periodicY ? index + nx * (ny - 1) : -1; const top = y + 1 < ny ? index + nx : periodicY ? index - nx * (ny - 1) : -1;
-    if (left >= 0 && solid[left] === 0) { sum += (pressure[left] ?? 0) * invDx2; weight += invDx2; } if (right >= 0 && solid[right] === 0) { sum += (pressure[right] ?? 0) * invDx2; weight += invDx2; } if (bottom >= 0 && solid[bottom] === 0) { sum += (pressure[bottom] ?? 0) * invDy2; weight += invDy2; } if (top >= 0 && solid[top] === 0) { sum += (pressure[top] ?? 0) * invDy2; weight += invDy2; }
-    const residual = sum - weight * (pressure[index] ?? 0) - (rhs[index] ?? 0); residualSquared += residual * residual; rhsSquared += (rhs[index] ?? 0) ** 2;
-  }
-  const projectedDivergence = divergence(u, v, nx, ny, dx, dy, precision); let divergenceLinf = 0; for (let index = 0; index < projectedDivergence.length; index += 1) if (solid[index] === 0) divergenceLinf = Math.max(divergenceLinf, Math.abs(projectedDivergence[index] ?? 0)); const finalResidual = Math.sqrt(residualSquared); const epsilon = precision === "float32" ? 1e-7 : 1e-15;
-  return {criterion: "pressure-change-linf", tolerance, iterations: performed, finalResidual, relativeResidual: finalResidual / Math.max(Math.sqrt(rhsSquared), epsilon), divergenceLinf, converged: converged && Number.isFinite(finalChange)};
+  applyOperator(pressure, operatorDirection); let finalResidualSquared = 0; for (let index = 0; index < operatorDirection.length; index += 1) { const value = (rightHandSide[index] ?? 0) - (operatorDirection[index] ?? 0); finalResidualSquared += value * value; } const finalResidual = Math.sqrt(finalResidualSquared); relativeResidual = finalResidual / Math.max(rightNorm, epsilon); converged = converged && Number.isFinite(relativeResidual) && relativeResidual <= tolerance;
+  const projectedDivergence = divergence(u, v, nx, ny, dx, dy, precision); let divergenceLinf = 0; for (let index = 0; index < projectedDivergence.length; index += 1) if (solid[index] === 0) divergenceLinf = Math.max(divergenceLinf, Math.abs(projectedDivergence[index] ?? 0));
+  return {criterion: "relative-residual-l2", tolerance, iterations: performed, finalResidual, relativeResidual, divergenceLinf, converged};
 }

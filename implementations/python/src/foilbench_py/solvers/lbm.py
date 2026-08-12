@@ -814,6 +814,7 @@ class LBMSolver:
             self._revision,
             {
                 "maximum_fluid_speed": max_speed,
+                "stability_retries": 0,
                 "maximum_wall_speed": wall_speed,
                 "maximum_geometry_sweep_speed": sweep_speed,
                 "maximum_lattice_mach": maximum_mach,
