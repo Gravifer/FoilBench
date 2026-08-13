@@ -7,16 +7,150 @@
 )]
 
 use foilbench_core::{
-    CanonicalFlowState2, CanonicalGeometryDescriptor, ControlState, FlowSolver, NacaFoil,
-    Precision, Producer, RestartState, Scenario, SolverError, StableFluids, TuningValue,
+    CanonicalFlowState2, CanonicalGeometryDescriptor, ControlState, Diagnostics, FlowSolver,
+    ImportOutcome, InteractiveTuning, LbmD2q9, NacaFoil, Precision, Producer, RestartState,
+    ReynoldsOutcome, Scenario, SolverError, SolverInfo, StableFluids, StepReport, TuningValue,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
+macro_rules! solver_union {
+    ($name:ident, $scalar:ty) => {
+        enum $name {
+            Stable(StableFluids<$scalar>),
+            Lbm(LbmD2q9<$scalar>),
+        }
+
+        impl $name {
+            fn current_reynolds(&self) -> Option<f64> {
+                match self {
+                    Self::Stable(solver) => solver.current_reynolds(),
+                    Self::Lbm(solver) => solver.current_reynolds(),
+                }
+            }
+
+            fn set_transport(&mut self, mode: &str) -> Result<(), SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.set_transport(mode),
+                    Self::Lbm(_) => Err(SolverError::new(
+                        foilbench_core::FailureReason::UnsupportedConversion,
+                        foilbench_core::FailureStage::Postcondition,
+                        "D2Q9 LBM exposes no interactive tuning",
+                    )),
+                }
+            }
+        }
+
+        impl FlowSolver<$scalar> for $name {
+            fn info(&self) -> &SolverInfo {
+                match self {
+                    Self::Stable(solver) => solver.info(),
+                    Self::Lbm(solver) => solver.info(),
+                }
+            }
+            fn initialize(
+                &mut self,
+                scenario: &Scenario,
+                geometry: &NacaFoil,
+                seed: u32,
+            ) -> Result<(), SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.initialize(scenario, geometry, seed),
+                    Self::Lbm(solver) => solver.initialize(scenario, geometry, seed),
+                }
+            }
+            fn restart(
+                &mut self,
+                scenario: &Scenario,
+                geometry: &NacaFoil,
+                seed: u32,
+                start: RestartState,
+            ) -> Result<(), SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.restart(scenario, geometry, seed, start),
+                    Self::Lbm(solver) => solver.restart(scenario, geometry, seed, start),
+                }
+            }
+            fn set_reynolds(&mut self, reynolds: f64) -> Result<ReynoldsOutcome, SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.set_reynolds(reynolds),
+                    Self::Lbm(solver) => solver.set_reynolds(reynolds),
+                }
+            }
+            fn advance(
+                &mut self,
+                control: ControlState,
+                target_dt: f64,
+            ) -> Result<StepReport, SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.advance(control, target_dt),
+                    Self::Lbm(solver) => solver.advance(control, target_dt),
+                }
+            }
+            fn sample_velocity(
+                &self,
+                points: &[[$scalar; 2]],
+                output: &mut [[$scalar; 2]],
+            ) -> Result<(), SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.sample_velocity(points, output),
+                    Self::Lbm(solver) => solver.sample_velocity(points, output),
+                }
+            }
+            fn export_state(&self) -> Result<CanonicalFlowState2<$scalar>, SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.export_state(),
+                    Self::Lbm(solver) => solver.export_state(),
+                }
+            }
+            fn import_state(
+                &mut self,
+                state: &CanonicalFlowState2<$scalar>,
+                control: ControlState,
+            ) -> ImportOutcome {
+                match self {
+                    Self::Stable(solver) => solver.import_state(state, control),
+                    Self::Lbm(solver) => solver.import_state(state, control),
+                }
+            }
+            fn diagnostics(&self) -> Result<Diagnostics, SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.diagnostics(),
+                    Self::Lbm(solver) => solver.diagnostics(),
+                }
+            }
+            fn interactive_tuning(&self) -> Option<InteractiveTuning> {
+                match self {
+                    Self::Stable(solver) => solver.interactive_tuning(),
+                    Self::Lbm(solver) => solver.interactive_tuning(),
+                }
+            }
+            fn adjust_interactive_tuning(
+                &mut self,
+                direction: i8,
+            ) -> Result<Option<InteractiveTuning>, SolverError> {
+                match self {
+                    Self::Stable(solver) => solver.adjust_interactive_tuning(direction),
+                    Self::Lbm(solver) => solver.adjust_interactive_tuning(direction),
+                }
+            }
+            fn state_revision(&self) -> u64 {
+                match self {
+                    Self::Stable(solver) => solver.state_revision(),
+                    Self::Lbm(solver) => solver.state_revision(),
+                }
+            }
+        }
+    };
+}
+
+solver_union!(Solver32, f32);
+solver_union!(Solver64, f64);
+
 enum SolverStorage {
-    Float32(StableFluids<f32>),
-    Float64(StableFluids<f64>),
+    Float32(Solver32),
+    Float64(Solver64),
 }
 
 #[derive(Deserialize)]
@@ -94,22 +228,35 @@ impl WasmSolver {
     /// Parse a shared scenario and initialize one Rust/WASM solver.
     #[wasm_bindgen(constructor)]
     pub fn new(scenario_json: &str, solver_id: &str, seed: u32) -> Result<WasmSolver, JsValue> {
-        if solver_id != "stable-fluids" {
-            return Err(text_error("this milestone exposes only stable-fluids"));
-        }
         let scenario =
             Scenario::from_json(scenario_json).map_err(|error| text_error(error.to_string()))?;
         let geometry = NacaFoil::new(scenario.foil().clone()).map_err(text_error)?;
         let storage = match scenario.precision() {
             Precision::Float32 => {
-                let mut solver = StableFluids::<f32>::new("wasm-browser");
+                let mut solver = match solver_id {
+                    "stable-fluids" => Solver32::Stable(StableFluids::new("wasm-browser")),
+                    "lbm-d2q9" => Solver32::Lbm(LbmD2q9::new("wasm-browser")),
+                    _ => {
+                        return Err(text_error(
+                            "this milestone exposes stable-fluids and lbm-d2q9",
+                        ));
+                    }
+                };
                 solver
                     .initialize(&scenario, &geometry, seed)
                     .map_err(|error| js_error(&error))?;
                 SolverStorage::Float32(solver)
             }
             Precision::Float64 => {
-                let mut solver = StableFluids::<f64>::new("wasm-browser");
+                let mut solver = match solver_id {
+                    "stable-fluids" => Solver64::Stable(StableFluids::new("wasm-browser")),
+                    "lbm-d2q9" => Solver64::Lbm(LbmD2q9::new("wasm-browser")),
+                    _ => {
+                        return Err(text_error(
+                            "this milestone exposes stable-fluids and lbm-d2q9",
+                        ));
+                    }
+                };
                 solver
                     .initialize(&scenario, &geometry, seed)
                     .map_err(|error| js_error(&error))?;
@@ -327,10 +474,32 @@ impl WasmSolver {
         Ok(state.velocity.into_iter().flatten().collect())
     }
 
+    pub fn export_density_f32(&self) -> Result<Option<Vec<f32>>, JsValue> {
+        let Some(SolverStorage::Float32(solver)) = &self.storage else {
+            return Err(text_error("solver precision is not float32"));
+        };
+        Ok(solver
+            .export_state()
+            .map_err(|error| js_error(&error))?
+            .density)
+    }
+
+    pub fn export_density_f64(&self) -> Result<Option<Vec<f64>>, JsValue> {
+        let Some(SolverStorage::Float64(solver)) = &self.storage else {
+            return Err(text_error("solver precision is not float64"));
+        };
+        Ok(solver
+            .export_state()
+            .map_err(|error| js_error(&error))?
+            .density)
+    }
+
     pub fn import_state_f32_json(
         &mut self,
         metadata_json: &str,
         velocity_xy: &[f32],
+        density_values: &[f32],
+        has_density: bool,
     ) -> Result<String, JsValue> {
         let metadata: CanonicalWire =
             serde_json::from_str(metadata_json).map_err(|error| text_error(error.to_string()))?;
@@ -348,7 +517,7 @@ impl WasmSolver {
                 .chunks_exact(2)
                 .map(|value| [value[0], value[1]])
                 .collect(),
-            density: None,
+            density: has_density.then(|| density_values.to_vec()),
         };
         let control = ControlState {
             time: state.time,
@@ -365,6 +534,8 @@ impl WasmSolver {
         &mut self,
         metadata_json: &str,
         velocity_xy: &[f64],
+        density_values: &[f64],
+        has_density: bool,
     ) -> Result<String, JsValue> {
         let metadata: CanonicalWire =
             serde_json::from_str(metadata_json).map_err(|error| text_error(error.to_string()))?;
@@ -382,7 +553,7 @@ impl WasmSolver {
                 .chunks_exact(2)
                 .map(|value| [value[0], value[1]])
                 .collect(),
-            density: None,
+            density: has_density.then(|| density_values.to_vec()),
         };
         let control = ControlState {
             time: state.time,

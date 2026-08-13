@@ -7,8 +7,9 @@ including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 three-language contract closure are complete and revalidated after extensive
 QA. Revision 4 is the accepted implemented baseline after full-size,
 interchange, fallback, and chaotic-extension acceptance. Phase 3 now provides
-the first Rust solver milestone: native and WASM Stable Fluids built from one
-shared core while proposed Revision 5 remains under evaluation.
+the first two Rust solver milestones: native and WASM Stable Fluids plus D2Q9
+TRT LBM built from one shared core while proposed Revision 5 remains under
+evaluation.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -102,8 +103,8 @@ cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p fo
 just ts-view scenarios/airfoil/default.json stable-fluids rust-wasm
 ```
 
-The Rust/WASM selector intentionally offers only Stable Fluids at this
-milestone. D2Q9 TRT LBM and PIC/FLIP follow on their dedicated branches.
+The Rust/WASM selector currently offers Stable Fluids and D2Q9 TRT LBM.
+PIC/FLIP follows on its dedicated branch.
 
 The accepted Revision 4 contract remains authoritative. Candidate Phase 3
 semantics live under `spec/proposals/revision5/` until cross-language evidence

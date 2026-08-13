@@ -185,6 +185,7 @@ export class ViewerModel {
   public adjustSolverTuning(amount: -1 | 1): void {
     if (this.solver.adjustInteractiveTuning === undefined) { this.status = "no live tuning available"; return; }
     const tuning = this.solver.adjustInteractiveTuning(amount);
+    if (tuning === undefined) { this.status = "no live tuning available"; return; }
     this.tuningValues.set(this.solver.info.id, tuning.value);
     this.status = `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
     this.warmValidationPending = false;
@@ -198,7 +199,7 @@ export class ViewerModel {
 
   private applySavedTuning(solver: FlowSolver): void {
     const saved = this.tuningValues.get(solver.info.id);
-    if (saved !== undefined) solver.applyInteractiveTuning?.(saved);
+    if (saved !== undefined) void solver.applyInteractiveTuning?.(saved);
     else this.rememberTuning(solver);
   }
 

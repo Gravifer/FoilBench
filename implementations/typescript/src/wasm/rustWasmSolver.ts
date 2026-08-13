@@ -33,8 +33,10 @@ interface WasmSolverBinding {
   export_state_metadata_json(): string;
   export_velocity_f32(): Float32Array;
   export_velocity_f64(): Float64Array;
-  import_state_f32_json(metadata: string, velocity: Float32Array): string;
-  import_state_f64_json(metadata: string, velocity: Float64Array): string;
+  export_density_f32(): Float32Array | undefined;
+  export_density_f64(): Float64Array | undefined;
+  import_state_f32_json(metadata: string, velocity: Float32Array, density: Float32Array, hasDensity: boolean): string;
+  import_state_f64_json(metadata: string, velocity: Float64Array, density: Float64Array, hasDensity: boolean): string;
   dispose(): void;
   free(): void;
 }
@@ -194,6 +196,7 @@ export class RustWasmFlowSolver implements FlowSolver {
     const binding = this.selected();
     const parsed = parseObject(invoke(() => binding.export_state_metadata_json()));
     const velocity = binding.precision === "float32" ? invoke(() => binding.export_velocity_f32()) : invoke(() => binding.export_velocity_f64());
+    const density = binding.precision === "float32" ? invoke(() => binding.export_density_f32()) : invoke(() => binding.export_density_f64());
     const bounds = parsed["bounds"] as readonly (readonly [number, number])[];
     const resolution = parsed["resolution"] as readonly number[];
     const periodicAxes = parsed["periodic_axes"] as readonly ("x" | "y" | "z")[];
@@ -202,7 +205,7 @@ export class RustWasmFlowSolver implements FlowSolver {
       time: numberValue(parsed, "time"), precision: binding.precision as "float32" | "float64",
       angleDegrees: numberValue(parsed, "angle_degrees"),
       angularVelocityDegrees: numberValue(parsed, "angular_velocity_degrees"),
-      sourceLanguage: "rust", sourceSolver: String(parsed["source_solver"]), velocity, density: null,
+      sourceLanguage: "rust", sourceSolver: String(parsed["source_solver"]), velocity, density: density ?? null,
     };
   }
 
@@ -218,8 +221,16 @@ export class RustWasmFlowSolver implements FlowSolver {
       source_solver: state.sourceSolver,
     });
     const document = state.velocity instanceof Float32Array
-      ? invoke(() => this.selected().import_state_f32_json(metadata, state.velocity as Float32Array))
-      : invoke(() => this.selected().import_state_f64_json(metadata, state.velocity as Float64Array));
+      ? invoke(() => this.selected().import_state_f32_json(
+        metadata, state.velocity as Float32Array,
+        state.density instanceof Float32Array ? state.density : new Float32Array(),
+        state.density !== null,
+      ))
+      : invoke(() => this.selected().import_state_f64_json(
+        metadata, state.velocity as Float64Array,
+        state.density instanceof Float64Array ? state.density : new Float64Array(),
+        state.density !== null,
+      ));
     const parsed = parseObject(document);
     return {
       status: parsed["status"] as "accepted" | "rejected",
@@ -235,16 +246,20 @@ export class RustWasmFlowSolver implements FlowSolver {
     return {stateRevision: numberValue(parsed, "stateRevision"), values: parsed["values"] as Readonly<Record<string, number>>, warnings: strings(parsed["warnings"])};
   }
 
-  public interactiveTuning(): InteractiveTuning {
-    return parseObject(invoke(() => this.selected().tuning_json())) as unknown as InteractiveTuning;
+  public interactiveTuning(): InteractiveTuning | undefined {
+    const parsed: unknown = JSON.parse(invoke(() => this.selected().tuning_json()));
+    if (parsed === null) return undefined;
+    return parsed as InteractiveTuning;
   }
 
-  public adjustInteractiveTuning(direction: -1 | 1): InteractiveTuning {
+  public adjustInteractiveTuning(direction: -1 | 1): InteractiveTuning | undefined {
+    if (this.solverId !== "stable-fluids") return undefined;
     this.applyInteractiveTuning(direction < 0 ? "maccormack" : "skew-rk2");
     return this.interactiveTuning();
   }
 
-  public applyInteractiveTuning(value: InteractiveTuningValue): InteractiveTuning {
+  public applyInteractiveTuning(value: InteractiveTuningValue): InteractiveTuning | undefined {
+    if (this.solverId !== "stable-fluids") return undefined;
     if (typeof value !== "string") throw new TypeError("Stable Fluids transport tuning must be a string");
     invoke(() => this.selected().set_transport(value));
     return this.interactiveTuning();

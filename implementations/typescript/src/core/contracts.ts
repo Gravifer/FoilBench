@@ -120,9 +120,9 @@ export interface FlowSolver {
   exportState(): CanonicalFlowState;
   importState(state: CanonicalFlowState, control: ControlState): ImportOutcome;
   diagnostics(): Diagnostics;
-  interactiveTuning?(): InteractiveTuning;
-  adjustInteractiveTuning?(direction: -1 | 1): InteractiveTuning;
-  applyInteractiveTuning?(value: InteractiveTuningValue): InteractiveTuning;
+  interactiveTuning?(): InteractiveTuning | undefined;
+  adjustInteractiveTuning?(direction: -1 | 1): InteractiveTuning | undefined;
+  applyInteractiveTuning?(value: InteractiveTuningValue): InteractiveTuning | undefined;
 }
 
 export class NumericalFailure extends Error {
