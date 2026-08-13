@@ -144,7 +144,7 @@ def test_strict_comparison_rejects_empty_directory(tmp_path: Path) -> None:
 
 
 def test_completeness_is_cartesian_over_required_languages() -> None:
-    results = [
+    results: list[dict[str, object]] = [
         {
             "benchmark_matrix_id": "test",
             "language": "python",

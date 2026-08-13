@@ -3,12 +3,12 @@ import pytest
 
 from foilbench_py.core._scipy_adapter import solve_masked_poisson
 from foilbench_py.core.grid import (
-    _derivative,
     advect_faces,
     advect_faces_skew_rk2,
     advect_velocity,
     apply_domain_boundaries,
     cell_to_faces,
+    centered_derivative,
     enforce_solid_faces,
     faces_to_cell,
     implicit_diffuse_faces,
@@ -116,7 +116,7 @@ def test_periodic_face_derivative_uses_unique_logical_endpoints() -> None:
     domain = DomainSpec(2, ((0.0, 2.0), (0.0, 1.0)), (32, 16), ("x", "y"))
     phase_x = 2.0 * np.pi * np.arange(domain.nx + 1) / domain.nx
     u = np.broadcast_to(np.sin(phase_x), (domain.ny, domain.nx + 1)).copy()
-    derivative_u = _derivative(
+    derivative_u = centered_derivative(
         u, domain.dx, 1, True, duplicate_endpoint=True
     )
     expected_x = np.sin(2.0 * np.pi / domain.nx) / domain.dx
@@ -125,7 +125,7 @@ def test_periodic_face_derivative_uses_unique_logical_endpoints() -> None:
 
     phase_y = 2.0 * np.pi * np.arange(domain.ny + 1) / domain.ny
     v = np.broadcast_to(np.sin(phase_y)[:, None], (domain.ny + 1, domain.nx)).copy()
-    derivative_v = _derivative(
+    derivative_v = centered_derivative(
         v, domain.dy, 0, True, duplicate_endpoint=True
     )
     expected_y = np.sin(2.0 * np.pi / domain.ny) / domain.dy

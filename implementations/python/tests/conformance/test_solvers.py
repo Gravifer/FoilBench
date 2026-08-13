@@ -304,7 +304,7 @@ def test_lbm_canonical_reconstruction_is_output_cadence_independent(
     velocity[..., 1] = 0.0
     state = replace(exported, velocity=velocity)
     control = ControlState(state.time, state.angle_degrees, 0.0)
-    destinations = []
+    destinations: list[LBMSolver] = []
     for scenario in (short, long):
         destination = LBMSolver()
         destination.initialize(scenario, geometry, scenario.seed)

@@ -376,7 +376,7 @@ def advect_faces(
     )
 
 
-def _derivative(
+def centered_derivative(
     field: Float[np.ndarray, "field_y field_x"],
     spacing: float,
     axis: int,
@@ -386,7 +386,11 @@ def _derivative(
 ) -> Float[np.ndarray, "field_y field_x"]:
     if periodic:
         if duplicate_endpoint:
-            logical = np.take(field, np.arange(field.shape[axis] - 1), axis=axis)
+            logical_length = int(field.shape[axis]) - 1
+            indices: np.ndarray[tuple[int], np.dtype[np.intp]] = np.arange(
+                logical_length, dtype=np.intp
+            )
+            logical = np.take(field, indices, axis=axis)
             logical_derivative = (
                 np.roll(logical, -1, axis=axis) - np.roll(logical, 1, axis=axis)
             ) / (2.0 * spacing)
@@ -450,22 +454,24 @@ def _skew_symmetric_convection(
     v_on_u, u_on_v = _cross_velocity_on_faces(u, v, domain)
     periodic_x = "x" in domain.periodic_axes
     periodic_y = "y" in domain.periodic_axes
-    du_dx = _derivative(
+    du_dx = centered_derivative(
         u, domain.dx, 1, periodic_x, duplicate_endpoint=periodic_x
     )
-    du_dy = _derivative(u, domain.dy, 0, periodic_y)
-    dv_dx = _derivative(v, domain.dx, 1, periodic_x)
-    dv_dy = _derivative(
+    du_dy = centered_derivative(u, domain.dy, 0, periodic_y)
+    dv_dx = centered_derivative(v, domain.dx, 1, periodic_x)
+    dv_dy = centered_derivative(
         v, domain.dy, 0, periodic_y, duplicate_endpoint=periodic_y
     )
     advective_u = u * du_dx + v_on_u * du_dy
     advective_v = u_on_v * dv_dx + v * dv_dy
-    conservative_u = _derivative(
+    conservative_u = centered_derivative(
         u * u, domain.dx, 1, periodic_x, duplicate_endpoint=periodic_x
-    ) + _derivative(
+    ) + centered_derivative(
         v_on_u * u, domain.dy, 0, periodic_y
     )
-    conservative_v = _derivative(u_on_v * v, domain.dx, 1, periodic_x) + _derivative(
+    conservative_v = centered_derivative(
+        u_on_v * v, domain.dx, 1, periodic_x
+    ) + centered_derivative(
         v * v, domain.dy, 0, periodic_y, duplicate_endpoint=periodic_y
     )
     return (
