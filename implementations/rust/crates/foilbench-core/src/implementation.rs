@@ -22,10 +22,10 @@ pub fn implementation_description(target: ExecutionTarget) -> ImplementationDesc
     ImplementationDescription {
         implementation: "rust",
         execution_target: target,
-        phase: "3-foundation",
+        phase: "3-stable-fluids",
         solvers: vec!["stable-fluids"],
         canonical_manifest_models: vec![1, 2],
-        canonical_payload_io: false,
+        canonical_payload_io: matches!(target, ExecutionTarget::Native),
     }
 }
 
@@ -42,7 +42,8 @@ mod tests {
             native.canonical_manifest_models,
             wasm.canonical_manifest_models
         );
-        assert_eq!(native.canonical_payload_io, wasm.canonical_payload_io);
+        assert!(native.canonical_payload_io);
+        assert!(!wasm.canonical_payload_io);
         assert_ne!(native.execution_target, wasm.execution_target);
     }
 }

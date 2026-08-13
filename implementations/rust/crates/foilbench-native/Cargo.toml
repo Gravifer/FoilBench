@@ -11,8 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 foilbench-core = { path = "../foilbench-core" }
+serde.workspace = true
 serde_json.workspace = true
 
 [lints]
 workspace = true
-

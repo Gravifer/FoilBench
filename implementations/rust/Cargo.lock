@@ -27,6 +27,7 @@ name = "foilbench-native"
 version = "0.1.0"
 dependencies = [
  "foilbench-core",
+ "serde",
  "serde_json",
 ]
 
