@@ -41,6 +41,11 @@ fn solver(id: &str) -> Result<Box<dyn FlowSolver<f32>>, String> {
 }
 
 /// Import every canonical snapshot into every native Rust destination family.
+///
+/// # Errors
+///
+/// Returns an error when resources or canonical artifacts cannot be read, the
+/// producer roster is incomplete, or any native destination rejects an import.
 pub fn run_interchange(resolver: &ResourceResolver, results: &Path) -> Result<usize, String> {
     let document = fs::read_to_string(resolver.resolve("scenarios/airfoil/default.json"))
         .map_err(|error| error.to_string())?;
@@ -90,7 +95,7 @@ pub fn run_interchange(resolver: &ResourceResolver, results: &Path) -> Result<us
             &serde_json::to_string(&selected).map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
-        let geometry = NacaFoil::new(scenario.foil().clone()).map_err(|error| error.to_string())?;
+        let geometry = NacaFoil::new(scenario.foil().clone()).map_err(ToString::to_string)?;
         let control = ControlState {
             time: state.time,
             angle_degrees: state.angle_degrees,
