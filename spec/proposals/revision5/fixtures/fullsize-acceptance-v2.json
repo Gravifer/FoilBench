@@ -34,7 +34,7 @@
   },
   "artifact_interchange": {
     "matrix": "benchmark-matrices/smoke.json",
-    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"],
+    "required_producers": ["python/native", "julia/native", "typescript/browser-worker", "rust/native"],
     "require_every_comparer": true
   },
   "chaotic_extension": {

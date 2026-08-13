@@ -91,6 +91,9 @@ def test_chaos_acceptance_enforces_thresholds_and_participation(tmp_path: Path) 
     assert "python" in validate_chaos_acceptance(
         [sweep_path, sensitivity_path], required_languages=("python",)
     )
+    assert "python/native" in validate_chaos_acceptance(
+        [sweep_path, sensitivity_path], required_producers=("python/native",)
+    )
     with pytest.raises(ValueError, match="producer roster mismatch"):
         validate_chaos_acceptance(
             [sweep_path, sensitivity_path],
@@ -143,6 +146,9 @@ def test_chaos_preflight_enforces_initialization_ratio_and_roster(tmp_path: Path
     path.write_text(json.dumps(preflight), encoding="utf-8")
     assert "python" in validate_chaos_preflight(
         [path], required_languages=("python",)
+    )
+    assert "python/native" in validate_chaos_preflight(
+        [path], required_producers=("python/native",)
     )
     cast(dict[str, float], preflight["initialization"])[
         "realized_to_requested_ratio"

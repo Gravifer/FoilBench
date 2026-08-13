@@ -45,7 +45,7 @@
       "required": ["matrix", "required_producers", "require_every_comparer"],
       "properties": {
         "matrix": {"type": "string", "minLength": 1},
-        "required_producers": {"const": ["python/native", "julia/native", "typescript/node", "rust/native"]},
+        "required_producers": {"const": ["python/native", "julia/native", "typescript/browser-worker", "rust/native"]},
         "require_every_comparer": {"const": true}
       }
     },

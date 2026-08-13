@@ -53,6 +53,10 @@ def _parser() -> argparse.ArgumentParser:
         "--require-languages",
         help="require an exact comma-separated producer roster",
     )
+    chaos.add_argument(
+        "--require-producers",
+        help="require an exact comma-separated implementation/target roster",
+    )
     preflight = subcommands.add_parser(
         "chaos-preflight-validate",
         help="validate paired-sensitivity initialization preflights",
@@ -61,6 +65,10 @@ def _parser() -> argparse.ArgumentParser:
     preflight.add_argument(
         "--require-languages",
         help="require an exact comma-separated producer roster",
+    )
+    preflight.add_argument(
+        "--require-producers",
+        help="require an exact comma-separated implementation/target roster",
     )
     return parser
 
@@ -130,9 +138,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             if arguments.require_languages
             else ()
         )
+        required_producers = (
+            tuple(str(arguments.require_producers).split(","))
+            if arguments.require_producers
+            else ()
+        )
         print(
             validate_chaos_acceptance(
-                arguments.artifacts, required_languages=required_languages
+                arguments.artifacts,
+                required_languages=required_languages,
+                required_producers=required_producers,
             )
         )
     elif arguments.command == "chaos-preflight-validate":
@@ -141,9 +156,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             if arguments.require_languages
             else ()
         )
+        required_producers = (
+            tuple(str(arguments.require_producers).split(","))
+            if arguments.require_producers
+            else ()
+        )
         print(
             validate_chaos_preflight(
-                arguments.artifacts, required_languages=required_languages
+                arguments.artifacts,
+                required_languages=required_languages,
+                required_producers=required_producers,
             )
         )
     else:

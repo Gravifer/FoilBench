@@ -23,6 +23,17 @@ def _documents(paths: Sequence[Path]) -> list[dict[str, object]]:
     return selected
 
 
+def _producer(document: Mapping[str, object]) -> str:
+    implementation = str(document.get("implementation", document["language"]))
+    target = str(
+        document.get(
+            "execution_target",
+            "node" if implementation == "typescript" else "native",
+        )
+    )
+    return f"{implementation}/{target}"
+
+
 def _check_sensitivity_initialization(
     document: Mapping[str, object],
     expected: Mapping[str, object],
@@ -117,12 +128,15 @@ def _check_sensitivity_growth(
 
 
 def validate_chaos_acceptance(
-    paths: Sequence[Path], *, required_languages: Sequence[str] = ()
+    paths: Sequence[Path], *, required_languages: Sequence[str] = (),
+    required_producers: Sequence[str] = (),
 ) -> str:
     """Validate complete participation and classify every declared sweep case."""
 
     if not paths:
         raise ValueError("at least one chaotic-wake artifact is required")
+    if required_languages and required_producers:
+        raise ValueError("choose required languages or required producers, not both")
     root = find_repo_root(Path(__file__))
     acceptance = cast(
         dict[str, object],
@@ -139,12 +153,10 @@ def validate_chaos_acceptance(
             (root / str(thresholds["fixture"])).read_text(encoding="utf-8")
         ),
     )
-    schema = cast(
-        dict[str, object],
-        json.loads(
-            (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
-        ),
-    )
+    schemas = {
+        1: cast(dict[str, object], json.loads((root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8"))),
+        2: cast(dict[str, object], json.loads((root / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8"))),
+    }
     expected_cases = {
         (
             float(cast(float, entry["reynolds"])),
@@ -158,8 +170,13 @@ def validate_chaos_acceptance(
     documents = _documents(paths)
     grouped: dict[str, list[dict[str, object]]] = {}
     for document in documents:
-        validate_json(document, schema)
-        grouped.setdefault(str(document["language"]), []).append(document)
+        version = int(cast(int, document.get("schema_version", 0)))
+        if version not in schemas:
+            raise ValueError(f"unsupported chaotic-wake schema version {version}")
+        validate_json(document, schemas[version])
+        grouped.setdefault(
+            _producer(document) if required_producers else str(document["language"]), []
+        ).append(document)
     failures: list[str] = []
     if required_languages:
         expected_languages = set(required_languages)
@@ -171,6 +188,17 @@ def validate_chaos_acceptance(
                 "chaotic-wake producer roster mismatch "
                 f"missing={sorted(expected_languages - observed_languages)!r} "
                 f"extra={sorted(observed_languages - expected_languages)!r}"
+            )
+    if required_producers:
+        expected_producers = set(required_producers)
+        if not expected_producers or len(expected_producers) != len(required_producers):
+            raise ValueError("required producers must be a non-empty unique roster")
+        observed_producers = set(grouped)
+        if observed_producers != expected_producers:
+            failures.append(
+                "chaotic-wake producer/target roster mismatch "
+                f"missing={sorted(expected_producers - observed_producers)!r} "
+                f"extra={sorted(observed_producers - expected_producers)!r}"
             )
     for language, entries in grouped.items():
         observed_cases: set[tuple[float, float, tuple[int, ...]]] = set()
@@ -232,12 +260,15 @@ def validate_chaos_acceptance(
 
 
 def validate_chaos_preflight(
-    paths: Sequence[Path], *, required_languages: Sequence[str] = ()
+    paths: Sequence[Path], *, required_languages: Sequence[str] = (),
+    required_producers: Sequence[str] = (),
 ) -> str:
     """Validate short full-resolution paired-initialization artifacts."""
 
     if not paths:
         raise ValueError("at least one chaotic-wake preflight artifact is required")
+    if required_languages and required_producers:
+        raise ValueError("choose required languages or required producers, not both")
     root = find_repo_root(Path(__file__))
     cases = cast(
         dict[str, object],
@@ -248,17 +279,18 @@ def validate_chaos_preflight(
         ),
     )
     preflight = cast(Mapping[str, object], cases["initialization_preflight"])
-    schema = cast(
-        dict[str, object],
-        json.loads(
-            (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8")
-        ),
-    )
+    schemas = {
+        1: cast(dict[str, object], json.loads((root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8"))),
+        2: cast(dict[str, object], json.loads((root / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8"))),
+    }
     grouped: dict[str, list[dict[str, object]]] = {}
     failures: list[str] = []
     for document in _documents(paths):
-        validate_json(document, schema)
-        language = str(document["language"])
+        version = int(cast(int, document.get("schema_version", 0)))
+        if version not in schemas:
+            raise ValueError(f"unsupported chaotic-wake schema version {version}")
+        validate_json(document, schemas[version])
+        language = _producer(document) if required_producers else str(document["language"])
         grouped.setdefault(language, []).append(document)
         if document["experiment"] != "chaotic-wake-sensitivity":
             failures.append(f"{language}: preflight is not a sensitivity artifact")
@@ -274,6 +306,17 @@ def validate_chaos_preflight(
                 "chaotic-wake preflight producer roster mismatch "
                 f"missing={sorted(expected_languages - observed_languages)!r} "
                 f"extra={sorted(observed_languages - expected_languages)!r}"
+            )
+    if required_producers:
+        expected_producers = set(required_producers)
+        if not expected_producers or len(expected_producers) != len(required_producers):
+            raise ValueError("required producers must be a non-empty unique roster")
+        observed_producers = set(grouped)
+        if observed_producers != expected_producers:
+            failures.append(
+                "chaotic-wake preflight producer/target roster mismatch "
+                f"missing={sorted(expected_producers - observed_producers)!r} "
+                f"extra={sorted(observed_producers - expected_producers)!r}"
             )
     for language, entries in grouped.items():
         if len(entries) != 1:
