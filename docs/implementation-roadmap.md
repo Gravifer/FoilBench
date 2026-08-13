@@ -343,11 +343,15 @@ The prioritized kickoff sequence is:
 4. accept Revision 5 only after required native/WASM target evidence passes.
 
 CI is split accordingly: pull requests run language-native static/unit suites,
-Rust format/lint/tests, and a production-dist browser smoke. Scheduled or
-manual representative acceptance runs as at most twelve independent
-language/gate cells. Aggregation requires the exact commit and configuration
-digest for every cell; intermediate cells expire after seven days and the
-aggregate after thirty days.
+Rust format/lint/native tests, a real WASM-target compilation, and a
+production-dist browser smoke. Scheduled or manual representative solver gates
+run as twelve independent language/gate cells. Aggregation preserves each
+language/gate path, requires the exact commit, configuration digest, execution
+target, and hashed gate log, and rejects any missing or duplicated cell.
+Intermediate cells expire after seven days and the aggregate after thirty
+days. Full interchange, sensitivity, and chaotic-extension acceptance remains
+a separate, deliberately more expensive evidence tier rather than being
+misrepresented by the solver-gate workflow.
 
 Pixel-level renderer matching is a permanent won't-do. D3Q19 and shallow
 periodic 3D remain deferred until all three 2D Rust solvers pass parity.

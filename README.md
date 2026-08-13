@@ -90,9 +90,11 @@ and diagnostic cropping.
 
 ## Rust/WASM kickoff
 
-The platform-neutral core currently implements PCG32, typed scenarios, NACA
-geometry, canonical version 1/2 models, and the solver trait. Native and WASM
-crates share it, but the three flow solvers intentionally remain absent:
+The platform-neutral core currently implements PCG32, validated typed
+scenarios, NACA geometry, strict canonical version 1/2 manifest models, and the
+complete accepted solver lifecycle. Native and WASM crates share one capability
+description, but canonical array payload I/O and the three flow solvers
+intentionally remain absent:
 
 ```powershell
 cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked

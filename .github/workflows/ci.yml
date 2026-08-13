@@ -50,9 +50,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with: {components: rustfmt, clippy}
+        with:
+          toolchain: '1.85.1'
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with: {workspaces: implementations/rust}
       - run: cargo fmt --manifest-path implementations/rust/Cargo.toml --all -- --check
       - run: cargo clippy --manifest-path implementations/rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
+      - run: cargo check --manifest-path implementations/rust/Cargo.toml --locked --target wasm32-unknown-unknown -p foilbench-wasm

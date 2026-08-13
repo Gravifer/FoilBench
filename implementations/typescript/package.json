@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && vite build",
-    "check": "tsc -b --pretty false && eslint src tests vite.config.ts vitest.config.ts playwright.config.ts",
+    "check": "tsc -b --pretty false && eslint src tests vite.config.ts vitest.config.ts playwright.config.ts playwright.dist.config.ts",
     "test": "vitest run",
     "test:browser": "playwright test",
     "test:browser:dist": "playwright test --config playwright.dist.config.ts",

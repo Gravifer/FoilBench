@@ -3,16 +3,18 @@ param(
     [switch]$Python,
     [switch]$Julia,
     [switch]$TypeScript,
+    [switch]$Rust,
     [switch]$Representative
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $Python -and -not $Julia -and -not $TypeScript) {
+if (-not $Python -and -not $Julia -and -not $TypeScript -and -not $Rust) {
     $Python = $true
     $Julia = $true
     $TypeScript = $true
+    $Rust = $true
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -157,6 +159,35 @@ try {
         }
         finally {
             Pop-Location
+        }
+    }
+
+    if ($Rust) {
+        Write-Host '==> Rust: formatting'
+        Invoke-Checked cargo @(
+            'fmt', '--manifest-path', 'implementations/rust/Cargo.toml',
+            '--all', '--', '--check'
+        )
+        Write-Host '==> Rust: Clippy'
+        Invoke-Checked cargo @(
+            'clippy', '--manifest-path', 'implementations/rust/Cargo.toml',
+            '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'
+        )
+        Write-Host '==> Rust: native tests'
+        Invoke-Checked cargo @(
+            'test', '--manifest-path', 'implementations/rust/Cargo.toml',
+            '--workspace', '--locked'
+        )
+        Write-Host '==> Rust: WASM target check'
+        $installedTargets = @(& rustup target list --installed)
+        if ($installedTargets -contains 'wasm32-unknown-unknown') {
+            Invoke-Checked cargo @(
+                'check', '--manifest-path', 'implementations/rust/Cargo.toml',
+                '--locked', '--target', 'wasm32-unknown-unknown', '-p', 'foilbench-wasm'
+            )
+        }
+        else {
+            Write-Warning 'wasm32-unknown-unknown is not installed locally; pinned CI performs the mandatory WASM target check'
         }
     }
 

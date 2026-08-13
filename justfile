@@ -33,7 +33,7 @@ verify-spec:
     uv run --project implementations/python python tools/validate_spec.py
     uv run --project implementations/python python tools/validate_acceptance_fixtures.py
 
-# Run all Python and Julia checks.
+# Run all implemented language checks, including Rust native and WASM compilation.
 verify:
     pwsh -NoProfile -File tools/verify.ps1
 
@@ -55,9 +55,7 @@ verify-typescript:
 
 # Run Rust formatting, lint, and foundation tests.
 verify-rust:
-    cargo fmt --manifest-path implementations/rust/Cargo.toml --all -- --check
-    cargo clippy --manifest-path implementations/rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
-    cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
+    pwsh -NoProfile -File tools/verify.ps1 -Rust
 
 # Describe the Rust foundation without advertising unfinished solvers.
 rs-describe:
