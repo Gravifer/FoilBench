@@ -80,7 +80,7 @@ fn step_json(report: &StepReport) -> Value {
 
 fn solver_configuration(scenario: &Scenario) -> Value {
     let options = scenario.solver_options();
-    json!({
+    let mut configuration = json!({
         "initial_condition": options.get("initial_condition").and_then(Value::as_str).unwrap_or("freestream"),
         "stable_advection": options.get("stable_advection").and_then(Value::as_str).unwrap_or("maccormack"),
         "stable_face_advection": options.get("stable_face_advection").and_then(Value::as_bool).unwrap_or(false),
@@ -90,7 +90,16 @@ fn solver_configuration(scenario: &Scenario) -> Value {
         "pic_flip_blend": options.get("pic_flip_blend").and_then(Value::as_f64).unwrap_or(0.95),
         "pic_population_interval": options.get("pic_population_interval").and_then(Value::as_u64).unwrap_or(8),
         "pic_cfl": options.get("pic_cfl").and_then(Value::as_f64).unwrap_or(0.75),
-    })
+    });
+    let object = configuration
+        .as_object_mut()
+        .expect("solver configuration is an object");
+    for key in ["mac_maximum_divergence_linf", "mac_maximum_solid_leakage"] {
+        if let Some(value) = options.get(key) {
+            object.insert(key.into(), value.clone());
+        }
+    }
+    configuration
 }
 
 fn evidence_number(report: &StepReport, key: &str, fallback: f64) -> f64 {
@@ -106,6 +115,29 @@ fn finite_json(value: &Value) -> bool {
         Value::Array(values) => values.iter().all(finite_json),
         Value::Object(values) => values.values().all(finite_json),
         _ => true,
+    }
+}
+
+fn semantic_identity_equal(left: &Value, right: &Value, tolerance: f64) -> bool {
+    match (left, right) {
+        (Value::Number(a), Value::Number(b)) => a
+            .as_f64()
+            .zip(b.as_f64())
+            .is_some_and(|(a, b)| (a - b).abs() <= tolerance * a.abs().max(b.abs()).max(1.0)),
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(a, b)| semantic_identity_equal(a, b, tolerance))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter().all(|(key, value)| {
+                    b.get(key)
+                        .is_some_and(|other| semantic_identity_equal(value, other, tolerance))
+                })
+        }
+        _ => left == right,
     }
 }
 
@@ -160,6 +192,11 @@ fn run_typed<T: FlowScalar>(
     let diagnostics = solver.diagnostics().map_err(|error| error.to_string())?;
     let total_wall = step_seconds.iter().sum::<f64>();
     let cells = scenario.resolution().iter().product::<usize>();
+    let particle_count = diagnostics
+        .values
+        .get("particle_count")
+        .copied()
+        .unwrap_or(0.0);
     let effective_reynolds = evidence_number(&report, "effective_reynolds", scenario.reynolds());
     let precision = match T::PRECISION {
         Precision::Float32 => "float32",
@@ -186,7 +223,11 @@ fn run_typed<T: FlowScalar>(
         "effective_reynolds": effective_reynolds,
         "solver_configuration": solver_configuration(scenario),
         "freestream": scenario.freestream(),
-        "foil": scenario.foil(),
+        "foil": {
+            "naca": scenario.foil().naca,
+            "chord": scenario.foil().chord,
+            "pivot": scenario.foil().pivot,
+        },
         "control_history": scenario.controls(),
         "requested_duration": matrix.duration,
         "simulated_duration": simulated,
@@ -199,7 +240,7 @@ fn run_typed<T: FlowScalar>(
         "p95_step_seconds": percentile(&step_seconds, 0.95),
         "simulated_seconds_per_wall_second": simulated / total_wall,
         "cell_updates_per_second": cells as f64 * total_substeps as f64 / total_wall,
-        "particle_updates_per_second": 0.0,
+        "particle_updates_per_second": particle_count * total_substeps as f64 / total_wall,
         "peak_rss_bytes": null,
         "memory_measurement": "unavailable",
         "runtime_startup_seconds": 0.0,
@@ -227,13 +268,7 @@ fn validate_result_semantics(artifact: &Value) -> Result<(), String> {
     let object = artifact
         .as_object()
         .ok_or("benchmark artifact must be an object")?;
-    for key in [
-        "implementation",
-        "execution_target",
-        "solver",
-        "benchmark_matrix_id",
-        "git_commit",
-    ] {
+    for key in ["solver", "benchmark_matrix_id", "git_commit"] {
         if object
             .get(key)
             .and_then(Value::as_str)
@@ -241,6 +276,31 @@ fn validate_result_semantics(artifact: &Value) -> Result<(), String> {
         {
             return Err(format!("benchmark artifact lacks {key}"));
         }
+    }
+    let version = object
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if version == 1 {
+        if object
+            .get("language")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err("benchmark artifact lacks language".into());
+        }
+    } else if version == 2 {
+        for key in ["implementation", "execution_target"] {
+            if object
+                .get(key)
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                return Err(format!("benchmark artifact lacks {key}"));
+            }
+        }
+    } else {
+        return Err("unsupported benchmark artifact schema version".into());
     }
     if object.get("success") != Some(&Value::Bool(true)) {
         return Err("native runner emitted an unsuccessful success artifact".into());
@@ -251,7 +311,12 @@ fn validate_result_semantics(artifact: &Value) -> Result<(), String> {
     let simulated = object["simulated_duration"]
         .as_f64()
         .ok_or("missing simulated duration")?;
-    if (requested - simulated).abs() > 1.0e-10 * requested.max(1.0) {
+    let tolerance = if object.get("precision").and_then(Value::as_str) == Some("float32") {
+        1.0e-6
+    } else {
+        1.0e-12
+    } * requested.max(1.0);
+    if (requested - simulated).abs() > tolerance {
         return Err("native runner did not complete the requested duration".into());
     }
     if object["final_state_revision"] != object["diagnostic_state_revision"] {
@@ -410,14 +475,19 @@ pub fn compare_results(
     let mut observed = BTreeSet::new();
     for artifact in &artifacts {
         validate_result_semantics(artifact)?;
+        let implementation = artifact["implementation"]
+            .as_str()
+            .unwrap_or(artifact["language"].as_str().unwrap_or("unknown"));
+        let default_target = if implementation == "typescript" {
+            "browser-worker"
+        } else {
+            "native"
+        };
         let producer = (
-            artifact["implementation"]
-                .as_str()
-                .unwrap_or(artifact["language"].as_str().unwrap_or("unknown"))
-                .to_string(),
+            implementation.to_string(),
             artifact["execution_target"]
                 .as_str()
-                .unwrap_or("native")
+                .unwrap_or(default_target)
                 .to_string(),
         );
         observed.insert(producer.clone());
@@ -444,6 +514,8 @@ pub fn compare_results(
         "bounds",
         "periodic_axes",
         "reynolds",
+        "effective_reynolds",
+        "solver_configuration",
         "freestream",
         "foil",
         "control_history",
@@ -460,8 +532,13 @@ pub fn compare_results(
             artifact["repetition"].to_string(),
         );
         if let Some(reference) = grouped.get(&key) {
+            let tolerance = if artifact["precision"].as_str() == Some("float32") {
+                2.0e-6
+            } else {
+                2.0e-12
+            };
             for field in identities {
-                if artifact[field] != reference[field] {
+                if !semantic_identity_equal(&artifact[field], &reference[field], tolerance) {
                     return Err(format!("physical identity differs for field {field}"));
                 }
             }
