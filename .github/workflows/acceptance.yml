@@ -1,4 +1,4 @@
-name: Representative acceptance
+name: Representative solver gates
 
 on:
   workflow_dispatch:
@@ -40,13 +40,20 @@ jobs:
       - name: TypeScript setup
         if: matrix.language == 'typescript'
         run: npm --prefix implementations/typescript ci
+      - name: Install Chromium for browser preview gate
+        if: matrix.language == 'typescript' && matrix.gate == 'preview'
+        working-directory: implementations/typescript
+        run: npx playwright install --with-deps chromium
       - name: Run acceptance cell
         shell: pwsh
         run: ./tools/ci/run_acceptance_cell.ps1 -Language '${{ matrix.language }}' -Gate '${{ matrix.gate }}'
       - uses: actions/upload-artifact@v4
         with:
           name: cell-${{ github.sha }}-${{ matrix.language }}-${{ matrix.gate }}
-          path: results/ci-cells/${{ github.sha }}/${{ matrix.language }}/${{ matrix.gate }}
+          # Preserve language/gate below the commit root. Every cell names its
+          # evidence file cell.json, so uploading only the leaf would make
+          # merge-multiple overwrite eleven of the twelve files.
+          path: results/ci-cells/${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
 
@@ -65,4 +72,3 @@ jobs:
           name: representative-${{ github.sha }}
           path: results/downloaded
           retention-days: 30
-
