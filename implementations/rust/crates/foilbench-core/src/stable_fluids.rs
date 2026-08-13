@@ -7,6 +7,7 @@
     clippy::cast_sign_loss,
     clippy::float_cmp,
     clippy::missing_panics_doc,
+    clippy::similar_names,
     clippy::too_many_lines
 )]
 
@@ -14,7 +15,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     canonical::{CanonicalGeometryDescriptor, Producer},
-    field::{MacGrid2, VectorField2},
+    field::{MacGrid2, ScalarField2, VectorField2},
     geometry::NacaFoil,
     grid::{
         GridDomain2, apply_domain_boundaries, cells_to_faces, enforce_solid_faces, faces_to_cells,
@@ -480,9 +481,13 @@ impl<T: FlowScalar> StableFluids<T> {
         target: ControlState,
         target_dt: f64,
     ) -> Result<(usize, usize), SolverError> {
-        let cells = faces_to_cells(&state.velocity);
-        let (components, _) = Self::velocity_scale(&cells);
-        let fluid_rate = components[0] / state.domain.dx() + components[1] / state.domain.dy();
+        let fluid_rate = if state.transport == StableTransport::SkewRk2 {
+            Self::skew_face_rate(&state.velocity, state.domain)
+        } else {
+            let cells = faces_to_cells(&state.velocity);
+            let (components, _) = Self::velocity_scale(&cells);
+            components[0] / state.domain.dx() + components[1] / state.domain.dy()
+        };
         let wall_speed =
             target.angular_velocity_degrees.to_radians().abs() * state.geometry.maximum_radius();
         let cfl = Self::option_f64(
@@ -584,83 +589,271 @@ impl<T: FlowScalar> StableFluids<T> {
         output
     }
 
-    fn sampled(cells: &VectorField2<T>, domain: GridDomain2, x: isize, y: isize) -> [f64; 2] {
-        let selected_x = if domain.periodic_x {
-            x.rem_euclid(domain.nx() as isize) as usize
-        } else {
-            x.clamp(0, domain.nx() as isize - 1) as usize
-        };
-        let selected_y = if domain.periodic_y {
-            y.rem_euclid(domain.ny() as isize) as usize
-        } else {
-            y.clamp(0, domain.ny() as isize - 1) as usize
-        };
-        let value = cells.get(selected_x, selected_y);
-        [value[0].to_f64(), value[1].to_f64()]
+    fn derivative(
+        field: &ScalarField2<T>,
+        spacing: f64,
+        along_x: bool,
+        periodic: bool,
+        duplicate_endpoint: bool,
+    ) -> ScalarField2<T> {
+        let mut output = ScalarField2::filled(field.nx(), field.ny(), T::from_f64(0.0));
+        let logical =
+            if along_x { field.nx() } else { field.ny() } - usize::from(duplicate_endpoint);
+        for y in 0..field.ny() {
+            for x in 0..field.nx() {
+                let position = if along_x { x } else { y };
+                if duplicate_endpoint && position == logical {
+                    let first = if along_x {
+                        output.get(0, y)
+                    } else {
+                        output.get(x, 0)
+                    };
+                    output.set(x, y, first);
+                    continue;
+                }
+                let sample = |selected: usize| {
+                    if along_x {
+                        field.get(selected, y)
+                    } else {
+                        field.get(x, selected)
+                    }
+                    .to_f64()
+                };
+                let value = if periodic {
+                    (sample((position + 1) % logical) - sample((position + logical - 1) % logical))
+                        / (2.0 * spacing)
+                } else if position == 0 {
+                    (-3.0 * sample(0) + 4.0 * sample(1) - sample(2)) / (2.0 * spacing)
+                } else if position + 1 == logical {
+                    (3.0 * sample(logical - 1) - 4.0 * sample(logical - 2) + sample(logical - 3))
+                        / (2.0 * spacing)
+                } else {
+                    (sample(position + 1) - sample(position - 1)) / (2.0 * spacing)
+                };
+                output.set(x, y, T::from_f64(value));
+            }
+        }
+        output
     }
 
-    fn skew_rate(cells: &VectorField2<T>, domain: GridDomain2) -> VectorField2<T> {
-        let mut rate = cells.clone();
+    fn cross_velocity_on_faces(
+        faces: &MacGrid2<T>,
+        domain: GridDomain2,
+    ) -> (ScalarField2<T>, ScalarField2<T>) {
+        let cells = faces_to_cells(faces);
+        let mut v_on_u = ScalarField2::filled(domain.nx() + 1, domain.ny(), T::from_f64(0.0));
         for y in 0..domain.ny() {
-            for x in 0..domain.nx() {
-                let center = Self::sampled(cells, domain, x as isize, y as isize);
-                let left = Self::sampled(cells, domain, x as isize - 1, y as isize);
-                let right = Self::sampled(cells, domain, x as isize + 1, y as isize);
-                let bottom = Self::sampled(cells, domain, x as isize, y as isize - 1);
-                let top = Self::sampled(cells, domain, x as isize, y as isize + 1);
-                let mut selected = [T::from_f64(0.0); 2];
-                for component in 0..2 {
-                    let gradient_x = (right[component] - left[component]) / (2.0 * domain.dx());
-                    let gradient_y = (top[component] - bottom[component]) / (2.0 * domain.dy());
-                    let flux_x = (right[0] * right[component] - left[0] * left[component])
-                        / (2.0 * domain.dx());
-                    let flux_y = (top[1] * top[component] - bottom[1] * bottom[component])
-                        / (2.0 * domain.dy());
-                    selected[component] = T::from_f64(
-                        -0.5 * (center[0] * gradient_x + center[1] * gradient_y + flux_x + flux_y),
-                    );
-                }
-                rate.set(x, y, selected);
+            for x in 1..domain.nx() {
+                v_on_u.set(
+                    x,
+                    y,
+                    T::from_f64(
+                        0.5 * (cells.get(x - 1, y)[1].to_f64() + cells.get(x, y)[1].to_f64()),
+                    ),
+                );
+            }
+            let boundary = if domain.periodic_x {
+                0.5 * (cells.get(domain.nx() - 1, y)[1].to_f64() + cells.get(0, y)[1].to_f64())
+            } else {
+                cells.get(0, y)[1].to_f64()
+            };
+            v_on_u.set(0, y, T::from_f64(boundary));
+            v_on_u.set(
+                domain.nx(),
+                y,
+                T::from_f64(if domain.periodic_x {
+                    boundary
+                } else {
+                    cells.get(domain.nx() - 1, y)[1].to_f64()
+                }),
+            );
+        }
+        let mut u_on_v = ScalarField2::filled(domain.nx(), domain.ny() + 1, T::from_f64(0.0));
+        for x in 0..domain.nx() {
+            for y in 1..domain.ny() {
+                u_on_v.set(
+                    x,
+                    y,
+                    T::from_f64(
+                        0.5 * (cells.get(x, y - 1)[0].to_f64() + cells.get(x, y)[0].to_f64()),
+                    ),
+                );
+            }
+            let boundary = if domain.periodic_y {
+                0.5 * (cells.get(x, domain.ny() - 1)[0].to_f64() + cells.get(x, 0)[0].to_f64())
+            } else {
+                cells.get(x, 0)[0].to_f64()
+            };
+            u_on_v.set(x, 0, T::from_f64(boundary));
+            u_on_v.set(
+                x,
+                domain.ny(),
+                T::from_f64(if domain.periodic_y {
+                    boundary
+                } else {
+                    cells.get(x, domain.ny() - 1)[0].to_f64()
+                }),
+            );
+        }
+        (v_on_u, u_on_v)
+    }
+
+    fn skew_face_rate(faces: &MacGrid2<T>, domain: GridDomain2) -> f64 {
+        let (v_on_u, u_on_v) = Self::cross_velocity_on_faces(faces, domain);
+        let u_rate = faces
+            .u
+            .values()
+            .iter()
+            .zip(v_on_u.values())
+            .map(|(u, v)| u.to_f64().abs() / domain.dx() + v.to_f64().abs() / domain.dy());
+        let v_rate = u_on_v
+            .values()
+            .iter()
+            .zip(faces.v.values())
+            .map(|(u, v)| u.to_f64().abs() / domain.dx() + v.to_f64().abs() / domain.dy());
+        u_rate.chain(v_rate).fold(0.0_f64, f64::max)
+    }
+
+    fn skew_rate(faces: &MacGrid2<T>, domain: GridDomain2) -> MacGrid2<T> {
+        let (v_on_u, u_on_v) = Self::cross_velocity_on_faces(faces, domain);
+        let du_dx = Self::derivative(
+            &faces.u,
+            domain.dx(),
+            true,
+            domain.periodic_x,
+            domain.periodic_x,
+        );
+        let du_dy = Self::derivative(&faces.u, domain.dy(), false, domain.periodic_y, false);
+        let dv_dx = Self::derivative(&faces.v, domain.dx(), true, domain.periodic_x, false);
+        let dv_dy = Self::derivative(
+            &faces.v,
+            domain.dy(),
+            false,
+            domain.periodic_y,
+            domain.periodic_y,
+        );
+        let square_u = ScalarField2::from_vec(
+            faces.u.nx(),
+            faces.u.ny(),
+            faces
+                .u
+                .values()
+                .iter()
+                .map(|value| T::from_f64(value.to_f64().powi(2)))
+                .collect(),
+        )
+        .expect("u square shape");
+        let square_v = ScalarField2::from_vec(
+            faces.v.nx(),
+            faces.v.ny(),
+            faces
+                .v
+                .values()
+                .iter()
+                .map(|value| T::from_f64(value.to_f64().powi(2)))
+                .collect(),
+        )
+        .expect("v square shape");
+        let uv_u = ScalarField2::from_vec(
+            faces.u.nx(),
+            faces.u.ny(),
+            faces
+                .u
+                .values()
+                .iter()
+                .zip(v_on_u.values())
+                .map(|(u, v)| T::from_f64(u.to_f64() * v.to_f64()))
+                .collect(),
+        )
+        .expect("u flux shape");
+        let uv_v = ScalarField2::from_vec(
+            faces.v.nx(),
+            faces.v.ny(),
+            faces
+                .v
+                .values()
+                .iter()
+                .zip(u_on_v.values())
+                .map(|(v, u)| T::from_f64(u.to_f64() * v.to_f64()))
+                .collect(),
+        )
+        .expect("v flux shape");
+        let du2_dx = Self::derivative(
+            &square_u,
+            domain.dx(),
+            true,
+            domain.periodic_x,
+            domain.periodic_x,
+        );
+        let duv_dy = Self::derivative(&uv_u, domain.dy(), false, domain.periodic_y, false);
+        let duv_dx = Self::derivative(&uv_v, domain.dx(), true, domain.periodic_x, false);
+        let dv2_dy = Self::derivative(
+            &square_v,
+            domain.dy(),
+            false,
+            domain.periodic_y,
+            domain.periodic_y,
+        );
+        let mut rate = MacGrid2::filled(domain.nx(), domain.ny(), [T::from_f64(0.0); 2]);
+        for y in 0..faces.u.ny() {
+            for x in 0..faces.u.nx() {
+                let advective = faces.u.get(x, y).to_f64() * du_dx.get(x, y).to_f64()
+                    + v_on_u.get(x, y).to_f64() * du_dy.get(x, y).to_f64();
+                rate.u.set(
+                    x,
+                    y,
+                    T::from_f64(
+                        -0.5 * (advective + du2_dx.get(x, y).to_f64() + duv_dy.get(x, y).to_f64()),
+                    ),
+                );
+            }
+        }
+        for y in 0..faces.v.ny() {
+            for x in 0..faces.v.nx() {
+                let advective = u_on_v.get(x, y).to_f64() * dv_dx.get(x, y).to_f64()
+                    + faces.v.get(x, y).to_f64() * dv_dy.get(x, y).to_f64();
+                rate.v.set(
+                    x,
+                    y,
+                    T::from_f64(
+                        -0.5 * (advective + duv_dx.get(x, y).to_f64() + dv2_dy.get(x, y).to_f64()),
+                    ),
+                );
             }
         }
         rate
     }
 
-    fn skew_rk2(cells: &VectorField2<T>, domain: GridDomain2, dt: f64) -> VectorField2<T> {
-        let first = Self::skew_rate(cells, domain);
-        let midpoint = VectorField2::from_vec(
-            domain.nx(),
-            domain.ny(),
-            cells
-                .values()
-                .iter()
-                .zip(first.values())
-                .map(|(value, rate)| {
-                    [
-                        T::from_f64(value[0].to_f64() + 0.5 * dt * rate[0].to_f64()),
-                        T::from_f64(value[1].to_f64() + 0.5 * dt * rate[1].to_f64()),
-                    ]
-                })
-                .collect(),
-        )
-        .expect("matching velocity and rate shapes");
+    fn skew_rk2(
+        faces: &MacGrid2<T>,
+        domain: GridDomain2,
+        dt: f64,
+        solid: &ScalarField2<u8>,
+        wall: &VectorField2<T>,
+        freestream: [f64; 2],
+        channel_walls: bool,
+    ) -> MacGrid2<T> {
+        let first = Self::skew_rate(faces, domain);
+        let mut midpoint = faces.clone();
+        for (value, rate) in midpoint.u.values_mut().iter_mut().zip(first.u.values()) {
+            *value = T::from_f64(value.to_f64() + 0.5 * dt * rate.to_f64());
+        }
+        for (value, rate) in midpoint.v.values_mut().iter_mut().zip(first.v.values()) {
+            *value = T::from_f64(value.to_f64() + 0.5 * dt * rate.to_f64());
+        }
+        apply_domain_boundaries(&mut midpoint, domain, freestream, channel_walls);
+        enforce_solid_faces(&mut midpoint, solid, wall);
         let second = Self::skew_rate(&midpoint, domain);
-        VectorField2::from_vec(
-            domain.nx(),
-            domain.ny(),
-            cells
-                .values()
-                .iter()
-                .zip(second.values())
-                .map(|(value, rate)| {
-                    [
-                        T::from_f64(value[0].to_f64() + dt * rate[0].to_f64()),
-                        T::from_f64(value[1].to_f64() + dt * rate[1].to_f64()),
-                    ]
-                })
-                .collect(),
-        )
-        .expect("matching velocity and rate shapes")
+        let mut output = faces.clone();
+        for (value, rate) in output.u.values_mut().iter_mut().zip(second.u.values()) {
+            *value = T::from_f64(value.to_f64() + dt * rate.to_f64());
+        }
+        for (value, rate) in output.v.values_mut().iter_mut().zip(second.v.values()) {
+            *value = T::from_f64(value.to_f64() + dt * rate.to_f64());
+        }
+        apply_domain_boundaries(&mut output, domain, freestream, channel_walls);
+        enforce_solid_faces(&mut output, solid, wall);
+        output
     }
 
     fn advance_candidate(
@@ -679,26 +872,39 @@ impl<T: FlowScalar> StableFluids<T> {
                     + fraction * (target.angle_degrees - start.angle_degrees),
                 angular_velocity_degrees: target.angular_velocity_degrees,
             };
-            let cells = faces_to_cells(&candidate.velocity);
-            let advected = match candidate.transport {
-                StableTransport::SemiLagrangian => {
-                    Self::semi_lagrangian(&cells, candidate.domain, dt)
-                }
-                StableTransport::MacCormack => Self::maccormack(&cells, candidate.domain, dt),
-                StableTransport::SkewRk2 => Self::skew_rk2(&cells, candidate.domain, dt),
-            };
-            candidate.velocity = cells_to_faces(
-                &advected,
-                candidate.domain.periodic_x,
-                candidate.domain.periodic_y,
-            );
-            candidate.geometry_fields =
-                rasterize_geometry(&candidate.geometry, candidate.domain, sub_control);
             let freestream = [
                 candidate.scenario.freestream()[0],
                 candidate.scenario.freestream()[1],
             ];
             let poiseuille = Self::is_poiseuille(&candidate.scenario);
+            let next_geometry_fields =
+                rasterize_geometry(&candidate.geometry, candidate.domain, sub_control);
+            if candidate.transport == StableTransport::SkewRk2 {
+                candidate.velocity = Self::skew_rk2(
+                    &candidate.velocity,
+                    candidate.domain,
+                    dt,
+                    &candidate.geometry_fields.solid,
+                    &next_geometry_fields.wall_velocity,
+                    freestream,
+                    poiseuille,
+                );
+            } else {
+                let cells = faces_to_cells(&candidate.velocity);
+                let advected = match candidate.transport {
+                    StableTransport::SemiLagrangian => {
+                        Self::semi_lagrangian(&cells, candidate.domain, dt)
+                    }
+                    StableTransport::MacCormack => Self::maccormack(&cells, candidate.domain, dt),
+                    StableTransport::SkewRk2 => unreachable!("handled by native-face path"),
+                };
+                candidate.velocity = cells_to_faces(
+                    &advected,
+                    candidate.domain.periodic_x,
+                    candidate.domain.periodic_y,
+                );
+            }
+            candidate.geometry_fields = next_geometry_fields;
             apply_domain_boundaries(
                 &mut candidate.velocity,
                 candidate.domain,
@@ -1157,7 +1363,10 @@ impl<T: FlowScalar> FlowSolver<T> for StableFluids<T> {
 #[cfg(test)]
 mod tests {
     use super::StableFluids;
-    use crate::{geometry::NacaFoil, scenario::Scenario, solver::FlowSolver};
+    use crate::{
+        field::ScalarField2, geometry::NacaFoil, grid::GridDomain2, scenario::Scenario,
+        solver::FlowSolver,
+    };
 
     fn uniform() -> Scenario {
         Scenario::from_json(include_str!(
@@ -1410,5 +1619,33 @@ mod tests {
             solver.interactive_tuning().unwrap().value,
             crate::solver::TuningValue::Choice("skew-rk2".into())
         );
+    }
+
+    #[test]
+    fn skew_face_derivative_respects_the_periodic_duplicate_endpoint() {
+        let nx = 32;
+        let ny = 4;
+        let domain = GridDomain2 {
+            bounds: [[0.0, 1.0], [0.0, 1.0]],
+            resolution: [nx, ny],
+            periodic_x: true,
+            periodic_y: false,
+        };
+        let mut field = ScalarField2::filled(nx + 1, ny, 0.0_f64);
+        for y in 0..ny {
+            for x in 0..=nx {
+                field.set(
+                    x,
+                    y,
+                    (2.0 * std::f64::consts::PI * x as f64 / nx as f64).sin(),
+                );
+            }
+        }
+        let derivative = StableFluids::<f64>::derivative(&field, domain.dx(), true, true, true);
+        let expected = (2.0 * std::f64::consts::PI / nx as f64).sin() / domain.dx();
+        for y in 0..ny {
+            assert!((derivative.get(0, y) - expected).abs() < 1.0e-12);
+            assert_eq!(derivative.get(nx, y), derivative.get(0, y));
+        }
     }
 }
