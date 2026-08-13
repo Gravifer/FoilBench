@@ -1,4 +1,4 @@
-name: Representative solver gates
+name: Revision 5 representative solver gates
 
 on:
   workflow_dispatch:
@@ -18,41 +18,60 @@ jobs:
       fail-fast: false
       max-parallel: 12
       matrix:
-        language: [python, julia, typescript]
-        gate: [startup, preview, warm-switch, scheduled]
-    runs-on: ${{ matrix.language == 'typescript' && 'ubuntu-latest' || 'windows-latest' }}
+        include:
+          - {implementation: python, target: native, gate: startup, os: windows-latest}
+          - {implementation: python, target: native, gate: preview, os: windows-latest}
+          - {implementation: python, target: native, gate: warm-switch, os: windows-latest}
+          - {implementation: python, target: native, gate: scheduled, os: windows-latest}
+          - {implementation: julia, target: native, gate: startup, os: windows-latest}
+          - {implementation: julia, target: native, gate: preview, os: windows-latest}
+          - {implementation: julia, target: native, gate: warm-switch, os: windows-latest}
+          - {implementation: julia, target: native, gate: scheduled, os: windows-latest}
+          - {implementation: typescript, target: node, gate: startup, os: ubuntu-latest}
+          - {implementation: typescript, target: browser-worker, gate: preview, os: ubuntu-latest}
+          - {implementation: typescript, target: node, gate: warm-switch, os: ubuntu-latest}
+          - {implementation: typescript, target: node, gate: scheduled, os: ubuntu-latest}
+          - {implementation: rust, target: native, gate: startup, os: windows-latest}
+          - {implementation: rust, target: native, gate: preview, os: windows-latest}
+          - {implementation: rust, target: native, gate: warm-switch, os: windows-latest}
+          - {implementation: rust, target: native, gate: scheduled, os: windows-latest}
+          - {implementation: rust, target: wasm-browser, gate: preview, os: ubuntu-latest}
+          - {implementation: rust, target: wasm-browser, gate: production-browser, os: ubuntu-latest}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        if: matrix.language == 'python'
+        if: matrix.implementation == 'python'
       - uses: julia-actions/setup-julia@v2
-        if: matrix.language == 'julia'
+        if: matrix.implementation == 'julia'
         with: {version: '1.12'}
       - uses: actions/setup-node@v4
-        if: matrix.language == 'typescript'
+        if: matrix.implementation == 'typescript' || matrix.target == 'wasm-browser'
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
+      - uses: dtolnay/rust-toolchain@stable
+        if: matrix.implementation == 'rust'
+      - name: Add Rust WASM target
+        if: matrix.target == 'wasm-browser'
+        run: rustup target add wasm32-unknown-unknown
       - name: Python setup
-        if: matrix.language == 'python'
+        if: matrix.implementation == 'python'
         run: uv sync --project implementations/python --all-groups --locked
       - name: Julia setup
-        if: matrix.language == 'julia'
+        if: matrix.implementation == 'julia'
         run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate()'
-      - name: TypeScript setup
-        if: matrix.language == 'typescript'
+      - name: TypeScript/WASM host setup
+        if: matrix.implementation == 'typescript' || matrix.target == 'wasm-browser'
         run: npm --prefix implementations/typescript ci
-      - name: Install Chromium for browser preview gate
-        if: matrix.language == 'typescript' && matrix.gate == 'preview'
+      - name: Install Chromium
+        if: matrix.target == 'browser-worker' || matrix.target == 'wasm-browser'
         working-directory: implementations/typescript
         run: npx playwright install --with-deps chromium
       - name: Run acceptance cell
         shell: pwsh
-        run: ./tools/ci/run_acceptance_cell.ps1 -Language '${{ matrix.language }}' -Gate '${{ matrix.gate }}'
+        run: ./tools/ci/run_acceptance_cell.ps1 -Implementation '${{ matrix.implementation }}' -ExecutionTarget '${{ matrix.target }}' -Gate '${{ matrix.gate }}'
       - uses: actions/upload-artifact@v4
         with:
-          name: cell-${{ github.sha }}-${{ matrix.language }}-${{ matrix.gate }}
-          # Preserve language/gate below the commit root. Every cell names its
-          # evidence file cell.json, so uploading only the leaf would make
-          # merge-multiple overwrite eleven of the twelve files.
+          name: cell-${{ github.sha }}-${{ matrix.implementation }}-${{ matrix.target }}-${{ matrix.gate }}
           path: results/ci-cells/${{ github.sha }}
           retention-days: 7
           if-no-files-found: error
@@ -69,6 +88,6 @@ jobs:
       - run: uv run --project implementations/python python tools/ci/validate_acceptance_cells.py --root results/downloaded --commit ${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
-          name: representative-${{ github.sha }}
+          name: revision5-representative-${{ github.sha }}
           path: results/downloaded
           retention-days: 30

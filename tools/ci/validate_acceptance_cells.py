@@ -1,4 +1,4 @@
-"""Require an exact, current acceptance-cell roster before aggregation."""
+"""Require an exact, current Revision 5 representative-cell roster."""
 
 import argparse
 import hashlib
@@ -6,25 +6,29 @@ import json
 import subprocess
 from pathlib import Path
 
-LANGUAGES = ("python", "julia", "typescript")
-GATES = ("startup", "preview", "warm-switch", "scheduled")
+from jsonschema import Draft202012Validator
+
+CELLS = frozenset(
+    [
+        *((language, "native", gate) for language in ("python", "julia") for gate in ("startup", "preview", "warm-switch", "scheduled")),
+        *(("typescript", "node", gate) for gate in ("startup", "warm-switch", "scheduled")),
+        ("typescript", "browser-worker", "preview"),
+        *(("rust", "native", gate) for gate in ("startup", "preview", "warm-switch", "scheduled")),
+        ("rust", "wasm-browser", "preview"),
+        ("rust", "wasm-browser", "production-browser"),
+    ]
+)
 CONFIGURATION = (
     "spec/conformance/fullsize-acceptance.json",
     "spec/conformance/solver-validity.json",
     "spec/contract-version.json",
     "spec/schemas/scenario.schema.json",
+    "spec/proposals/revision5/manifest.json",
+    "spec/proposals/revision5/fixtures/fullsize-acceptance-v2.json",
+    "spec/proposals/revision5/schemas/acceptance-cell-v2.schema.json",
     "benchmark-matrices/preview-gate.json",
     "scenarios/airfoil/default.json",
 )
-TARGETS = {
-    (language, gate): (
-        "browser-worker" if language == "typescript" and gate == "preview"
-        else "node" if language == "typescript"
-        else "native"
-    )
-    for language in LANGUAGES
-    for gate in GATES
-}
 
 
 def configuration_digest(repository: Path, commit: str) -> str:
@@ -42,34 +46,32 @@ def configuration_digest(repository: Path, commit: str) -> str:
 
 def validate_cells(root: Path, commit: str, repository: Path) -> None:
     digest = configuration_digest(repository, commit)
-    observed: set[tuple[str, str]] = set()
+    schema = json.loads((repository / "spec/proposals/revision5/schemas/acceptance-cell-v2.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    observed: set[tuple[str, str, str]] = set()
     for path in root.rglob("cell.json"):
         cell = json.loads(path.read_text(encoding="utf-8"))
-        required = {
-            "schema_version", "commit", "configuration_digest", "producer",
-            "execution_target", "gate", "status", "log_file", "log_sha256",
-        }
-        if set(cell) != required or cell["schema_version"] != 1:
-            raise ValueError(f"malformed acceptance cell: {path}")
-        key = (cell["producer"], cell["gate"])
+        validator.validate(cell)
+        key = (cell["implementation"], cell["execution_target"], cell["gate"])
         if key in observed:
             raise ValueError(f"duplicate acceptance cell: {key}")
         observed.add(key)
         if cell["commit"] != commit or cell["configuration_digest"] != digest:
             raise ValueError(f"stale acceptance cell: {path}")
-        if cell["status"] != "passed":
-            raise ValueError(f"failed acceptance cell: {path}")
-        if cell["execution_target"] != TARGETS.get(key):
-            raise ValueError(f"execution-target mismatch in acceptance cell: {path}")
         log_path = path.parent / cell["log_file"]
         if not log_path.is_file():
             raise ValueError(f"missing acceptance log: {log_path}")
         if hashlib.sha256(log_path.read_bytes()).hexdigest() != cell["log_sha256"]:
             raise ValueError(f"acceptance log digest mismatch: {log_path}")
-    expected = {(language, gate) for language in LANGUAGES for gate in GATES}
-    if observed != expected:
-        raise ValueError(f"acceptance roster mismatch: missing={expected-observed}, extra={observed-expected}")
-    print(f"Accepted {len(observed)} exact cells for {commit} ({digest})")
+        evidence_path = path.parent / "evidence.json"
+        if not evidence_path.is_file():
+            raise ValueError(f"missing measured evidence: {evidence_path}")
+        expected_evidence = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+        if cell["measurements"].get("evidence_sha256") != expected_evidence:
+            raise ValueError(f"acceptance evidence digest mismatch: {evidence_path}")
+    if observed != CELLS:
+        raise ValueError(f"acceptance roster mismatch: missing={CELLS-observed}, extra={observed-CELLS}")
+    print(f"Accepted {len(observed)} exact Revision 5 cells for {commit} ({digest})")
 
 
 def main() -> None:

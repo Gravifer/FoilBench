@@ -13,20 +13,22 @@
     "scenario": "scenarios/airfoil/default.json",
     "solver": "stable-fluids",
     "resolution": [160, 96],
-    "times": [5.0, 10.0, 22.0]
+    "times": [5.0, 10.0, 22.0],
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"]
   },
   "warm_switch": {
     "scenario": "scenarios/airfoil/default.json",
     "resolution": [160, 96],
     "angles_degrees": [14.0, 25.0],
     "require_all_directed_pairs": true,
-    "validate_fresh_fallback_first_step": true
+    "validate_fresh_fallback_first_step": true,
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"]
   },
   "preview": {
     "scenario": "scenarios/airfoil/default.json",
     "resolution": [160, 96],
     "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
-    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"],
+    "required_producers": ["python/native", "julia/native", "typescript/browser-worker", "rust/native", "rust/wasm-browser"],
     "minimum_development_machine_steps_per_second": 10.0,
     "hosted_ci_records_only": true
   },

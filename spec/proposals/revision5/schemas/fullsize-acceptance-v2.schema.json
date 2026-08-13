@@ -11,20 +11,22 @@
     "startup": {"$ref": "#/$defs/solverGate"},
     "scheduled_checkpoints": {
       "type": "object", "additionalProperties": false,
-      "required": ["scenario", "solver", "resolution", "times"],
+      "required": ["scenario", "solver", "resolution", "times", "required_producers"],
       "properties": {
         "scenario": {"type": "string", "minLength": 1}, "solver": {"$ref": "#/$defs/solver"},
         "resolution": {"$ref": "#/$defs/resolution"},
-        "times": {"type": "array", "minItems": 1, "items": {"type": "number", "exclusiveMinimum": 0}}
+        "times": {"type": "array", "minItems": 1, "items": {"type": "number", "exclusiveMinimum": 0}},
+        "required_producers": {"const": ["python/native", "julia/native", "typescript/node", "rust/native"]}
       }
     },
     "warm_switch": {
       "type": "object", "additionalProperties": false,
-      "required": ["scenario", "resolution", "angles_degrees", "require_all_directed_pairs", "validate_fresh_fallback_first_step"],
+      "required": ["scenario", "resolution", "angles_degrees", "require_all_directed_pairs", "validate_fresh_fallback_first_step", "required_producers"],
       "properties": {
         "scenario": {"type": "string", "minLength": 1}, "resolution": {"$ref": "#/$defs/resolution"},
         "angles_degrees": {"type": "array", "minItems": 1, "items": {"type": "number", "minimum": -30, "maximum": 30}},
-        "require_all_directed_pairs": {"const": true}, "validate_fresh_fallback_first_step": {"const": true}
+        "require_all_directed_pairs": {"const": true}, "validate_fresh_fallback_first_step": {"const": true},
+        "required_producers": {"const": ["python/native", "julia/native", "typescript/node", "rust/native"]}
       }
     },
     "preview": {
@@ -33,7 +35,7 @@
       "properties": {
         "scenario": {"type": "string", "minLength": 1}, "resolution": {"$ref": "#/$defs/resolution"},
         "solvers": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/solver"}},
-        "required_producers": {"const": ["python/native", "julia/native", "typescript/node", "rust/native"]},
+        "required_producers": {"const": ["python/native", "julia/native", "typescript/browser-worker", "rust/native", "rust/wasm-browser"]},
         "minimum_development_machine_steps_per_second": {"type": "number", "exclusiveMinimum": 0},
         "hosted_ci_records_only": {"const": true}
       }
