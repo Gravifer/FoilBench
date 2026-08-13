@@ -263,7 +263,7 @@ def main() -> None:
             solver_options={**base.solver_options, "stable_advection": "skew-rk2"},
         )
     result_schema = json.loads(
-        (root / "spec" / "schemas" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+        (root / "spec" / "proposals" / "revision5" / "schemas" / "chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8")
     )
     results: list[dict[str, object]] = []
     for case in cases:
@@ -276,11 +276,13 @@ def main() -> None:
         )
         raw = asdict(statistics)
         result: dict[str, object] = {
-            "schema_version": 1,
-            "contract_id": "foilbench-phase2-v1",
-            "contract_revision": 4,
+            "schema_version": 2,
+            "contract_id": "foilbench-phase3-v1",
+            "contract_revision": 5,
             "experiment": "chaotic-wake-sweep",
             "language": "python",
+            "implementation": "python",
+            "execution_target": "native",
             "solver": "stable-fluids",
             "scenario": _scenario(base, case, arguments.duration).id,
             "parameters": {

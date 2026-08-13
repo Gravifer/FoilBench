@@ -20,7 +20,7 @@
       "required": ["reynolds", "angle_degrees", "resolution", "duration"],
       "properties": {
         "reynolds": {"type": "number", "exclusiveMinimum": 0}, "angle_degrees": {"type": "number"},
-        "resolution": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 8}, {"type": "integer", "minimum": 8}], "items": false},
+        "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"type": "integer", "minimum": 8}, {"type": "integer", "minimum": 8}], "items": false},
         "duration": {"type": "number", "minimum": 0}, "burn_in": {"type": "number", "minimum": 0}, "epsilon": {"type": "number", "exclusiveMinimum": 0}
       }
     },
@@ -43,7 +43,7 @@
     "wall_seconds": {"type": "number", "minimum": 0}
   },
   "allOf": [
-    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}}, "then": {"required": ["initialization", "series"], "properties": {"parameters": {"required": ["epsilon"]}}}},
-    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sweep"}}}, "then": {"properties": {"parameters": {"required": ["burn_in"]}}}}
+    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}}, "then": {"required": ["initialization", "series"], "properties": {"initialization": true, "series": true, "parameters": {"type": "object", "properties": {"epsilon": true}, "required": ["epsilon"]}}}},
+    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sweep"}}}, "then": {"properties": {"parameters": {"type": "object", "properties": {"burn_in": true}, "required": ["burn_in"]}}}}
   ]
 }

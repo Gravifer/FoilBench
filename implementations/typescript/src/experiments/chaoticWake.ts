@@ -10,11 +10,13 @@ export interface WakeCase {
   readonly resolution: readonly [number, number];
 }
 export interface ExperimentEnvelope {
-  readonly schema_version: 1;
-  readonly contract_id: "foilbench-phase2-v1";
-  readonly contract_revision: 4;
+  readonly schema_version: 2;
+  readonly contract_id: "foilbench-phase3-v1";
+  readonly contract_revision: 5;
   readonly experiment: "chaotic-wake-sweep" | "chaotic-wake-sensitivity";
   readonly language: "typescript";
+  readonly implementation: "typescript";
+  readonly execution_target: "node";
   readonly solver: "stable-fluids";
   readonly scenario: string;
   readonly parameters: Readonly<Record<string, number | readonly number[]>>;
@@ -190,11 +192,13 @@ export function runChaoticWakeCase(
     enstrophy.reduce((sum, value) => sum + (value - enstrophyMean) ** 2, 0) /
     Math.max(1, enstrophy.length);
   return {
-    schema_version: 1,
-    contract_id: "foilbench-phase2-v1",
-    contract_revision: 4,
+    schema_version: 2,
+    contract_id: "foilbench-phase3-v1",
+    contract_revision: 5,
     experiment: "chaotic-wake-sweep",
     language: "typescript",
+    implementation: "typescript",
+    execution_target: "node",
     solver: "stable-fluids",
     scenario: scenario.id,
     parameters: {
@@ -397,11 +401,13 @@ export function runChaosSensitivity(
   const maximum = Math.max(...differences);
   const fit = exponentialFit(times, differences, initial);
   return {
-    schema_version: 1,
-    contract_id: "foilbench-phase2-v1",
-    contract_revision: 4,
+    schema_version: 2,
+    contract_id: "foilbench-phase3-v1",
+    contract_revision: 5,
     experiment: "chaotic-wake-sensitivity",
     language: "typescript",
+    implementation: "typescript",
+    execution_target: "node",
     solver: "stable-fluids",
     scenario: scenario.id,
     parameters: {

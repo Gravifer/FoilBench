@@ -20,11 +20,13 @@ metric_names = (
     "exponential_fit_r_squared", "exponential_fit_samples",
 )
 result = Dict{String,Any}(
-    "schema_version" => 1,
-    "contract_id" => "foilbench-phase2-v1",
-    "contract_revision" => 4,
+    "schema_version" => 2,
+    "contract_id" => "foilbench-phase3-v1",
+    "contract_revision" => 5,
     "experiment" => "chaotic-wake-sensitivity",
     "language" => "julia",
+    "implementation" => "julia",
+    "execution_target" => "native",
     "solver" => "stable-fluids",
     "scenario" => raw["scenario"],
     "parameters" => Dict(

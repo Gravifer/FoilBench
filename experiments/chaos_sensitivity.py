@@ -160,11 +160,13 @@ def main() -> None:
         "wake_rms_differences": differences,
     }
     envelope: dict[str, object] = {
-        "schema_version": 1,
-        "contract_id": "foilbench-phase2-v1",
-        "contract_revision": 4,
+        "schema_version": 2,
+        "contract_id": "foilbench-phase3-v1",
+        "contract_revision": 5,
         "experiment": "chaotic-wake-sensitivity",
         "language": "python",
+        "implementation": "python",
+        "execution_target": "native",
         "solver": "stable-fluids",
         "scenario": scenario.id,
         "parameters": {
@@ -201,7 +203,7 @@ def main() -> None:
         "wall_seconds": wall_seconds,
     }
     result_schema = json.loads(
-        (root / "spec" / "schemas" / "chaotic-wake-result.schema.json").read_text(encoding="utf-8")
+        (root / "spec" / "proposals" / "revision5" / "schemas" / "chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8")
     )
     validate_json(envelope, result_schema)
     print(

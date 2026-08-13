@@ -27,11 +27,13 @@ function envelope(selected, raw)
         "vorticity_small_scale_fraction",
     )
     return Dict{String,Any}(
-        "schema_version" => 1,
-        "contract_id" => "foilbench-phase2-v1",
-        "contract_revision" => 4,
+        "schema_version" => 2,
+        "contract_id" => "foilbench-phase3-v1",
+        "contract_revision" => 5,
         "experiment" => "chaotic-wake-sweep",
         "language" => "julia",
+        "implementation" => "julia",
+        "execution_target" => "native",
         "solver" => "stable-fluids",
         "scenario" => "chaotic-wake-re$(selected.reynolds)-a$(selected.angle_degrees)-$(selected.resolution[1])x$(selected.resolution[2])",
         "parameters" => Dict(

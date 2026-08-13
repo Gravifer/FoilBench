@@ -79,7 +79,7 @@ async function main(args: readonly string[]): Promise<void> {
     const results: readonly ExperimentEnvelope[] = command === "chaos-sweep"
       ? casesDocument.sweep.cases.map((value) => runChaoticWakeCase(scenario, selected(value), casesDocument.sweep.duration, casesDocument.sweep.burn_in))
       : [runChaosSensitivity(scenario, selected(paired.case), pairedDuration, pairedEpsilon)];
-    const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/chaotic-wake-result.schema.json"), "utf8")) as object;
+    const resultSchema = JSON.parse(await readFile(join(repositoryRoot, "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json"), "utf8")) as object;
     for (const result of results) validateDocument(result, resultSchema);
     const text = JSON.stringify(command === "chaos-sweep" ? results : results[0], null, 2);
     if (args[2] !== undefined) await writeFile(resolve(repositoryRoot, args[2]), text, "utf8");
