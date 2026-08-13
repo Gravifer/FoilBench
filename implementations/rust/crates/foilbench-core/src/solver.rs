@@ -15,6 +15,8 @@ use crate::{
 pub trait FlowScalar: Copy + fmt::Debug + PartialEq + Send + Sync + 'static {
     const PRECISION: Precision;
     fn is_finite(self) -> bool;
+    fn from_f64(value: f64) -> Self;
+    fn to_f64(self) -> f64;
 }
 
 impl FlowScalar for f32 {
@@ -22,12 +24,25 @@ impl FlowScalar for f32 {
     fn is_finite(self) -> bool {
         self.is_finite()
     }
+    #[allow(clippy::cast_possible_truncation)]
+    fn from_f64(value: f64) -> Self {
+        value as Self
+    }
+    fn to_f64(self) -> f64 {
+        f64::from(self)
+    }
 }
 
 impl FlowScalar for f64 {
     const PRECISION: Precision = Precision::Float64;
     fn is_finite(self) -> bool {
         self.is_finite()
+    }
+    fn from_f64(value: f64) -> Self {
+        value
+    }
+    fn to_f64(self) -> f64 {
+        self
     }
 }
 
