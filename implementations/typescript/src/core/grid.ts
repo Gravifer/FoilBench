@@ -109,7 +109,11 @@ export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: num
   };
   const epsilon = precision === "float32" ? 1e-7 : 1e-15; applyPreconditioner(residual, preconditioned);
   let rightNormSquared = 0; let residualDot = 0; for (let index = 0; index < residual.length; index += 1) { const right = rightHandSide[index] ?? 0; direction[index] = preconditioned[index] ?? 0; rightNormSquared += right * right; residualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0); }
-  const convergenceTarget = tolerance * (precision === "float32" ? 0.995 : 0.999999);
+  // The recursively accumulated CG residual can be slightly more optimistic
+  // than the independently recomputed contract residual, especially in
+  // Float32.  Leave the same deliberate margin as the Python reference so an
+  // apparently converged iteration does not fail solely at final validation.
+  const convergenceTarget = tolerance * 0.9;
   const rightNorm = Math.sqrt(rightNormSquared); let performed = 0; let relativeResidual = rightNorm <= epsilon ? 0 : 1; let converged = rightNorm <= epsilon;
   for (let iteration = 0; iteration < iterations && !converged; iteration += 1) {
     applyOperator(direction, operatorDirection); let denominator = 0; for (let index = 0; index < direction.length; index += 1) denominator += (direction[index] ?? 0) * (operatorDirection[index] ?? 0);
