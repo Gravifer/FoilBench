@@ -1343,7 +1343,7 @@ mod tests {
         second.initialize(&scenario, &geometry, 42).unwrap();
         for step in 1..=8 {
             let control = ControlState {
-                time: step as f64 * scenario.output_dt(),
+                time: f64::from(step) * scenario.output_dt(),
                 angle_degrees: 4.0,
                 angular_velocity_degrees: 0.0,
             };
