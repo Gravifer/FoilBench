@@ -6,6 +6,7 @@ use std::{
 
 use foilbench_native::{
     chaos::run_chaos,
+    gates::run_gate,
     resources::ResourceResolver,
     runner::{BenchOptions, compare_results, run_matrix},
 };
@@ -14,6 +15,7 @@ fn usage() -> &'static str {
     "foilbench-rs describe\n\
      foilbench-rs bench <matrix.json> [--solver stable-fluids] [--output DIR] [--root DIR]\n\
      foilbench-rs compare <results-dir> [--require-producer implementation/target]... [--root DIR]\n\
+     foilbench-rs gate startup|preview|warm-switch|scheduled [--output FILE] [--root DIR]\n\
      foilbench-rs chaos-sweep|chaos-paired|chaos-preflight [--output FILE] [--root DIR]"
 }
 
@@ -129,6 +131,19 @@ fn run() -> Result<(), String> {
         "chaos-sweep" | "chaos-paired" | "chaos-preflight" => {
             let output = take_value(command_arguments, "--output")?.map(PathBuf::from);
             let result = run_chaos(&resolver, command, output)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).map_err(|error| error.to_string())?
+            );
+            Ok(())
+        }
+        "gate" => {
+            let selected = positional(command_arguments);
+            let gate = selected
+                .first()
+                .ok_or_else(|| format!("gate requires a gate name\n{}", usage()))?;
+            let output = take_value(command_arguments, "--output")?.map(PathBuf::from);
+            let result = run_gate(&resolver, gate, output.as_deref())?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&result).map_err(|error| error.to_string())?
