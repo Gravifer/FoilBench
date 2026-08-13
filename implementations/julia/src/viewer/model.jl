@@ -885,7 +885,17 @@ function reset_viewer!(model::ViewerModel{T}) where {T}
     return nothing
 end
 
-function _state_at_control(state::CanonicalFlowState{2,T}, control::ControlState) where {T}
+function _state_at_control(
+    model::ViewerModel{T},
+    state::CanonicalFlowState{2,T},
+    control::ControlState,
+) where {T}
+    velocity = copy(state.velocity)
+    solid = solid_mask(model.geometry, model.scenario.domain, T(control.angle_degrees))
+    for index in CartesianIndices(solid)
+        solid[index] || continue
+        velocity[1, index[1], index[2], :] .= 0
+    end
     return CanonicalFlowState(
         state.schema_version,
         state.bounds,
@@ -896,7 +906,7 @@ function _state_at_control(state::CanonicalFlowState{2,T}, control::ControlState
         T(control.angular_velocity_degrees),
         state.source_language,
         state.source_solver,
-        copy(state.velocity),
+        velocity,
         state.density === nothing ? nothing : copy(state.density),
     )
 end
@@ -1132,7 +1142,11 @@ function switch_solver!(model::ViewerModel{T}, solver_id::AbstractString) where 
     initialize!(incoming, model.scenario, model.geometry, model.scenario.seed)
     _apply_saved_tuning!(model, incoming)
     set_reynolds!(incoming, selected_reynolds)
-    outcome = import_state!(incoming, _state_at_control(state, import_control), import_control)
+    outcome = import_state!(
+        incoming,
+        _state_at_control(model, state, import_control),
+        import_control,
+    )
     if !accepted(outcome)
         return _reject_or_fallback!(model, solver_id, outcome.reason, outcome.warnings)
     end

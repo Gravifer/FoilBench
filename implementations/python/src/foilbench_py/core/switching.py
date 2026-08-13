@@ -5,6 +5,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from time import perf_counter
 
+import numpy as np
+
 from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import (
     CanonicalFlowState,
@@ -49,12 +51,18 @@ def classify_import_failure(
 def state_at_control(
     state: CanonicalFlowState,
     control: ControlState,
+    geometry: NacaFoil,
+    scenario: Scenario,
 ) -> CanonicalFlowState:
+    velocity = state.velocity.copy()
+    solid = geometry.mask(scenario.domain, control.angle_degrees)
+    velocity[0, solid, :] = np.asarray(0.0, dtype=velocity.dtype)
     return replace(
         state,
         time=control.time,
         angle_degrees=control.angle_degrees,
         angular_velocity_degrees=control.angular_velocity_degrees,
+        velocity=velocity,
     )
 
 
@@ -113,7 +121,9 @@ class SolverManager:
             self._last_validation_report = None
             self._last_validation_elapsed = 0.0
             return ImportOutcome("accepted", "none", report)
-        state = state_at_control(self._solver.export_state(), control)
+        state = state_at_control(
+            self._solver.export_state(), control, self._geometry, self._scenario
+        )
         try:
             candidate = self._factory(destination)
         except KeyError as error:

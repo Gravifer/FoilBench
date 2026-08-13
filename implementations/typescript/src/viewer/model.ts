@@ -1,4 +1,4 @@
-import type {ControlState, FlowSolver, ImportReason, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, FlowSolver, ImportReason, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
@@ -19,6 +19,23 @@ export function normalizeViewerVorticity(raw: Float32Array, solid: Uint8Array): 
   for (let index = 0; index < output.length; index += 1) { if (solid[index] !== 0) { output[index] = 0; continue; } const value = output[index] ?? Number.NaN; if (!Number.isFinite(value)) throw new RangeError("vorticity must be finite"); const magnitude = Math.abs(value); magnitudes.push(magnitude); maximum = Math.max(maximum, magnitude); }
   magnitudes.sort((left, right) => left - right); const percentileIndex = Math.max(0, Math.min(magnitudes.length - 1, Math.ceil(0.995 * magnitudes.length) - 1)); const percentile = magnitudes[percentileIndex] ?? 0; const scale = Math.max(percentile, 0.2 * maximum, 1e-6);
   for (let index = 0; index < output.length; index += 1) output[index] = Math.tanh((output[index] ?? 0) / scale); return output;
+}
+
+export function canonicalStateAtControl(state: CanonicalFlowState, scenario: Scenario, control: ControlState): CanonicalFlowState {
+  const velocity = state.velocity.slice();
+  const foil = new NacaFoil(scenario.foil);
+  const {nx, ny, dx, dy} = dimensions(scenario.domain);
+  const {x, y} = bounds2d(scenario.domain);
+  for (let iy = 0; iy < ny; iy += 1) for (let ix = 0; ix < nx; ix += 1) {
+    const px = x[0] + (ix + 0.5) * dx;
+    const py = y[0] + (iy + 0.5) * dy;
+    if (foil.signedDistance(px, py, control.angleDegrees) <= 0) {
+      const cell = iy * nx + ix;
+      velocity[2 * cell] = 0;
+      velocity[2 * cell + 1] = 0;
+    }
+  }
+  return {...state, time: control.time, angleDegrees: control.angleDegrees, angularVelocityDegrees: control.angularVelocityDegrees, velocity};
 }
 
 interface PresentationState {
@@ -227,7 +244,7 @@ export class ViewerModel {
     this.applySavedTuning(incoming);
     incoming.setReynolds(this.solver.reynolds);
     const importedAt = this.control(this.time);
-    const outcome = incoming.importState(this.solver.exportState(), importedAt);
+    const outcome = incoming.importState(canonicalStateAtControl(this.solver.exportState(), this.scenario, importedAt), importedAt);
     if (outcome.status === "rejected") {
       return this.rejectOrFallback(id, outcome.reason === "none" ? "unsupported_conversion" : outcome.reason);
     }
