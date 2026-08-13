@@ -25,6 +25,11 @@ The Stable Fluids solver gained two opt-in transport paths:
 The experimental scenario uses the second path at `Re=10000`, 35 degrees of
 attack, and the compact 160×96 grid. There is no vorticity confinement,
 stochastic forcing, hard-coded vortex, or time-dependent inlet perturbation.
+Because this intentionally coarse immersed-boundary case permits strongly
+separated motion, it sets an experiment-local MAC divergence cap of `6.0`.
+The ordinary solver-validity limit remains `1e-4`; the larger cap prevents a
+finite, rolled-back visualization trajectory from being mistaken for a
+general validation case.
 
 Run it with:
 
