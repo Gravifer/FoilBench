@@ -324,9 +324,30 @@ remain the experiential open decisions already recorded in the
 
 ## Phase 3: Rust and WASM
 
-**Status:** Ready to begin against accepted Revision 4; not started.
+**Status:** Kickoff in progress against accepted Revision 4 and the proposed
+Revision 5 Phase 3 contract.
 
-Add `implementations/rust/` against the accepted Revision 4 three-language
-baseline. One Rust
-core supplies native benchmarks and WASM exports. D3Q19 shallow-periodic 3D is
-considered only after the 2D implementations pass parity.
+The Phase 3 workspace separates `foilbench-core` (no filesystem/browser),
+`foilbench-native` (CLI, artifacts, benchmarks), and `foilbench-wasm`
+(`wasm-bindgen` host boundary). The foundation currently includes PCG32,
+typed scenario semantics, NACA geometry, canonical version 1/2 models, and the
+solver trait. It deliberately advertises no Rust solver yet.
+
+The prioritized kickoff sequence is:
+
+1. stabilize proposed Revision 5 geometry, canonical identity, fidelity,
+   boundary, producer-target, and conformance-inventory semantics;
+2. implement native 2D Stable Fluids, then D2Q9 TRT LBM, then blended PIC/FLIP;
+3. establish native parity and artifacts before hosting the same core in the
+   TypeScript simulation worker through coarse WASM calls;
+4. accept Revision 5 only after required native/WASM target evidence passes.
+
+CI is split accordingly: pull requests run language-native static/unit suites,
+Rust format/lint/tests, and a production-dist browser smoke. Scheduled or
+manual representative acceptance runs as at most twelve independent
+language/gate cells. Aggregation requires the exact commit and configuration
+digest for every cell; intermediate cells expire after seven days and the
+aggregate after thirty days.
+
+Pixel-level renderer matching is a permanent won't-do. D3Q19 and shallow
+periodic 3D remain deferred until all three 2D Rust solvers pass parity.

@@ -1,0 +1,68 @@
+name: Representative acceptance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: representative-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cell:
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        language: [python, julia, typescript]
+        gate: [startup, preview, warm-switch, scheduled]
+    runs-on: ${{ matrix.language == 'typescript' && 'ubuntu-latest' || 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.language == 'python'
+      - uses: julia-actions/setup-julia@v2
+        if: matrix.language == 'julia'
+        with: {version: '1.12'}
+      - uses: actions/setup-node@v4
+        if: matrix.language == 'typescript'
+        with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
+      - name: Python setup
+        if: matrix.language == 'python'
+        run: uv sync --project implementations/python --all-groups --locked
+      - name: Julia setup
+        if: matrix.language == 'julia'
+        run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate()'
+      - name: TypeScript setup
+        if: matrix.language == 'typescript'
+        run: npm --prefix implementations/typescript ci
+      - name: Run acceptance cell
+        shell: pwsh
+        run: ./tools/ci/run_acceptance_cell.ps1 -Language '${{ matrix.language }}' -Gate '${{ matrix.gate }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cell-${{ github.sha }}-${{ matrix.language }}-${{ matrix.gate }}
+          path: results/ci-cells/${{ github.sha }}/${{ matrix.language }}/${{ matrix.gate }}
+          retention-days: 7
+          if-no-files-found: error
+
+  aggregate:
+    needs: cell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {path: results/downloaded, pattern: 'cell-*', merge-multiple: true}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project implementations/python --all-groups --locked
+      - run: uv run --project implementations/python python tools/ci/validate_acceptance_cells.py --root results/downloaded --commit ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: representative-${{ github.sha }}
+          path: results/downloaded
+          retention-days: 30
+

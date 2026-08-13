@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  spec-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project implementations/python --all-groups --locked
+      - run: uv run --project implementations/python python tools/validate_spec.py
+      - run: uv run --project implementations/python python tools/validate_acceptance_fixtures.py
+      - run: uv run --project implementations/python ruff check implementations/python tools
+      - run: uv run --project implementations/python pyright implementations/python
+      - run: uv run --project implementations/python pytest -c implementations/python/pyproject.toml
+
+  julia:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with: {version: '1.12'}
+      - uses: julia-actions/cache@v2
+      - run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+
+  typescript:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: implementations/typescript}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser:dist
+        env: {CI: 'true'}
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: {components: rustfmt, clippy}
+      - uses: Swatinem/rust-cache@v2
+        with: {workspaces: implementations/rust}
+      - run: cargo fmt --manifest-path implementations/rust/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path implementations/rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked

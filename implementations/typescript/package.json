@@ -14,6 +14,7 @@
     "check": "tsc -b --pretty false && eslint src tests vite.config.ts vitest.config.ts playwright.config.ts",
     "test": "vitest run",
     "test:browser": "playwright test",
+    "test:browser:dist": "playwright test --config playwright.dist.config.ts",
     "setup:browser": "playwright install chromium",
     "view": "tsx src/cli.ts view",
     "describe": "tsx src/cli.ts describe",

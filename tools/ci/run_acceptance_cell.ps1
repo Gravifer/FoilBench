@@ -1,0 +1,57 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][ValidateSet('python', 'julia', 'typescript')][string]$Language,
+    [Parameter(Mandatory)][ValidateSet('startup', 'preview', 'warm-switch', 'scheduled')][string]$Gate
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$commit = (& git -C $root rev-parse HEAD).Trim()
+$configuration = @(
+    'spec/conformance/fullsize-acceptance.json',
+    'spec/conformance/solver-validity.json',
+    'spec/contract-version.json'
+)
+$digestInput = foreach ($path in $configuration) {
+    (Get-FileHash -LiteralPath (Join-Path $root $path) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$configurationDigest = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes(($digestInput -join "`n"))
+    )
+).ToLowerInvariant()
+
+$commands = @{
+    'python/startup' = @('uv', 'run', '--project', 'implementations/python', 'python', 'implementations/python/benchmark/startup_gate.py')
+    'python/preview' = @('uv', 'run', '--project', 'implementations/python', 'python', 'implementations/python/benchmark/preview_gate.py')
+    'python/warm-switch' = @('uv', 'run', '--project', 'implementations/python', 'python', 'implementations/python/benchmark/warm_switch_gate.py')
+    'python/scheduled' = @('uv', 'run', '--project', 'implementations/python', 'python', 'implementations/python/benchmark/scheduled_gate.py')
+    'julia/startup' = @('julia', '--threads=auto', '--project=implementations/julia', 'implementations/julia/benchmark/startup_gate.jl')
+    'julia/preview' = @('julia', '--threads=auto', '--project=implementations/julia', 'implementations/julia/benchmark/preview_gate.jl')
+    'julia/warm-switch' = @('julia', '--threads=auto', '--project=implementations/julia', 'implementations/julia/benchmark/warm_switch_gate.jl')
+    'julia/scheduled' = @('julia', '--threads=auto', '--project=implementations/julia', 'implementations/julia/benchmark/scheduled_gate.jl')
+    'typescript/startup' = @('npm', '--prefix', 'implementations/typescript', 'run', 'gate:startup')
+    'typescript/preview' = @('npm', '--prefix', 'implementations/typescript', 'run', 'gate:preview')
+    'typescript/warm-switch' = @('npm', '--prefix', 'implementations/typescript', 'run', 'gate:warm-switch')
+    'typescript/scheduled' = @('npm', '--prefix', 'implementations/typescript', 'run', 'gate:scheduled')
+}
+$selected = $commands["$Language/$Gate"]
+Push-Location $root
+try {
+    & $selected[0] $selected[1..($selected.Count - 1)]
+    if ($LASTEXITCODE -ne 0) { throw "acceptance cell failed with exit code $LASTEXITCODE" }
+    $directory = Join-Path $root "results/ci-cells/$commit/$Language/$Gate"
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    @{
+        schema_version = 1
+        commit = $commit
+        configuration_digest = $configurationDigest
+        producer = $Language
+        execution_target = if ($Language -eq 'typescript') { 'browser-worker' } else { 'native' }
+        gate = $Gate
+        status = 'passed'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'cell.json') -Encoding utf8NoBOM
+}
+finally { Pop-Location }
+

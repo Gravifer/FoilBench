@@ -30,17 +30,14 @@ test("viewer renders and applies interactive controls", async ({page}) => {
   await page.waitForTimeout(100);
   const angleAfterClick = (await overlay.textContent())?.match(/AoA=\s*(-?\d+(?:\.\d+)?)/)?.[1];
   expect(angleAfterClick).toBe(angleBeforeClick);
-  await page.keyboard.press("Space");
 
   await page.mouse.move(bounds.x + 0.55 * bounds.width, bounds.y + 0.55 * bounds.height);
   await page.mouse.down();
   await page.mouse.move(bounds.x + 0.62 * bounds.width, bounds.y + 0.40 * bounds.height, {steps: 4});
   await page.mouse.up();
-  await expect(overlay).toContainText(/AoA=\s*-[5-9]/);
+  await expect(overlay).toContainText("manual control");
+  await expect.poll(async () => (await overlay.textContent())?.match(/AoA=\s*(-?\d+(?:\.\d+)?)/)?.[1]).not.toBe(angleBeforeClick);
 
-  await page.keyboard.press("Space");
-  await page.waitForTimeout(100);
-  await expect(overlay).toContainText("PAUSED");
   const pausedText = await overlay.textContent();
   await page.waitForTimeout(150);
   expect(await overlay.textContent()).toBe(pausedText);

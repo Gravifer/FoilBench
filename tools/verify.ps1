@@ -141,8 +141,8 @@ try {
             Invoke-Checked npm @('test')
             Write-Host '==> TypeScript: production build'
             Invoke-Checked npm @('run', 'build')
-            Write-Host '==> TypeScript: Chromium viewer smoke test'
-            Invoke-Checked npm @('run', 'test:browser')
+            Write-Host '==> TypeScript: production-dist Chromium viewer smoke test'
+            Invoke-Checked npm @('run', 'test:browser:dist')
             if ($Representative) {
                 Write-Host '==> TypeScript: 160x96 startup gate'
                 Invoke-Checked npm @('run', 'gate:startup')
