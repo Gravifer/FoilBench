@@ -97,3 +97,10 @@ representative full-size, interchange, fallback, paired-initialization, and
 optional-extension gates passed in Python, Julia, and TypeScript. Future
 proposed revisions must repeat that activation sequence rather than claiming
 conformance from prose alone.
+
+## Proposed Phase 3 revision
+
+The non-active [Revision 5 proposal](proposals/revision5/README.md) records the
+geometry, canonical identity, fidelity, LBM-boundary, producer-target, and
+deferment decisions for Rust/WASM development. It remains outside the accepted
+manifest until its fixtures and implementation roster pass.

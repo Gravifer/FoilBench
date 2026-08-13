@@ -1,0 +1,15 @@
+{
+  "contract_id": "foilbench-phase3-v1",
+  "revision": 5,
+  "status": "proposed",
+  "base_contract_id": "foilbench-phase2-v1",
+  "base_revision": 4,
+  "documents": [
+    "geometry-semantics.md",
+    "canonical-state-v2.md",
+    "fidelity-cases.md",
+    "boundary-and-producer.md"
+  ],
+  "permanent_wont_do": ["pixel-level-renderer-matching"],
+  "deferred_until_2d_rust_parity": ["d3q19", "shallow-periodic-3d"]
+}

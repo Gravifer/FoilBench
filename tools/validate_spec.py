@@ -100,6 +100,72 @@ def _validate_no_obsolete_references(root: Path, schema_names: frozenset[str]) -
                 raise ValueError(f"obsolete specification path in {path.relative_to(root)}: {reference}")
 
 
+def _validate_conformance_inventory(
+    root: Path,
+    manifest: dict[str, object],
+    schemas: dict[str, dict[str, object]],
+) -> None:
+    relative = manifest.get("conformance_inventory")
+    if not isinstance(relative, str):
+        raise TypeError("contract-version.json must name conformance_inventory")
+    inventory = _object(_resolve_manifest_path(root, relative))
+    entries = inventory.get("entries")
+    if not isinstance(entries, list):
+        raise TypeError("conformance inventory entries must be an array")
+    conformance = root / "spec" / "conformance"
+    observed: set[str] = set()
+    for raw in entries:
+        if not isinstance(raw, dict):
+            raise TypeError("each conformance inventory entry must be an object")
+        path_value = raw.get("path")
+        if not isinstance(path_value, str) or path_value in observed:
+            raise ValueError(f"invalid or duplicate conformance path: {path_value!r}")
+        observed.add(path_value)
+        fixture = _resolve_manifest_path(root, f"spec/conformance/{path_value}")
+        kind = raw.get("kind")
+        if kind == "json":
+            document = _object(fixture)
+        elif kind == "artifact-directory":
+            if not fixture.is_dir():
+                raise ValueError(f"artifact fixture is not a directory: {path_value}")
+            document = _object(fixture / "manifest.json")
+        else:
+            raise ValueError(f"unknown conformance fixture kind: {kind!r}")
+        schema_path = raw.get("schema")
+        if schema_path is not None:
+            if not isinstance(schema_path, str) or schema_path not in schemas:
+                raise ValueError(f"unknown fixture schema for {path_value}: {schema_path!r}")
+            Draft202012Validator(schemas[schema_path]).validate(document)
+        if not isinstance(raw.get("owner"), str) or not isinstance(raw.get("required"), bool):
+            raise TypeError(f"fixture owner/required metadata is invalid: {path_value}")
+    expected = {
+        path.name for path in conformance.iterdir()
+        if path.name not in {"README.md", "inventory.json"}
+    }
+    if observed != expected:
+        raise ValueError(
+            "conformance inventory mismatch: "
+            f"missing={sorted(expected - observed)} extra={sorted(observed - expected)}"
+        )
+
+
+def _validate_revision5_proposal(root: Path) -> None:
+    proposal_root = root / "spec" / "proposals" / "revision5"
+    proposal = _object(proposal_root / "manifest.json")
+    if proposal.get("status") != "proposed" or proposal.get("base_revision") != 4:
+        raise ValueError("Revision 5 proposal must remain proposed against accepted Revision 4")
+    documents = _string_list(proposal.get("documents"), "revision5 documents")
+    expected = {path.name for path in proposal_root.glob("*.md") if path.name != "README.md"}
+    if set(documents) != expected:
+        raise ValueError("Revision 5 proposal document inventory is incomplete")
+    for document in documents:
+        path = proposal_root / document
+        if not path.exists() or "status: proposed revision 5 normative component" not in "\n".join(
+            path.read_text(encoding="utf-8").splitlines()[:5]
+        ).lower():
+            raise ValueError(f"invalid Revision 5 proposal document: {document}")
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     spec = root / "spec"
@@ -146,9 +212,11 @@ def main() -> None:
             f"missing={sorted(expected_schemas - manifest_schemas)} "
             f"extra={sorted(manifest_schemas - expected_schemas)}"
         )
+    loaded_schemas: dict[str, dict[str, object]] = {}
     for relative in manifest_schemas:
         path = _resolve_manifest_path(root, relative)
         schema = _object(path)
+        loaded_schemas[relative] = schema
         Draft202012Validator.check_schema(schema)
         identifier = schema.get("$id")
         if identifier is not None and identifier != f"https://foilbench.local/spec/{path.name}":
@@ -160,6 +228,9 @@ def main() -> None:
     conformance = _resolve_manifest_path(root, conformance_root)
     if not conformance.is_dir() or conformance != spec / "conformance":
         raise ValueError("conformance_root must identify spec/conformance")
+
+    _validate_conformance_inventory(root, manifest, loaded_schemas)
+    _validate_revision5_proposal(root)
 
     _validate_markdown_links(root)
     _validate_no_obsolete_references(root, schema_names)

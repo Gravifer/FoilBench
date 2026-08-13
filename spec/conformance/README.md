@@ -1,5 +1,10 @@
 # Shared conformance fixtures
 
+The exact machine-readable inventory is [inventory.json](inventory.json).
+Every entry declares its semantic owner, whether it is required, and its JSON
+Schema where one exists. Adding, removing, or renaming a fixture without
+updating that inventory is a specification-layout failure.
+
 These fixtures freeze small, language-neutral semantics that every FoilBench
 implementation must reproduce before solver comparisons are meaningful.
 

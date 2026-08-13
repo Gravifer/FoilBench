@@ -36,5 +36,6 @@
     "spec/schemas/chaotic-wake-result.schema.json",
     "spec/schemas/drag-calibration-result.schema.json"
   ],
-  "conformance_root": "spec/conformance"
+  "conformance_root": "spec/conformance",
+  "conformance_inventory": "spec/conformance/inventory.json"
 }

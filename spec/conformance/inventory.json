@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract_id": "foilbench-phase2-v1",
+  "contract_revision": 4,
+  "entries": [
+    {"path": "canonical-state-f32", "kind": "artifact-directory", "owner": "canonical-state", "required": true, "schema": "spec/schemas/canonical-manifest.schema.json"},
+    {"path": "canonical-state-f32-fortran", "kind": "artifact-directory", "owner": "canonical-state", "required": true, "schema": "spec/schemas/canonical-manifest.schema.json"},
+    {"path": "chaotic-wake-cases.json", "kind": "json", "owner": "chaotic-wake-contract", "required": true, "schema": "spec/schemas/chaotic-wake-cases.schema.json"},
+    {"path": "drag-calibration.json", "kind": "json", "owner": "interactive-viewer-contract", "required": true, "schema": null},
+    {"path": "fullsize-acceptance.json", "kind": "json", "owner": "benchmark-methodology", "required": true, "schema": "spec/schemas/fullsize-acceptance.schema.json"},
+    {"path": "naca2412.json", "kind": "json", "owner": "canonical-state", "required": true, "schema": null},
+    {"path": "pcg32.json", "kind": "json", "owner": "solver-contract", "required": true, "schema": null},
+    {"path": "solver-validity.json", "kind": "json", "owner": "solver-validity-contract", "required": true, "schema": null},
+    {"path": "tracer-lifecycle.json", "kind": "json", "owner": "interactive-viewer-contract", "required": true, "schema": null},
+    {"path": "viewer-basic.json", "kind": "json", "owner": "interactive-viewer-contract", "required": true, "schema": "spec/schemas/viewer-transcript.schema.json"},
+    {"path": "vorticity-display.json", "kind": "json", "owner": "interactive-viewer-contract", "required": true, "schema": null},
+    {"path": "wake-metrics.json", "kind": "json", "owner": "solver-validity-contract", "required": true, "schema": null}
+  ]
+}
