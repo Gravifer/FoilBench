@@ -85,7 +85,8 @@ try {
         Write-Host '==> Python: pytest'
         Invoke-Checked uv @(
             'run', '--project', 'implementations/python',
-            'pytest', '-c', 'implementations/python/pyproject.toml'
+            'pytest', '-c', 'implementations/python/pyproject.toml',
+            'implementations/python/tests'
         )
     }
 

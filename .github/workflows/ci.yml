@@ -19,7 +19,7 @@ jobs:
       - run: uv run --project implementations/python python tools/validate_acceptance_fixtures.py
       - run: uv run --project implementations/python ruff check implementations/python tools
       - run: uv run --project implementations/python pyright implementations/python
-      - run: uv run --project implementations/python pytest -c implementations/python/pyproject.toml
+      - run: uv run --project implementations/python pytest -c implementations/python/pyproject.toml implementations/python/tests
 
   julia:
     runs-on: ubuntu-latest
