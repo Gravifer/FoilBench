@@ -12,7 +12,15 @@ describe("TypeScript chaotic-wake parity", () => {
       JSON.parse(await readFile(resolve(root, "scenarios/airfoil/chaotic-experimental.json"), "utf8")) as unknown,
       JSON.parse(await readFile(resolve(root, "spec/schemas/scenario.schema.json"), "utf8")) as object,
     );
-    const resultSchema = JSON.parse(await readFile(resolve(root, "spec/schemas/chaotic-wake-result.schema.json"), "utf8")) as object;
+    const resultSchema = JSON.parse(
+      await readFile(
+        resolve(
+          root,
+          "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json",
+        ),
+        "utf8",
+      ),
+    ) as object;
     const selected = {reynolds: 1000, angleDegrees: 25, resolution: [24, 16] as const};
     const first = runChaoticWakeCase(scenario, selected, 0.1, 0.02); const second = runChaoticWakeCase(scenario, selected, 0.1, 0.02);
     validateDocument(first, resultSchema); validateDocument(second, resultSchema);
