@@ -148,8 +148,12 @@ def project_faces(
     divergence = (u[:, 1:] - u[:, :-1]) / domain.dx + (v[1:, :] - v[:-1, :]) / domain.dy
     fluid = ~solid
     rhs = np.where(fluid, -divergence / max(dt, 1.0e-12), 0.0)
+    # Keep interactive fields in their requested precision, but solve pressure
+    # in Float64. SciPy's Float32 CG may declare convergence from its recursive
+    # residual while the independently recomputed contract residual remains
+    # above tolerance in strongly separated flows.
     pressure, info, iterations, relative_residual = solve_masked_poisson(
-        rhs,
+        np.asarray(rhs, dtype=np.float64),
         fluid,
         domain.dx,
         domain.dy,
