@@ -44,3 +44,20 @@ test("viewer renders and applies interactive controls", async ({page}) => {
   await page.keyboard.press("Space");
   await expect(overlay).toContainText("running");
 });
+
+test("production viewer loads and advances Rust/WASM Stable Fluids", async ({page}) => {
+  await page.goto("/?backend=rust-wasm&solver=stable-fluids");
+  const overlay = page.locator("#foilbench-overlay");
+
+  await expect(overlay).toContainText("stable-fluids [rust-wasm]", {timeout: 30_000});
+  await expect(overlay).toContainText("running");
+  await expect.poll(async () => {
+    const text = await overlay.textContent();
+    return Number(text?.match(/t=\s*(\d+(?:\.\d+)?)/)?.[1] ?? "0");
+  }, {timeout: 30_000}).toBeGreaterThan(0);
+
+  await page.keyboard.press("]");
+  await expect(overlay).toContainText("adv=skew-rk2");
+  await page.keyboard.press("2");
+  await expect(overlay).toContainText("stable-fluids [rust-wasm]");
+});

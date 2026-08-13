@@ -2,6 +2,7 @@
 import type {SnapshotConsumed, ViewerCommand, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "../viewer/protocol.js";
 import {ViewerModel} from "../viewer/model.js";
 import type {ViewerSnapshotStorage} from "../viewer/model.js";
+import {loadRustWasmSolverFactory} from "../wasm/rustWasmSolver.js";
 
 type PoseCommand = Extract<ViewerCommand, {readonly kind: "set-angle"}>;
 
@@ -17,6 +18,32 @@ let snapshotInFlightRevision: number | null = null;
 let publishPending = false;
 let lastCycleWall: number | null = null;
 let lastStatusSignature = "";
+
+async function initialize(command: Extract<ViewerCommand, {readonly kind: "initialize"}>): Promise<void> {
+  postMessage({
+    kind: "status", revision: 0, appliedCommand: command.sequence, solverEpoch: 0,
+    solverStateRevision: 0, phase: "warming", status: `loading ${command.backend} backend`,
+    recoveryEpoch: 0, recoveryReason: null, recoveryStage: "initialization",
+  } satisfies ViewerStatusEvent);
+  try {
+    const factory = command.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : undefined;
+    if (shuttingDown) return;
+    model = new ViewerModel(command.scenario, command.solverId, factory);
+    snapshotStorage = model.createSnapshotStorage();
+    model.appliedCommand = command.sequence;
+    lastCycleWall = performance.now();
+    publishStatus(true);
+    publish();
+    schedule();
+  } catch (error) {
+    postMessage({
+      kind: "status", revision: 0, appliedCommand: command.sequence, solverEpoch: 0,
+      solverStateRevision: 0, phase: "failed",
+      status: `backend initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+      recoveryEpoch: 0, recoveryReason: null, recoveryStage: "initialization",
+    } satisfies ViewerStatusEvent);
+  }
+}
 
 function postSnapshot(snapshot: ViewerSnapshot): void {
   postMessage(snapshot satisfies ViewerEvent);
@@ -126,13 +153,7 @@ self.onmessage = (event: MessageEvent<ViewerCommand | SnapshotConsumed>): void =
   if (command.kind === "shutdown") { shutdown(command); return; }
   if (shuttingDown) return;
   if (command.kind === "initialize") {
-    model = new ViewerModel(command.scenario, command.solverId);
-    snapshotStorage = model.createSnapshotStorage();
-    model.appliedCommand = command.sequence;
-    lastCycleWall = performance.now();
-    publishStatus(true);
-    publish();
-    schedule();
+    void initialize(command);
     return;
   }
   if (model === null) return;

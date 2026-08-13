@@ -20,4 +20,5 @@ results/*
 implementations/python/.venv/
 implementations/typescript/dist-viewer/
 implementations/typescript/dist-types/
+implementations/typescript/public/rust-wasm/
 implementations/typescript/*.tsbuildinfo

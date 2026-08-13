@@ -6,10 +6,9 @@ including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 2A is complete with an independent Julia implementation. Phase 2B and the
 three-language contract closure are complete and revalidated after extensive
 QA. Revision 4 is the accepted implemented baseline after full-size,
-interchange, fallback, and chaotic-extension acceptance. Rust/WASM work may now
-begin against that baseline. Phase 3 kickoff has scaffolded the Rust
-core/native/WASM workspace and a proposed Revision 5 contract; no Rust solver
-is advertised yet.
+interchange, fallback, and chaotic-extension acceptance. Phase 3 now provides
+the first Rust solver milestone: native and WASM Stable Fluids built from one
+shared core while proposed Revision 5 remains under evaluation.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -79,6 +78,7 @@ npm --prefix implementations/typescript run check
 npm --prefix implementations/typescript test
 npm --prefix implementations/typescript run describe
 npm --prefix implementations/typescript run view -- scenarios/airfoil/default.json stable-fluids
+npm --prefix implementations/typescript run view -- scenarios/airfoil/default.json stable-fluids rust-wasm
 npm --prefix implementations/typescript run bench -- benchmark-matrices/smoke.json
 npm --prefix implementations/typescript run gate:preview
 ```
@@ -90,16 +90,20 @@ and diagnostic cropping.
 
 ## Rust/WASM kickoff
 
-The platform-neutral core currently implements PCG32, validated typed
-scenarios, NACA geometry, strict canonical version 1/2 manifest models, and the
-complete accepted solver lifecycle. Native and WASM crates share one capability
-description, but canonical array payload I/O and the three flow solvers
-intentionally remain absent:
+The platform-neutral core implements PCG32, validated typed scenarios, NACA
+geometry, MAC-grid numerics, canonical version 1/2 state handling, the solver
+lifecycle, and Stable Fluids in both `f32` and `f64`. The native crate owns
+NPY/JSON/CSV artifacts and benchmark commands. The WASM crate exposes the same
+Stable-Fluids implementation through the existing TypeScript worker:
 
 ```powershell
 cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
 cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- describe
+just ts-view scenarios/airfoil/default.json stable-fluids rust-wasm
 ```
+
+The Rust/WASM selector intentionally offers only Stable Fluids at this
+milestone. D2Q9 TRT LBM and PIC/FLIP follow on their dedicated branches.
 
 The accepted Revision 4 contract remains authoritative. Candidate Phase 3
 semantics live under `spec/proposals/revision5/` until cross-language evidence

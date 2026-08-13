@@ -114,6 +114,32 @@ impl<T: FlowScalar> StableFluids<T> {
         }
     }
 
+    #[must_use]
+    pub fn current_reynolds(&self) -> Option<f64> {
+        self.state.as_ref().map(|state| state.reynolds)
+    }
+
+    /// Select a transport mode without advancing physical time.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unsupported mode or uninitialized solver.
+    pub fn set_transport(&mut self, mode: &str) -> Result<(), SolverError> {
+        let selected = StableTransport::parse(mode)?;
+        let state = self.state.as_mut().ok_or_else(|| {
+            SolverError::new(
+                FailureReason::UnsupportedConversion,
+                FailureStage::Initialization,
+                "solver is not initialized",
+            )
+        })?;
+        if selected != state.transport {
+            state.transport = selected;
+            state.revision = state.revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
     fn state(&self) -> Result<&StableState<T>, SolverError> {
         self.state.as_ref().ok_or_else(|| {
             SolverError::new(

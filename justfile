@@ -23,10 +23,12 @@ ts-setup:
     npm --prefix implementations/typescript ci
     npm --prefix implementations/typescript run setup:browser
 
-# Fetch and build the Rust Phase 3 workspace.
+# Fetch and build the Rust Phase 3 native and WASM workspace.
 rs-setup:
+    rustup target add wasm32-unknown-unknown
     cargo fetch --manifest-path implementations/rust/Cargo.toml --locked
     cargo build --manifest-path implementations/rust/Cargo.toml --workspace --locked
+    cargo check --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-wasm --target wasm32-unknown-unknown
 
 # Validate the contract manifest, specification layout, schemas, and acceptance fixtures.
 verify-spec:
@@ -57,9 +59,17 @@ verify-typescript:
 verify-rust:
     pwsh -NoProfile -File tools/verify.ps1 -Rust
 
-# Describe the Rust foundation without advertising unfinished solvers.
+# Describe the current Rust solver repertoire.
 rs-describe:
     cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- describe
+
+# Run a native Rust benchmark matrix.
+rs-bench matrix="benchmark-matrices/smoke.json":
+    cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- bench "{{ matrix }}"
+
+# Compare native Rust result artifacts.
+rs-compare results="results/rust":
+    cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- compare "{{ results }}"
 
 # Open the Python viewer.
 py-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
@@ -69,9 +79,9 @@ py-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
 jl-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
     julia --threads=auto --project=implementations/julia/viewer implementations/julia/bin/foilbench-jl view "{{ scenario }}" --solver "{{ solver }}"
 
-# Open the TypeScript development viewer.
-ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
-    npm --prefix implementations/typescript run view -- "{{ scenario }}" "{{ solver }}"
+# Open the Three.js development viewer with the TypeScript or Rust/WASM backend.
+ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids" backend="typescript":
+    npm --prefix implementations/typescript run view -- "{{ scenario }}" "{{ solver }}" "{{ backend }}"
 
 # Run a TypeScript Chromium benchmark matrix.
 ts-bench matrix="benchmark-matrices/smoke.json":

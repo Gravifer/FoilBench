@@ -90,7 +90,7 @@ history, recovery, and presentation state. The Three.js main thread sends
 sequenced commands and renders detached snapshots; it never advances or reads
 live numerical arrays. High-rate pointer poses are coalesced before crossing
 the worker boundary, while reset, switch, pause, Reynolds, and shutdown remain
-ordered barriers. At most one transferable snapshot is in flight, later state
+ordered barriers. At most one copied typed-array snapshot is in flight, later state
 coalesces behind it, and snapshot acknowledgements provide backpressure
 without allowing render latency to grow the simulation queue unboundedly.
 
@@ -101,6 +101,15 @@ pose and physical time while making discarded solver-private history explicit.
 Vite supplies the development and production module/worker graph; Playwright
 launches the required Chromium smoke and benchmark paths against a loopback
 server. Neither Vite nor Playwright is part of solver-only timing.
+
+The Phase 3 Rust backend is compiled once for native and `wasm32` targets.
+WASM initialization is asynchronous inside the simulation worker and reports
+an explicit warming or failure state. The JavaScript adapter makes coarse,
+batched calls for stepping, sampling, diagnostics, and canonical state; it
+does not discover repository paths. Backend selection restarts at the
+authoritative pose rather than attempting cross-implementation warm import.
+Snapshots remain copied at this milestone; transferable ping-pong buffers or
+shared memory are reserved for profile-guided work.
 
 ## Viewer GPU smoke test
 

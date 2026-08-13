@@ -7,6 +7,7 @@ import {compareResults, runBrowserMatrix} from "./benchmark/runner.js";
 import type {SolverId} from "./core/contracts.js";
 import {parseScenario} from "./core/scenario.js";
 import {validateDocument} from "./core/scenario.js";
+import type {SolverBackend} from "./viewer/protocol.js";
 import {runChaoticWakeCase, runChaosSensitivity} from "./experiments/chaoticWake.js";
 import type {ExperimentEnvelope, WakeCase} from "./experiments/chaoticWake.js";
 import {runDragCalibration} from "./experiments/dragCalibration.js";
@@ -37,9 +38,14 @@ async function main(args: readonly string[]): Promise<void> {
     const solverFlag = args.indexOf("--solver");
     const solverId = (solverFlag >= 0 ? args[solverFlag + 1] : args[2] ?? "stable-fluids") as SolverId;
     if (!solvers.some((solver) => solver.id === solverId)) throw new RangeError(`unknown solver: ${solverId}`);
+    const backendFlag = args.indexOf("--backend");
+    const backendValue: string = backendFlag >= 0 ? args[backendFlag + 1] ?? "" : args[3] ?? "typescript";
+    if (backendValue !== "typescript" && backendValue !== "rust-wasm") throw new RangeError(`unknown backend: ${backendValue}`);
+    const backend: SolverBackend = backendValue;
+    if (backend === "rust-wasm" && solverId !== "stable-fluids") throw new RangeError("the Rust/WASM milestone currently exposes only stable-fluids");
     const server = await createServer({root: join(repositoryRoot, "implementations/typescript"), server: {host: "127.0.0.1", port: 4173, strictPort: true}});
     await server.listen();
-    const parameters = new URLSearchParams({scenario: `/@fs/${scenarioPath.replaceAll("\\", "/")}`, solver: solverId});
+    const parameters = new URLSearchParams({scenario: `/@fs/${scenarioPath.replaceAll("\\", "/")}`, solver: solverId, backend});
     console.log(`FoilBench TypeScript viewer: http://127.0.0.1:4173/?${parameters.toString()}`);
     return;
   }

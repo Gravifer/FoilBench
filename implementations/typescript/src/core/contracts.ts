@@ -64,7 +64,7 @@ export interface SolverInfo {
   readonly acceleration: string;
 }
 
-export type FailureStage = "canonical-import" | "advection" | "viscosity" | "projection" | "boundary" | "collision" | "streaming" | "particle-transfer" | "particle-advection" | "population-maintenance" | "time-mapping" | "postcondition";
+export type FailureStage = "initialization" | "restart" | "canonical-import" | "advection" | "viscosity" | "projection" | "boundary" | "collision" | "streaming" | "particle-transfer" | "particle-advection" | "population-maintenance" | "time-mapping" | "postcondition";
 export type FailureEvidenceValue = string | number | boolean;
 export type FailureEvidence = Readonly<Record<string, FailureEvidenceValue>>;
 

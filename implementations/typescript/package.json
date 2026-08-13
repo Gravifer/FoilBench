@@ -10,7 +10,8 @@
     "foilbench-ts": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && vite build",
+    "build": "npm run build:wasm && tsc -p tsconfig.build.json && vite build",
+    "build:wasm": "node tools/buildRustWasm.mjs",
     "check": "tsc -b --pretty false && eslint src tests vite.config.ts vitest.config.ts playwright.config.ts playwright.dist.config.ts",
     "test": "vitest run",
     "test:browser": "playwright test",

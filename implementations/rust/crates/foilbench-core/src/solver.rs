@@ -165,7 +165,7 @@ pub struct InteractiveTuning {
     pub can_increase: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CanonicalFlowState2<T: FlowScalar> {
     pub bounds: [[f64; 2]; 2],
     pub resolution: [usize; 2],

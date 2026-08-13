@@ -13,6 +13,7 @@
   "include": [
     "src/viewer/main.ts",
     "src/worker/**/*.ts",
+    "src/wasm/**/*.ts",
     "src/benchmark/browserEntry.ts",
     "src/benchmark/benchmarkWorker.ts"
   ]
