@@ -5,6 +5,7 @@ use std::{
 };
 
 use foilbench_native::{
+    chaos::run_chaos,
     resources::ResourceResolver,
     runner::{BenchOptions, compare_results, run_matrix},
 };
@@ -12,7 +13,8 @@ use foilbench_native::{
 fn usage() -> &'static str {
     "foilbench-rs describe\n\
      foilbench-rs bench <matrix.json> [--solver stable-fluids] [--output DIR] [--root DIR]\n\
-     foilbench-rs compare <results-dir> [--require-producer implementation/target]... [--root DIR]"
+     foilbench-rs compare <results-dir> [--require-producer implementation/target]... [--root DIR]\n\
+     foilbench-rs chaos-sweep|chaos-paired|chaos-preflight [--output FILE] [--root DIR]"
 }
 
 fn take_value(arguments: &[String], name: &str) -> Result<Option<String>, String> {
@@ -124,8 +126,14 @@ fn run() -> Result<(), String> {
             println!("validated {count} benchmark artifacts");
             Ok(())
         }
-        "chaos" => {
-            Err("chaotic-wake commands land after all three Rust solvers are available".into())
+        "chaos-sweep" | "chaos-paired" | "chaos-preflight" => {
+            let output = take_value(command_arguments, "--output")?.map(PathBuf::from);
+            let result = run_chaos(&resolver, command, output)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).map_err(|error| error.to_string())?
+            );
+            Ok(())
         }
         _ => Err(format!("unknown command {command}\n{}", usage())),
     }

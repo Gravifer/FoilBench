@@ -3,6 +3,7 @@
 #![recursion_limit = "256"]
 
 pub mod canonical_io;
+pub mod chaos;
 pub mod npy;
 pub mod resources;
 pub mod runner;
