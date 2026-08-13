@@ -2148,6 +2148,9 @@ end
         "warnings" => String[],
     )
     schema_path = joinpath(REPOSITORY_ROOT, "spec", "schemas", "result.schema.json")
+    revision5_schema_path = joinpath(
+        REPOSITORY_ROOT, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json",
+    )
     @test isnothing(validate_benchmark_result(result, schema_path))
     equivalent = deepcopy(result)
     equivalent["language"] = "typescript"
@@ -2237,9 +2240,11 @@ end
                 Dict{String,Any},
             )
             @test document["periodic_axes"] isa Vector
-            @test isnothing(validate_benchmark_result(document, schema_path))
-            @test document["contract_id"] == "foilbench-phase2-v1"
-            @test document["contract_revision"] == 4
+            @test isnothing(validate_benchmark_result(document, revision5_schema_path))
+            @test document["contract_id"] == "foilbench-phase3-v1"
+            @test document["contract_revision"] == 5
+            @test document["implementation"] == "julia"
+            @test document["execution_target"] == "native"
             @test isnothing(document["failure"])
             @test document["final_state_revision"] == document["diagnostic_state_revision"]
             @test document["final_state_revision"] == document["last_step"]["state_revision"]

@@ -20,8 +20,10 @@ def test_smoke_benchmark_emits_comparable_artifacts(tmp_path: Path) -> None:
     result_files = sorted(output.glob("*-r1.json"))
     assert len(result_files) == 3
     result = cast(dict[str, object], json.loads(result_files[0].read_text(encoding="utf-8")))
-    assert result["contract_id"] == "foilbench-phase2-v1"
-    assert result["contract_revision"] == 4
+    assert result["contract_id"] == "foilbench-phase3-v1"
+    assert result["contract_revision"] == 5
+    assert result["implementation"] == "python"
+    assert result["execution_target"] == "native"
     assert result["repetition"] == 1
     assert cast(float, result["effective_reynolds"]) > 0.0
     assert isinstance(result["solver_configuration"], dict)

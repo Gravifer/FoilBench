@@ -349,7 +349,9 @@ function run_benchmark_matrix(
     mkpath(destination)
     scenario_base = load_scenario(matrix.scenario_path)
     dimension(scenario_base) == 2 || throw(ArgumentError("Phase 2A benchmarks support only 2D"))
-    schema_path = joinpath(root, "spec", "schemas", "result.schema.json")
+    schema_path = joinpath(
+        root, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json",
+    )
     rows = Vector{Vector{String}}()
     for resolution in matrix.resolutions
         scenario = scenario_with_run(scenario_base, resolution, matrix.duration)
@@ -474,13 +476,15 @@ function run_benchmark_matrix(
             p95 = _percentile(step_seconds, 0.95)
             particle_count = get(diagnostic_values, "particle_count", 0.0)
             result = Dict{String,Any}(
-                "schema_version" => 1,
-                "contract_id" => "foilbench-phase2-v1",
-                "contract_revision" => 4,
+                "schema_version" => 2,
+                "contract_id" => "foilbench-phase3-v1",
+                "contract_revision" => 5,
                 "benchmark_matrix_id" => matrix.id,
                 "scenario_id" => scenario.id,
                 "repetition" => repetition,
                 "language" => "julia",
+                "implementation" => "julia",
+                "execution_target" => "native",
                 "solver" => solver_id,
                 "git_commit" => _git_commit(root),
                 "machine" => _machine_description(),

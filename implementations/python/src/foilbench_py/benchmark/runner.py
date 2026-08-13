@@ -175,7 +175,9 @@ def run_matrix(
     )
     destination.mkdir(parents=True, exist_ok=True)
     scenario_base = load_scenario(matrix.scenario_path)
-    result_schema = _json_object(root / "spec" / "schemas" / "result.schema.json")
+    result_schema = _json_object(
+        root / "spec" / "proposals" / "revision5" / "schemas" / "result-v2.schema.json"
+    )
     rows: list[dict[str, object]] = []
     process = psutil.Process()
 
@@ -344,13 +346,15 @@ def run_matrix(
                     particle_count * total_substeps / total_wall if total_wall > 0.0 else 0.0
                 )
                 result: dict[str, object] = {
-                    "schema_version": 1,
-                    "contract_id": "foilbench-phase2-v1",
-                    "contract_revision": 4,
+                    "schema_version": 2,
+                    "contract_id": "foilbench-phase3-v1",
+                    "contract_revision": 5,
                     "benchmark_matrix_id": matrix.id,
                     "scenario_id": scenario.id,
                     "repetition": repetition + 1,
                     "language": "python",
+                    "implementation": "python",
+                    "execution_target": "native",
                     "solver": solver_id,
                     "git_commit": _git_commit(root),
                     "machine": _machine(),
