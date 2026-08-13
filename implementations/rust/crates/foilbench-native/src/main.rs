@@ -7,6 +7,7 @@ use std::{
 use foilbench_native::{
     chaos::run_chaos,
     gates::run_gate,
+    interchange::run_interchange,
     resources::ResourceResolver,
     runner::{BenchOptions, compare_results, run_matrix},
 };
@@ -15,6 +16,7 @@ fn usage() -> &'static str {
     "foilbench-rs describe\n\
      foilbench-rs bench <matrix.json> [--solver stable-fluids] [--output DIR] [--root DIR]\n\
      foilbench-rs compare <results-dir> [--require-producer implementation/target]... [--root DIR]\n\
+     foilbench-rs interchange <results-dir> [--root DIR]\n\
      foilbench-rs gate startup|preview|warm-switch|scheduled [--output FILE] [--root DIR]\n\
      foilbench-rs chaos-sweep|chaos-paired|chaos-preflight [--output FILE] [--root DIR]"
 }
@@ -126,6 +128,21 @@ fn run() -> Result<(), String> {
                 &required_producers(command_arguments)?,
             )?;
             println!("validated {count} benchmark artifacts");
+            Ok(())
+        }
+        "interchange" => {
+            let selected = positional(command_arguments);
+            let directory = selected
+                .first()
+                .ok_or_else(|| format!("interchange requires a result directory\n{}", usage()))?;
+            let path = Path::new(directory);
+            let results = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                resolver.resolve(path)
+            };
+            let conversions = run_interchange(&resolver, &results)?;
+            println!("Rust imported all {conversions} cross-language canonical conversions");
             Ok(())
         }
         "chaos-sweep" | "chaos-paired" | "chaos-preflight" => {
