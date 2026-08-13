@@ -19,7 +19,8 @@ from foilbench_py.core.scenario import (
 from foilbench_py.solvers.lbm import lbm_sponge_strength
 
 ROOT = find_repo_root(Path(__file__))
-PROPOSAL = ROOT / "spec" / "proposals" / "revision5"
+FIXTURES = ROOT / "spec" / "conformance"
+SCHEMAS = ROOT / "spec" / "schemas"
 
 
 def _object(path: Path) -> dict[str, object]:
@@ -30,23 +31,35 @@ def _object(path: Path) -> dict[str, object]:
 
 
 def _fixture(name: str) -> dict[str, object]:
-    return _object(PROPOSAL / "fixtures" / name)
+    return _object(FIXTURES / name)
+
+
+def _object_node(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise TypeError("fixture path requires an object")
+    return cast(dict[str, object], value)
+
+
+def _array_node(value: object) -> list[object]:
+    if not isinstance(value, list):
+        raise TypeError("fixture path requires an array")
+    return cast(list[object], value)
 
 
 def _mutate(document: dict[str, object], path: list[object], value: object) -> None:
     cursor: object = document
     for segment in path[:-1]:
         if isinstance(segment, str):
-            cursor = cast(dict[str, object], cursor)[segment]
+            cursor = _object_node(cursor)[segment]
         elif isinstance(segment, int):
-            cursor = cast(list[object], cursor)[segment]
+            cursor = _array_node(cursor)[segment]
         else:
             raise TypeError("fixture path components must be strings or integers")
     final = path[-1]
     if isinstance(final, str):
-        cast(dict[str, object], cursor)[final] = value
+        _object_node(cursor)[final] = value
     elif isinstance(final, int):
-        cast(list[object], cursor)[final] = value
+        _array_node(cursor)[final] = value
     else:
         raise TypeError("fixture path components must be strings or integers")
 
@@ -107,7 +120,7 @@ def test_revision5_geometry_fixture_matches_python() -> None:
 
 def test_revision5_manifest_and_fidelity_inventory_are_consumable() -> None:
     manifest = _fixture("canonical-manifest-v2.json")
-    schema = _object(PROPOSAL / "schemas" / "canonical-manifest-v2.schema.json")
+    schema = _object(SCHEMAS / "canonical-manifest-v2.schema.json")
     validate_json(manifest, schema)
     assert cast(dict[str, object], manifest["geometry"])["family"] == "naca-four-digit-v1"
     producer = cast(dict[str, object], manifest["producer"])

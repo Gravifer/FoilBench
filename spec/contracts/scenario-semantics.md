@@ -1,6 +1,6 @@
 # Scenario semantic constraints
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
 JSON Schema establishes the document shape. Scenario construction additionally
 enforces the cross-field rules below before a solver or viewer receives the

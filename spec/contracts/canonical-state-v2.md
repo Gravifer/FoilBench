@@ -1,6 +1,6 @@
 # Canonical flow state version 2
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
 Version 2 preserves Revision 4 array files and semantic axes while adding
 identity that version 1 cannot express.
@@ -20,9 +20,8 @@ Readers in Phase 3 must support version 1 and version 2. Version-1 states have
 unknown geometry identity and may be imported only when the caller supplies
 the expected descriptor out of band; they must never be reported as having
 passed an intrinsic geometry-identity check. Revision-5 writers emit version
-2. Accepted Revision-4 writers continue to emit version 1 until activation.
+2. Revision-4 artifacts remain readable as version 1 historical inputs.
 
 The descriptor is deliberately readable rather than hashed. A hash could be
 added as an integrity cache, but it cannot replace the semantic fields or
 become dependent on JSON lexical formatting.
-

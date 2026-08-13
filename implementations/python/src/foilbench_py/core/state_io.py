@@ -110,12 +110,7 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
         schema_path = (
             root / "spec" / "schemas" / "canonical-manifest.schema.json"
             if version == 1
-            else root
-            / "spec"
-            / "proposals"
-            / "revision5"
-            / "schemas"
-            / "canonical-manifest-v2.schema.json"
+            else root / "spec" / "schemas" / "canonical-manifest-v2.schema.json"
         )
         validate_json(manifest, _json_object(schema_path))
     except ValidationError as error:

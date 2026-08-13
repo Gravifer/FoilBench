@@ -19,10 +19,11 @@ Only files named by `contract-version.json` are normative contract documents
 or schemas. The `conformance_root` supplies shared examples and thresholds;
 its README explains which contract owns each fixture's meaning.
 
-Schema `$id` values are stable logical identifiers. They intentionally retain
-their accepted Revision 4 URIs even when a schema's repository location moves
-under `spec/schemas/`; consumers load the paths declared by the manifest and
-must not infer a filesystem path from `$id`.
+Schema `$id` values are stable logical identifiers. Revision 4 identifiers
+retain their original root URIs and Revision 5 identifiers retain their
+proposal-era URIs even though every accepted schema now lives under
+`spec/schemas/`. Consumers load paths declared by the manifest and must not
+infer a repository location from `$id`.
 
 The words **must**, **should**, and **may** have their usual normative force
 throughout the suite: **must** is required for conformance, **should** may be
@@ -44,6 +45,13 @@ met.
 | Canonical serialized field semantics and layout | [Canonical state](contracts/canonical-state.md) |
 | Scenario, result, manifest, matrix, and transcript syntax | The JSON schema named in [contract-version.json](contract-version.json) |
 | Timed-run procedure and measured fidelity meanings | [Benchmark methodology](contracts/benchmark-methodology.md) |
+| Geometry, coordinate, SDF, normal, mask, and moving-wall semantics | [Geometry semantics](contracts/geometry-semantics.md) |
+| Canonical v2 geometry and producer identity | [Canonical state v2](contracts/canonical-state-v2.md) |
+| Shared analytic and airfoil fidelity cases | [Fidelity cases](contracts/fidelity-cases.md) |
+| MAC domain boundaries | [MAC boundary semantics](contracts/mac-boundary.md) |
+| LBM boundaries and producer identity | [Boundary and producer semantics](contracts/boundary-and-producer.md) |
+| Cross-field scenario validity | [Scenario semantics](contracts/scenario-semantics.md) |
+| Required producer/target roster and reusable evidence | [Acceptance and targets](contracts/acceptance-and-targets.md) |
 | Exact cross-language examples and thresholds | [Conformance fixtures](conformance/README.md) |
 
 Cross-references explain how the pieces interact; they do not create a second
@@ -92,15 +100,11 @@ Phase 2 revision 2 was accepted on 2026-08-11 after the language-neutral
 fixtures and schemas were made executable in Python, Julia, and TypeScript,
 all comparable artifacts identified the contract, and the combined root
 verifier passed. Revision 3 subsequently became the implemented baseline.
-Revision 4 became the accepted Phase 3 baseline on 2026-08-13 after its
+Revision 4 became the accepted initial Phase 3 baseline on 2026-08-13 after its
 representative full-size, interchange, fallback, paired-initialization, and
 optional-extension gates passed in Python, Julia, and TypeScript. Future
 proposed revisions must repeat that activation sequence rather than claiming
-conformance from prose alone.
-
-## Proposed Phase 3 revision
-
-The non-active [Revision 5 proposal](proposals/revision5/README.md) records the
-geometry, canonical identity, fidelity, LBM-boundary, producer-target, and
-deferment decisions for Rust/WASM development. It remains outside the accepted
-manifest until its fixtures and implementation roster pass.
+conformance from prose alone. Revision 5 became the accepted Phase 3 baseline
+on 2026-08-14 after the four native producers and required Rust/WASM browser
+target passed the roster recorded in
+[the acceptance report](../docs/revision5-acceptance.md).

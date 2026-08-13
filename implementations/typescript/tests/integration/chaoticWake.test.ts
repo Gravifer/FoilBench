@@ -16,7 +16,7 @@ describe("TypeScript chaotic-wake parity", () => {
       await readFile(
         resolve(
           root,
-          "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json",
+          "spec/schemas/chaotic-wake-result-v2.schema.json",
         ),
         "utf8",
       ),

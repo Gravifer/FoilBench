@@ -1,40 +1,57 @@
 {
-  "contract_id": "foilbench-phase2-v1",
-  "revision": 4,
+  "contract_id": "foilbench-phase3-v1",
+  "revision": 5,
   "status": "accepted",
-  "implemented_baseline_revision": 4,
-  "proposed_on": "2026-08-12",
-  "accepted_on": "2026-08-13",
+  "implemented_baseline_revision": 5,
+  "proposed_on": "2026-08-13",
+  "accepted_on": "2026-08-14",
   "activation_evidence": [
-    "pwsh -NoProfile -File tools/verify.ps1 passed Python, Julia, TypeScript, GLMakie loading, the Vite production build, and live Chromium interaction on 2026-08-12",
-    "The TypeScript-only full gate was rerun after the final convective-outlet correction and passed 113 tests, the production build, and live Chromium interaction",
-    "Revision 4 conformance fixtures and artifacts are implemented by all three language peers",
-    "just verify-representative passed the representative full-size solver, exact-roster native interchange, fallback, paired-initialization, and optional-chaos gates at cdd9ba599f340f0f1510b650683a500000935d53",
-    "docs/revision4-acceptance.md records the accepted evidence and runtime context"
+    "just verify-representative exercised the four-implementation native and Rust/WASM representative gates at 1459b068943d24a8645b90acfafc2216dc026108",
+    "The exact-commit continuation ran only the Rust chaos cells left incomplete by the one-hour outer process budget",
+    "All four native benchmark comparers accepted the exact Python/native, Julia/native, TypeScript/node, and Rust/native artifact roster",
+    "Paired-sensitivity preflight and full chaotic-wake evidence passed for all four native producers",
+    "docs/revision5-acceptance.md records the accepted evidence, continuation, measurements, and runtime context"
   ],
   "compatibility": {
     "breaking_changes_require_new_revision": true,
     "backward_compatible_optional_capabilities_allowed": true
   },
   "normative_documents": [
+    "spec/contracts/acceptance-and-targets.md",
     "spec/contracts/solver-contract.md",
     "spec/contracts/solver-repertoire-contract.md",
     "spec/contracts/solver-validity-contract.md",
     "spec/contracts/chaotic-wake-contract.md",
     "spec/contracts/interactive-viewer-contract.md",
     "spec/contracts/canonical-state.md",
-    "spec/contracts/benchmark-methodology.md"
+    "spec/contracts/canonical-state-v2.md",
+    "spec/contracts/benchmark-methodology.md",
+    "spec/contracts/boundary-and-producer.md",
+    "spec/contracts/fidelity-cases.md",
+    "spec/contracts/geometry-semantics.md",
+    "spec/contracts/mac-boundary.md",
+    "spec/contracts/scenario-semantics.md"
   ],
   "schemas": [
+    "spec/schemas/acceptance-cell-v2.schema.json",
     "spec/schemas/scenario.schema.json",
     "spec/schemas/canonical-manifest.schema.json",
+    "spec/schemas/canonical-manifest-v2.schema.json",
     "spec/schemas/result.schema.json",
+    "spec/schemas/result-v2.schema.json",
     "spec/schemas/benchmark-matrix.schema.json",
     "spec/schemas/fullsize-acceptance.schema.json",
     "spec/schemas/chaotic-wake-cases.schema.json",
     "spec/schemas/viewer-transcript.schema.json",
     "spec/schemas/chaotic-wake-result.schema.json",
-    "spec/schemas/drag-calibration-result.schema.json"
+    "spec/schemas/drag-calibration-result.schema.json",
+    "spec/schemas/chaotic-wake-result-v2.schema.json",
+    "spec/schemas/fidelity-cases.schema.json",
+    "spec/schemas/fullsize-acceptance-v2.schema.json",
+    "spec/schemas/geometry-v1.schema.json",
+    "spec/schemas/lbm-boundary.schema.json",
+    "spec/schemas/mac-boundary.schema.json",
+    "spec/schemas/scenario-negative.schema.json"
   ],
   "conformance_root": "spec/conformance",
   "conformance_inventory": "spec/conformance/inventory.json"

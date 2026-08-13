@@ -11,9 +11,16 @@ from jsonschema import Draft202012Validator
 CONTRACT_FILENAMES = frozenset(
     {
         "benchmark-methodology.md",
+        "acceptance-and-targets.md",
+        "boundary-and-producer.md",
         "canonical-state.md",
+        "canonical-state-v2.md",
         "chaotic-wake-contract.md",
+        "fidelity-cases.md",
+        "geometry-semantics.md",
         "interactive-viewer-contract.md",
+        "mac-boundary.md",
+        "scenario-semantics.md",
         "solver-contract.md",
         "solver-repertoire-contract.md",
         "solver-validity-contract.md",
@@ -22,13 +29,23 @@ CONTRACT_FILENAMES = frozenset(
 SCHEMA_FILENAMES = frozenset(
     {
         "benchmark-matrix.schema.json",
+        "acceptance-cell-v2.schema.json",
         "canonical-manifest.schema.json",
+        "canonical-manifest-v2.schema.json",
         "chaotic-wake-cases.schema.json",
         "chaotic-wake-result.schema.json",
+        "chaotic-wake-result-v2.schema.json",
         "drag-calibration-result.schema.json",
         "fullsize-acceptance.schema.json",
+        "fullsize-acceptance-v2.schema.json",
+        "fidelity-cases.schema.json",
+        "geometry-v1.schema.json",
+        "lbm-boundary.schema.json",
+        "mac-boundary.schema.json",
         "result.schema.json",
+        "result-v2.schema.json",
         "scenario.schema.json",
+        "scenario-negative.schema.json",
         "viewer-transcript.schema.json",
     }
 )
@@ -68,7 +85,8 @@ def _tracked_paths(root: Path) -> list[Path]:
         check=True,
         capture_output=True,
     )
-    return [root / Path(*PurePosixPath(item).parts) for item in result.stdout.decode().split("\0") if item]
+    paths = [root / Path(*PurePosixPath(item).parts) for item in result.stdout.decode().split("\0") if item]
+    return [path for path in paths if path.exists()]
 
 
 def _validate_markdown_links(root: Path) -> None:
@@ -149,57 +167,6 @@ def _validate_conformance_inventory(
         )
 
 
-def _validate_revision5_proposal(root: Path) -> None:
-    proposal_root = root / "spec" / "proposals" / "revision5"
-    proposal = _object(proposal_root / "manifest.json")
-    if proposal.get("status") != "proposed" or proposal.get("base_revision") != 4:
-        raise ValueError("Revision 5 proposal must remain proposed against accepted Revision 4")
-    documents = _string_list(proposal.get("documents"), "revision5 documents")
-    expected = {path.name for path in proposal_root.glob("*.md") if path.name != "README.md"}
-    if set(documents) != expected:
-        raise ValueError("Revision 5 proposal document inventory is incomplete")
-    for document in documents:
-        path = proposal_root / document
-        if not path.exists() or "status: proposed revision 5 normative component" not in "\n".join(
-            path.read_text(encoding="utf-8").splitlines()[:5]
-        ).lower():
-            raise ValueError(f"invalid Revision 5 proposal document: {document}")
-    schema_paths = _string_list(proposal.get("schemas"), "revision5 schemas")
-    expected_schemas = {
-        str(path.relative_to(proposal_root)).replace("\\", "/")
-        for path in (proposal_root / "schemas").glob("*.schema.json")
-    }
-    if set(schema_paths) != expected_schemas:
-        raise ValueError("Revision 5 proposal schema inventory is incomplete")
-    proposal_schemas: dict[str, dict[str, object]] = {}
-    for relative in schema_paths:
-        schema = _object(_resolve_manifest_path(proposal_root, relative))
-        Draft202012Validator.check_schema(schema)
-        proposal_schemas[relative] = schema
-    fixtures = proposal.get("fixtures")
-    if not isinstance(fixtures, list):
-        raise TypeError("Revision 5 proposal fixtures must be an array")
-    observed_fixtures: set[str] = set()
-    for entry in fixtures:
-        if not isinstance(entry, dict):
-            raise TypeError("Revision 5 fixture entry must be an object")
-        relative = entry.get("path")
-        schema_path = entry.get("schema")
-        if not isinstance(relative, str) or relative in observed_fixtures:
-            raise ValueError(f"invalid Revision 5 fixture path: {relative!r}")
-        if not isinstance(schema_path, str) or schema_path not in proposal_schemas:
-            raise ValueError(f"invalid Revision 5 fixture schema: {schema_path!r}")
-        observed_fixtures.add(relative)
-        fixture = _object(_resolve_manifest_path(proposal_root, relative))
-        Draft202012Validator(proposal_schemas[schema_path]).validate(fixture)
-    expected_fixtures = {
-        str(path.relative_to(proposal_root)).replace("\\", "/")
-        for path in (proposal_root / "fixtures").glob("*.json")
-    }
-    if observed_fixtures != expected_fixtures:
-        raise ValueError("Revision 5 proposal fixture inventory is incomplete")
-
-
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     spec = root / "spec"
@@ -253,7 +220,11 @@ def main() -> None:
         loaded_schemas[relative] = schema
         Draft202012Validator.check_schema(schema)
         identifier = schema.get("$id")
-        if identifier is not None and identifier != f"https://foilbench.local/spec/{path.name}":
+        accepted_identifiers = {
+            f"https://foilbench.local/spec/{path.name}",
+            f"https://foilbench.local/spec/proposals/revision5/{path.name}",
+        }
+        if identifier is not None and identifier not in accepted_identifiers:
             raise ValueError(f"schema $id changed from its stable logical identifier: {relative}")
 
     conformance_root = manifest.get("conformance_root")
@@ -264,8 +235,6 @@ def main() -> None:
         raise ValueError("conformance_root must identify spec/conformance")
 
     _validate_conformance_inventory(root, manifest, loaded_schemas)
-    _validate_revision5_proposal(root)
-
     _validate_markdown_links(root)
     _validate_no_obsolete_references(root, schema_names)
     print(

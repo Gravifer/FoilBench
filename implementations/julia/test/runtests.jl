@@ -66,7 +66,7 @@ end
 
 const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const FIXTURES = joinpath(REPOSITORY_ROOT, "spec", "conformance")
-const REVISION5 = joinpath(REPOSITORY_ROOT, "spec", "proposals", "revision5")
+const REVISION5_SCHEMAS = joinpath(REPOSITORY_ROOT, "spec", "schemas")
 
 function rows_to_matrix(rows)
     isempty(rows) && return Matrix{Float64}(undef, 0, 0)
@@ -167,9 +167,9 @@ function set_fixture_path!(document, path, value)
     return document
 end
 
-@testset "Revision 5 proposal fixtures" begin
+@testset "Revision 5 conformance fixtures" begin
     geometry_document = JSON3.read(
-        read(joinpath(REVISION5, "fixtures", "geometry-v1.json"), String),
+        read(joinpath(FIXTURES, "geometry-v1.json"), String),
     )
     descriptor = geometry_document.descriptor
     foil = NacaFoil(FoilSpec(
@@ -200,19 +200,19 @@ end
           Float64(geometry_document.maximum_radius) atol = tolerances.radius
 
     manifest = JSON3.read(
-        read(joinpath(REVISION5, "fixtures", "canonical-manifest-v2.json"), String),
+        read(joinpath(FIXTURES, "canonical-manifest-v2.json"), String),
         Dict{String,Any},
     )
     FoilBenchJulia.validate_json_file(
         manifest,
-        joinpath(REVISION5, "schemas", "canonical-manifest-v2.schema.json"),
+        joinpath(REVISION5_SCHEMAS, "canonical-manifest-v2.schema.json"),
     )
     @test manifest["geometry"]["family"] == "naca-four-digit-v1"
     @test manifest["producer"]["implementation"] == "rust"
     @test manifest["producer"]["execution_target"] == "native"
 
     fidelity = JSON3.read(
-        read(joinpath(REVISION5, "fixtures", "fidelity-cases.json"), String),
+        read(joinpath(FIXTURES, "fidelity-cases.json"), String),
     )
     for case in fidelity.cases
         scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(case.scenario)))
@@ -221,7 +221,7 @@ end
         @test !isempty(propertynames(case.metrics))
     end
 
-    mac = JSON3.read(read(joinpath(REVISION5, "fixtures", "mac-boundary.json"), String))
+    mac = JSON3.read(read(joinpath(FIXTURES, "mac-boundary.json"), String))
     @test mac.periodic_duplicate == "endpoint-average"
     domain = DomainSpec(((0.0, 2.0), (-1.0, 1.0)), (8, 6))
     u = fill(-3.0, 9, 6)
@@ -233,7 +233,7 @@ end
     @test v[:, 1] == fill(-0.5, 8)
     @test v[:, end] == fill(-0.5, 8)
 
-    lbm = JSON3.read(read(joinpath(REVISION5, "fixtures", "lbm-boundary.json"), String))
+    lbm = JSON3.read(read(joinpath(FIXTURES, "lbm-boundary.json"), String))
     default = load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"))
     preview = resized_scenario(default, (160, 96))
     sponge = FoilBenchJulia._lbm_sponge(preview)
@@ -243,7 +243,7 @@ end
     @test sponge[81, 49] == 0
 
     negative = JSON3.read(
-        read(joinpath(REVISION5, "fixtures", "scenario-negative.json"), String),
+        read(joinpath(FIXTURES, "scenario-negative.json"), String),
         Dict{String,Any},
     )
     scenario_schema = joinpath(REPOSITORY_ROOT, "spec", "schemas", "scenario.schema.json")
@@ -2149,7 +2149,7 @@ end
     )
     schema_path = joinpath(REPOSITORY_ROOT, "spec", "schemas", "result.schema.json")
     revision5_schema_path = joinpath(
-        REPOSITORY_ROOT, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json",
+        REPOSITORY_ROOT, "spec", "schemas", "result-v2.schema.json",
     )
     @test isnothing(validate_benchmark_result(result, schema_path))
     equivalent = deepcopy(result)
@@ -2315,7 +2315,7 @@ end
 
 @testset "Matched canonical fidelity cases" begin
     fidelity_fixture = JSON3.read(
-        read(joinpath(REVISION5, "fixtures", "fidelity-cases.json"), String),
+        read(joinpath(FIXTURES, "fidelity-cases.json"), String),
     )
     fidelity_cases = Dict(String(case.id) => case for case in fidelity_fixture.cases)
     for solver_id in solver_ids()

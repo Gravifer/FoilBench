@@ -1,6 +1,6 @@
 # Geometry semantics
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
 ## Descriptor and coordinates
 
@@ -56,7 +56,6 @@ radians. The shared conservative represented radius is
 that radius; the chord itself is not the rotation radius.
 
 The existing `spec/conformance/naca2412.json` remains the initial executable
-fixture. Revision 5 activation additionally requires NACA 0012 and 2412 cases
+fixture. Revision 5 additionally requires NACA 0012 and 2412 cases
 covering non-unit chord, transformed pose, leading/trailing-edge queries,
 normal fallback, masks, and maximum-radius evidence.
-

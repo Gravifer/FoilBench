@@ -42,9 +42,9 @@ function setPath(document: JsonObject, path: readonly PathComponent[], value: un
   }
 }
 
-describe("Revision 5 proposal fixtures", () => {
+describe("Revision 5 conformance fixtures", () => {
   it("matches transformed geometry, wall motion, and radius", async () => {
-    const fixture = await json("../../spec/proposals/revision5/fixtures/geometry-v1.json");
+    const fixture = await json("../../spec/conformance/geometry-v1.json");
     const descriptor = fixture["descriptor"] as {naca: string; chord: number; pivot: number[]};
     const foil = new NacaFoil(descriptor);
     const tolerances = fixture["absolute_tolerances"] as Record<string, number>;
@@ -80,13 +80,13 @@ describe("Revision 5 proposal fixtures", () => {
   });
 
   it("consumes canonical-v2, fidelity, MAC, and LBM identities", async () => {
-    const manifest = await json("../../spec/proposals/revision5/fixtures/canonical-manifest-v2.json");
-    const manifestSchema = await json("../../spec/proposals/revision5/schemas/canonical-manifest-v2.schema.json");
+    const manifest = await json("../../spec/conformance/canonical-manifest-v2.json");
+    const manifestSchema = await json("../../spec/schemas/canonical-manifest-v2.schema.json");
     validateDocument(manifest, manifestSchema);
     expect((manifest["geometry"] as JsonObject)["family"]).toBe("naca-four-digit-v1");
     expect(manifest["producer"]).toEqual({implementation: "rust", execution_target: "native", build: null});
 
-    const fidelity = await json("../../spec/proposals/revision5/fixtures/fidelity-cases.json");
+    const fidelity = await json("../../spec/conformance/fidelity-cases.json");
     const scenarioSchema = await json("../../spec/schemas/scenario.schema.json");
     for (const value of fidelity["cases"] as JsonObject[]) {
       const scenario = parseScenario(await json(`../../${String(value["scenario"])}`), scenarioSchema);
@@ -94,16 +94,16 @@ describe("Revision 5 proposal fixtures", () => {
       expect(value["metrics"]).toBeTruthy();
     }
 
-    const mac = await json("../../spec/proposals/revision5/fixtures/mac-boundary.json");
+    const mac = await json("../../spec/conformance/mac-boundary.json");
     expect(mac).toEqual({schema_version: 1, x_nonperiodic: "prescribed-inlet-zero-gradient-outlet", y_freestream: "prescribed-freestream-normal-and-tangential", y_poiseuille: "no-slip-channel-wall", periodic_duplicate: "endpoint-average"});
-    const lbm = await json("../../spec/proposals/revision5/fixtures/lbm-boundary.json");
+    const lbm = await json("../../spec/conformance/lbm-boundary.json");
     const sponge = lbm["sponge"] as Record<string, number>;
     expect(lbmSpongeStrength(160, 96, 80, 0, false, false)).toBeCloseTo(sponge["transverse_maximum"] ?? 0, 14);
     expect(lbmSpongeStrength(160, 96, 159, 48, false, false)).toBeCloseTo(sponge["outlet_maximum"] ?? 0, 14);
   });
 
   it("rejects every shared negative scenario before solver initialization", async () => {
-    const fixture = await json("../../spec/proposals/revision5/fixtures/scenario-negative.json");
+    const fixture = await json("../../spec/conformance/scenario-negative.json");
     const schema = await json("../../spec/schemas/scenario.schema.json");
     for (const scenarioCase of fixture["cases"] as NegativeCase[]) {
       const document = structuredClone(await json(`../../${scenarioCase.base}`));

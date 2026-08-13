@@ -1,6 +1,6 @@
 # Acceptance roster and execution targets
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
 Revision 5 distinguishes an implementation from the environment in which it
 runs. The required producer identity is the ordered pair

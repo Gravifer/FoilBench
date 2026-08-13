@@ -17,7 +17,7 @@ ROOT = find_repo_root(Path(__file__))
 FIDELITY = cast(
     dict[str, object],
     json.loads(
-        (ROOT / "spec/proposals/revision5/fixtures/fidelity-cases.json").read_text(
+        (ROOT / "spec/conformance/fidelity-cases.json").read_text(
             encoding="utf-8"
         )
     ),

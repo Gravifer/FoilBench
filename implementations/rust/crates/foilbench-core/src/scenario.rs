@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn consumes_revision5_fidelity_inventory() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../spec/proposals/revision5/fixtures/fidelity-cases.json"
+            "../../../../../spec/conformance/fidelity-cases.json"
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn rejects_revision5_negative_scenario_fixture() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../spec/proposals/revision5/fixtures/scenario-negative.json"
+            "../../../../../spec/conformance/scenario-negative.json"
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {

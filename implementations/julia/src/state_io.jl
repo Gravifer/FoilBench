@@ -137,7 +137,7 @@ function load_canonical_state(directory::AbstractString)
     schema_path = version == 1 ? normpath(
         joinpath(@__DIR__, "..", "..", "..", "spec", "schemas", "canonical-manifest.schema.json"),
     ) : normpath(
-        joinpath(@__DIR__, "..", "..", "..", "spec", "proposals", "revision5", "schemas", "canonical-manifest-v2.schema.json"),
+        joinpath(@__DIR__, "..", "..", "..", "spec", "schemas", "canonical-manifest-v2.schema.json"),
     )
     validate_json_file(manifest, schema_path)
     dimension_value = Int(manifest["dimension"])

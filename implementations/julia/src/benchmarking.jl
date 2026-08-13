@@ -350,7 +350,7 @@ function run_benchmark_matrix(
     scenario_base = load_scenario(matrix.scenario_path)
     dimension(scenario_base) == 2 || throw(ArgumentError("Phase 2A benchmarks support only 2D"))
     schema_path = joinpath(
-        root, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json",
+        root, "spec", "schemas", "result-v2.schema.json",
     )
     rows = Vector{Vector{String}}()
     for resolution in matrix.resolutions
@@ -573,7 +573,7 @@ function collect_benchmark_results(directory::AbstractString)
     root_directory = find_repository_root(@__DIR__)
     schema_paths = Dict(
         1 => joinpath(root_directory, "spec", "schemas", "result.schema.json"),
-        2 => joinpath(root_directory, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json"),
+        2 => joinpath(root_directory, "spec", "schemas", "result-v2.schema.json"),
     )
     for (root, _, files) in walkdir(directory), file in sort(files)
         endswith(file, ".json") || continue

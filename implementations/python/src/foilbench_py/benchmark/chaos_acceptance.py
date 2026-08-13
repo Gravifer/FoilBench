@@ -167,7 +167,7 @@ def validate_chaos_acceptance(
             json.loads(
                 (
                     root
-                    / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json"
+                    / "spec/schemas/chaotic-wake-result-v2.schema.json"
                 ).read_text(encoding="utf-8")
             ),
         ),
@@ -308,7 +308,7 @@ def validate_chaos_preflight(
             json.loads(
                 (
                     root
-                    / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json"
+                    / "spec/schemas/chaotic-wake-result-v2.schema.json"
                 ).read_text(encoding="utf-8")
             ),
         ),

@@ -1,6 +1,6 @@
 # MAC-grid domain boundary semantics
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
 Stable Fluids and PIC/FLIP share the same staggered MAC-grid domain treatment.
 This contract fixes observable face values, not the internal pressure matrix or

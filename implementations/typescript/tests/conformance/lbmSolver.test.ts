@@ -13,7 +13,7 @@ describe("D2Q9 TRT LBM contract", () => {
   });
   it("uses the shared Revision 5 quadratic sponge profile", async () => {
     const fixture = JSON.parse(
-      await readFile(resolve("../../spec/proposals/revision5/fixtures/lbm-boundary.json"), "utf8"),
+      await readFile(resolve("../../spec/conformance/lbm-boundary.json"), "utf8"),
     ) as {sponge: {transverse_maximum: number; outlet_maximum: number}};
     const nx = 160;
     const ny = 96;

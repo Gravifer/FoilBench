@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn consumes_revision5_manifest_fixture() {
         let document = include_str!(
-            "../../../../../spec/proposals/revision5/fixtures/canonical-manifest-v2.json"
+            "../../../../../spec/conformance/canonical-manifest-v2.json"
         );
         assert!(matches!(
             CanonicalManifest::from_json(document).unwrap(),

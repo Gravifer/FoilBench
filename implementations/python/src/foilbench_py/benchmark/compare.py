@@ -21,7 +21,7 @@ def collect_results(directory: str | Path) -> list[dict[str, object]]:
     schemas: dict[int, dict[str, object]] = {}
     for version, path in (
         (1, root / "spec" / "schemas" / "result.schema.json"),
-        (2, root / "spec" / "proposals" / "revision5" / "schemas" / "result-v2.schema.json"),
+        (2, root / "spec" / "schemas" / "result-v2.schema.json"),
     ):
         schema_value = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(schema_value, dict):

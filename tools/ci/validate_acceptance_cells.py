@@ -23,9 +23,8 @@ CONFIGURATION = (
     "spec/conformance/solver-validity.json",
     "spec/contract-version.json",
     "spec/schemas/scenario.schema.json",
-    "spec/proposals/revision5/manifest.json",
-    "spec/proposals/revision5/fixtures/fullsize-acceptance-v2.json",
-    "spec/proposals/revision5/schemas/acceptance-cell-v2.schema.json",
+    "spec/conformance/fullsize-acceptance-v2.json",
+    "spec/schemas/acceptance-cell-v2.schema.json",
     "benchmark-matrices/preview-gate.json",
     "scenarios/airfoil/default.json",
 )
@@ -46,7 +45,7 @@ def configuration_digest(repository: Path, commit: str) -> str:
 
 def validate_cells(root: Path, commit: str, repository: Path) -> None:
     digest = configuration_digest(repository, commit)
-    schema = json.loads((repository / "spec/proposals/revision5/schemas/acceptance-cell-v2.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads((repository / "spec/schemas/acceptance-cell-v2.schema.json").read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
     observed: set[tuple[str, str, str]] = set()
     for path in root.rglob("cell.json"):

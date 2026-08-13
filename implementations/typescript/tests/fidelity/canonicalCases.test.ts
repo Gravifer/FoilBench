@@ -26,7 +26,7 @@ const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"]
 
 async function fixtureCase(id: string): Promise<FidelityCase> {
   const fixture = JSON.parse(
-    await readFile(resolve("../../spec/proposals/revision5/fixtures/fidelity-cases.json"), "utf8"),
+    await readFile(resolve("../../spec/conformance/fidelity-cases.json"), "utf8"),
   ) as FidelityFixture;
   const selected = fixture.cases.find((value) => value.id === id);
   if (selected === undefined) throw new RangeError(`unknown fidelity case ${id}`);

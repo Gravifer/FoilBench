@@ -13,7 +13,7 @@ function Invoke-Checked {
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$fixturePath = Join-Path $repositoryRoot 'spec/proposals/revision5/fixtures/fullsize-acceptance-v2.json'
+$fixturePath = Join-Path $repositoryRoot 'spec/conformance/fullsize-acceptance-v2.json'
 $fixture = Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
 if ($fixture.schema_version -ne 2 -or $fixture.contract_id -ne 'foilbench-phase3-v1' -or $fixture.contract_revision -ne 5) {
     throw 'Revision 5 acceptance fixture identity is invalid'
@@ -113,7 +113,7 @@ try {
     [ordered]@{
         schema_version = 2; contract_id = 'foilbench-phase3-v1'; contract_revision = 5
         status = 'passed'; completed_at = (Get-Date).ToUniversalTime().ToString('o')
-        git_commit = $commit; fixture = 'spec/proposals/revision5/fixtures/fullsize-acceptance-v2.json'
+        git_commit = $commit; fixture = 'spec/conformance/fullsize-acceptance-v2.json'
         artifact_producers = $artifactRoster; native_producers = $nativeRoster
         benchmark_directories = @($pythonResults, $juliaResults, $typescriptResults, $rustResults)
         chaos_preflight_artifacts = $preflights; chaos_artifacts = $chaos

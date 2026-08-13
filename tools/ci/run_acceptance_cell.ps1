@@ -14,9 +14,8 @@ $configuration = @(
     'spec/conformance/solver-validity.json',
     'spec/contract-version.json',
     'spec/schemas/scenario.schema.json',
-    'spec/proposals/revision5/manifest.json',
-    'spec/proposals/revision5/fixtures/fullsize-acceptance-v2.json',
-    'spec/proposals/revision5/schemas/acceptance-cell-v2.schema.json',
+    'spec/conformance/fullsize-acceptance-v2.json',
+    'spec/schemas/acceptance-cell-v2.schema.json',
     'benchmark-matrices/preview-gate.json',
     'scenarios/airfoil/default.json'
 )

@@ -1,8 +1,8 @@
 # Cross-language fidelity cases
 
-Status: proposed Revision 5 normative component.
+Status: accepted normative component.
 
-Revision 5 will replace implementation-local fidelity parameters with one
+Revision 5 replaces implementation-local fidelity parameters with one
 schema-validated fixture. Each case fixes precision, domain, resolution,
 duration, output interval, initial/control history, measured region, solid
 mask treatment, norm, and per-family tolerance. A language may choose stable
@@ -24,4 +24,3 @@ Analytic formulas, mask dilation, boundary stencil, denominators, and time at
 which each measurement is taken belong in the fixture or its owning contract.
 Native tests may retain additional small cases, but acceptance evidence must
 consume the shared parameters exactly.
-

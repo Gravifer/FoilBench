@@ -22,7 +22,7 @@ pub struct NacaFoil {
 }
 
 impl NacaFoil {
-    /// Construct the proposed Revision 5 NACA geometry.
+    /// Construct the accepted Revision 5 NACA geometry.
     ///
     /// # Errors
     ///
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn consumes_revision5_geometry_fixture() {
         let fixture: Revision5GeometryFixture = serde_json::from_str(include_str!(
-            "../../../../../spec/proposals/revision5/fixtures/geometry-v1.json"
+            "../../../../../spec/conformance/geometry-v1.json"
         ))
         .unwrap();
         let foil = NacaFoil::new(fixture.descriptor).unwrap();

@@ -25,23 +25,22 @@ def main() -> None:
         "spec/conformance/chaotic-wake-cases.json",
         "spec/schemas/chaotic-wake-cases.schema.json",
     )
-    proposal = "spec/proposals/revision5"
     _validate(
         root,
-        f"{proposal}/fixtures/fullsize-acceptance-v2.json",
-        f"{proposal}/schemas/fullsize-acceptance-v2.schema.json",
+        "spec/conformance/fullsize-acceptance-v2.json",
+        "spec/schemas/fullsize-acceptance-v2.schema.json",
     )
     _validate(
         root,
-        f"{proposal}/fixtures/chaotic-wake-result-v2.json",
-        f"{proposal}/schemas/chaotic-wake-result-v2.schema.json",
+        "spec/conformance/chaotic-wake-result-v2.json",
+        "spec/schemas/chaotic-wake-result-v2.schema.json",
     )
     _validate(
         root,
-        f"{proposal}/fixtures/acceptance-cell-v2.json",
-        f"{proposal}/schemas/acceptance-cell-v2.schema.json",
+        "spec/conformance/acceptance-cell-v2.json",
+        "spec/schemas/acceptance-cell-v2.schema.json",
     )
-    print("Revision 4 and proposed Revision 5 acceptance fixtures are schema-valid")
+    print("Accepted Revision 4 and Revision 5 acceptance fixtures are schema-valid")
 
 
 if __name__ == "__main__":

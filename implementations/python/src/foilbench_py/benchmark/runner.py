@@ -176,7 +176,7 @@ def run_matrix(
     destination.mkdir(parents=True, exist_ok=True)
     scenario_base = load_scenario(matrix.scenario_path)
     result_schema = _json_object(
-        root / "spec" / "proposals" / "revision5" / "schemas" / "result-v2.schema.json"
+        root / "spec" / "schemas" / "result-v2.schema.json"
     )
     rows: list[dict[str, object]] = []
     process = psutil.Process()

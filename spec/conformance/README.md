@@ -29,11 +29,22 @@ implementation must reproduce before solver comparisons are meaningful.
 - `wake-metrics.json` fixes the downstream regions, velocity-deficit
   threshold, solid masking, and cell-center quantization of the named wake
   width and recirculation-area diagnostics.
+- `geometry-v1.json`, `canonical-manifest-v2.json`, and
+  `scenario-negative.json` fix Revision 5 geometry, interchange identity, and
+  cross-field scenario validity.
+- `fidelity-cases.json`, `mac-boundary.json`, and `lbm-boundary.json` fix the
+  cross-language analytic cases and observable boundary mappings.
+- `acceptance-cell-v2.json`, `fullsize-acceptance-v2.json`,
+  `result-v2.json`, and `chaotic-wake-result-v2.json` fix the Phase 3
+  producer/target roster and evidence formats.
 
 Revision 4 requires the shared tracer-lifecycle, solver-validity,
 vorticity-display, and wake-metrics fixtures above. Their normative meanings remain defined by
 the interactive viewer and solver-validity contracts; the JSON files supply
 executable values rather than creating another source of policy.
+
+Revision 5 retains those fixtures and adds the geometry, canonical-v2,
+fidelity, boundary, negative-scenario, and producer/target fixtures above.
 
 `fullsize-acceptance.json` is consumed by each language's preview,
 warm-switch, and scheduled-control gates. Run the complete representative
