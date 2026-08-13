@@ -154,8 +154,23 @@ def validate_chaos_acceptance(
         ),
     )
     schemas = {
-        1: cast(dict[str, object], json.loads((root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8"))),
-        2: cast(dict[str, object], json.loads((root / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8"))),
+        1: cast(
+            dict[str, object],
+            json.loads(
+                (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+        ),
+        2: cast(
+            dict[str, object],
+            json.loads(
+                (
+                    root
+                    / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json"
+                ).read_text(encoding="utf-8")
+            ),
+        ),
     }
     expected_cases = {
         (
@@ -280,8 +295,23 @@ def validate_chaos_preflight(
     )
     preflight = cast(Mapping[str, object], cases["initialization_preflight"])
     schemas = {
-        1: cast(dict[str, object], json.loads((root / "spec/schemas/chaotic-wake-result.schema.json").read_text(encoding="utf-8"))),
-        2: cast(dict[str, object], json.loads((root / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json").read_text(encoding="utf-8"))),
+        1: cast(
+            dict[str, object],
+            json.loads(
+                (root / "spec/schemas/chaotic-wake-result.schema.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+        ),
+        2: cast(
+            dict[str, object],
+            json.loads(
+                (
+                    root
+                    / "spec/proposals/revision5/schemas/chaotic-wake-result-v2.schema.json"
+                ).read_text(encoding="utf-8")
+            ),
+        ),
     }
     grouped: dict[str, list[dict[str, object]]] = {}
     failures: list[str] = []
