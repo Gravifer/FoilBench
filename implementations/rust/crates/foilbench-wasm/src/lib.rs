@@ -16,6 +16,25 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
+fn tuning_document(tuning: Option<InteractiveTuning>) -> String {
+    tuning.map_or_else(
+        || "null".into(),
+        |selected| {
+            json!({
+                "id": selected.id,
+                "label": selected.label,
+                "value": match selected.value {
+                    TuningValue::Choice(value) => Value::String(value),
+                    TuningValue::Number(value) => json!(value),
+                },
+                "canDecrease": selected.can_decrease,
+                "canIncrease": selected.can_increase,
+            })
+            .to_string()
+        },
+    )
+}
+
 macro_rules! solver_union {
     ($name:ident, $scalar:ty) => {
         enum $name {
@@ -389,7 +408,17 @@ impl WasmSolver {
             Some(SolverStorage::Float64(solver)) => solver.interactive_tuning(),
             None => return Err(text_error("solver is disposed")),
         };
-        Ok(tuning.map_or_else(|| "null".into(), |selected| json!({"id": selected.id, "label": selected.label, "value": match selected.value { TuningValue::Choice(value) => Value::String(value), TuningValue::Number(value) => json!(value) }, "canDecrease": selected.can_decrease, "canIncrease": selected.can_increase}).to_string()))
+        Ok(tuning_document(tuning))
+    }
+
+    pub fn adjust_tuning_json(&mut self, direction: i8) -> Result<String, JsValue> {
+        let tuning = match self.storage.as_mut() {
+            Some(SolverStorage::Float32(solver)) => solver.adjust_interactive_tuning(direction),
+            Some(SolverStorage::Float64(solver)) => solver.adjust_interactive_tuning(direction),
+            None => return Err(text_error("solver has been disposed")),
+        }
+        .map_err(|error| js_error(&error))?;
+        Ok(tuning_document(tuning))
     }
 
     pub fn set_transport(&mut self, mode: &str) -> Result<(), JsValue> {

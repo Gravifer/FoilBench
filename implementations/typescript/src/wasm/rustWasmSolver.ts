@@ -26,6 +26,7 @@ interface WasmSolverBinding {
   advance_json(time: number, angle: number, angularVelocity: number, targetDt: number): string;
   set_reynolds_json(reynolds: number): string;
   tuning_json(): string;
+  adjust_tuning_json(direction: number): string;
   set_transport(mode: string): void;
   sample_velocity_f32(points: Float32Array): Float32Array;
   sample_velocity_f64(points: Float64Array): Float64Array;
@@ -253,9 +254,8 @@ export class RustWasmFlowSolver implements FlowSolver {
   }
 
   public adjustInteractiveTuning(direction: -1 | 1): InteractiveTuning | undefined {
-    if (this.solverId !== "stable-fluids") return undefined;
-    this.applyInteractiveTuning(direction < 0 ? "maccormack" : "skew-rk2");
-    return this.interactiveTuning();
+    const parsed: unknown = JSON.parse(invoke(() => this.selected().adjust_tuning_json(direction)));
+    return parsed === null ? undefined : parsed as InteractiveTuning;
   }
 
   public applyInteractiveTuning(value: InteractiveTuningValue): InteractiveTuning | undefined {
