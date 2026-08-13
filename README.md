@@ -7,9 +7,9 @@ including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 three-language contract closure are complete and revalidated after extensive
 QA. Revision 4 is the accepted implemented baseline after full-size,
 interchange, fallback, and chaotic-extension acceptance. Phase 3 now provides
-the first two Rust solver milestones: native and WASM Stable Fluids plus D2Q9
-TRT LBM built from one shared core while proposed Revision 5 remains under
-evaluation.
+the complete Rust 2D solver repertoire: native and WASM Stable Fluids, D2Q9
+TRT LBM, and blended PIC/FLIP built from one shared core while proposed
+Revision 5 remains under evaluation.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -95,7 +95,7 @@ The platform-neutral core implements PCG32, validated typed scenarios, NACA
 geometry, MAC-grid numerics, canonical version 1/2 state handling, the solver
 lifecycle, and Stable Fluids in both `f32` and `f64`. The native crate owns
 NPY/JSON/CSV artifacts and benchmark commands. The WASM crate exposes the same
-Stable-Fluids implementation through the existing TypeScript worker:
+three Rust solvers through the existing TypeScript worker:
 
 ```powershell
 cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
@@ -103,8 +103,8 @@ cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p fo
 just ts-view scenarios/airfoil/default.json stable-fluids rust-wasm
 ```
 
-The Rust/WASM selector currently offers Stable Fluids and D2Q9 TRT LBM.
-PIC/FLIP follows on its dedicated branch.
+The Rust/WASM selector offers Stable Fluids, D2Q9 TRT LBM, and blended
+PIC/FLIP through keys `1`, `2`, and `3`.
 
 The accepted Revision 4 contract remains authoritative. Candidate Phase 3
 semantics live under `spec/proposals/revision5/` until cross-language evidence

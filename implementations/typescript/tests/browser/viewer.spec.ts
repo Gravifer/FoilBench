@@ -45,7 +45,7 @@ test("viewer renders and applies interactive controls", async ({page}) => {
   await expect(overlay).toContainText("running");
 });
 
-test("production viewer loads and switches Rust/WASM Stable Fluids and LBM", async ({page}) => {
+test("production viewer loads and switches the Rust/WASM solver repertoire", async ({page}) => {
   await page.goto("/?backend=rust-wasm&solver=stable-fluids");
   const overlay = page.locator("#foilbench-overlay");
 
@@ -63,4 +63,12 @@ test("production viewer loads and switches Rust/WASM Stable Fluids and LBM", asy
   await expect(overlay).toContainText("running");
   await page.keyboard.press("1");
   await expect(overlay).toContainText("stable-fluids [rust-wasm]", {timeout: 30_000});
+  await page.keyboard.press("3");
+  await expect(overlay).toContainText("pic-flip [rust-wasm]", {timeout: 30_000});
+  await page.keyboard.press("[");
+  await expect(overlay).toContainText("FLIP", {timeout: 30_000});
+  await page.keyboard.press("2");
+  await expect(overlay).toContainText("lbm-d2q9 [rust-wasm]", {timeout: 30_000});
+  await page.keyboard.press("3");
+  await expect(overlay).toContainText("pic-flip [rust-wasm]", {timeout: 30_000});
 });

@@ -8,8 +8,9 @@
 
 use foilbench_core::{
     CanonicalFlowState2, CanonicalGeometryDescriptor, ControlState, Diagnostics, FlowSolver,
-    ImportOutcome, InteractiveTuning, LbmD2q9, NacaFoil, Precision, Producer, RestartState,
-    ReynoldsOutcome, Scenario, SolverError, SolverInfo, StableFluids, StepReport, TuningValue,
+    ImportOutcome, InteractiveTuning, LbmD2q9, NacaFoil, PicFlip, Precision, Producer,
+    RestartState, ReynoldsOutcome, Scenario, SolverError, SolverInfo, StableFluids, StepReport,
+    TuningValue,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,6 +21,7 @@ macro_rules! solver_union {
         enum $name {
             Stable(StableFluids<$scalar>),
             Lbm(LbmD2q9<$scalar>),
+            Pic(Box<PicFlip<$scalar>>),
         }
 
         impl $name {
@@ -27,6 +29,7 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.current_reynolds(),
                     Self::Lbm(solver) => solver.current_reynolds(),
+                    Self::Pic(solver) => solver.current_reynolds(),
                 }
             }
 
@@ -38,6 +41,11 @@ macro_rules! solver_union {
                         foilbench_core::FailureStage::Postcondition,
                         "D2Q9 LBM exposes no interactive tuning",
                     )),
+                    Self::Pic(_) => Err(SolverError::new(
+                        foilbench_core::FailureReason::UnsupportedConversion,
+                        foilbench_core::FailureStage::Postcondition,
+                        "PIC/FLIP transport is fixed; adjust its blend through interactive tuning",
+                    )),
                 }
             }
         }
@@ -47,6 +55,7 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.info(),
                     Self::Lbm(solver) => solver.info(),
+                    Self::Pic(solver) => solver.info(),
                 }
             }
             fn initialize(
@@ -58,6 +67,7 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.initialize(scenario, geometry, seed),
                     Self::Lbm(solver) => solver.initialize(scenario, geometry, seed),
+                    Self::Pic(solver) => solver.initialize(scenario, geometry, seed),
                 }
             }
             fn restart(
@@ -70,12 +80,14 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.restart(scenario, geometry, seed, start),
                     Self::Lbm(solver) => solver.restart(scenario, geometry, seed, start),
+                    Self::Pic(solver) => solver.restart(scenario, geometry, seed, start),
                 }
             }
             fn set_reynolds(&mut self, reynolds: f64) -> Result<ReynoldsOutcome, SolverError> {
                 match self {
                     Self::Stable(solver) => solver.set_reynolds(reynolds),
                     Self::Lbm(solver) => solver.set_reynolds(reynolds),
+                    Self::Pic(solver) => solver.set_reynolds(reynolds),
                 }
             }
             fn advance(
@@ -86,6 +98,7 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.advance(control, target_dt),
                     Self::Lbm(solver) => solver.advance(control, target_dt),
+                    Self::Pic(solver) => solver.advance(control, target_dt),
                 }
             }
             fn sample_velocity(
@@ -96,12 +109,14 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.sample_velocity(points, output),
                     Self::Lbm(solver) => solver.sample_velocity(points, output),
+                    Self::Pic(solver) => solver.sample_velocity(points, output),
                 }
             }
             fn export_state(&self) -> Result<CanonicalFlowState2<$scalar>, SolverError> {
                 match self {
                     Self::Stable(solver) => solver.export_state(),
                     Self::Lbm(solver) => solver.export_state(),
+                    Self::Pic(solver) => solver.export_state(),
                 }
             }
             fn import_state(
@@ -112,18 +127,21 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.import_state(state, control),
                     Self::Lbm(solver) => solver.import_state(state, control),
+                    Self::Pic(solver) => solver.import_state(state, control),
                 }
             }
             fn diagnostics(&self) -> Result<Diagnostics, SolverError> {
                 match self {
                     Self::Stable(solver) => solver.diagnostics(),
                     Self::Lbm(solver) => solver.diagnostics(),
+                    Self::Pic(solver) => solver.diagnostics(),
                 }
             }
             fn interactive_tuning(&self) -> Option<InteractiveTuning> {
                 match self {
                     Self::Stable(solver) => solver.interactive_tuning(),
                     Self::Lbm(solver) => solver.interactive_tuning(),
+                    Self::Pic(solver) => solver.interactive_tuning(),
                 }
             }
             fn adjust_interactive_tuning(
@@ -133,12 +151,14 @@ macro_rules! solver_union {
                 match self {
                     Self::Stable(solver) => solver.adjust_interactive_tuning(direction),
                     Self::Lbm(solver) => solver.adjust_interactive_tuning(direction),
+                    Self::Pic(solver) => solver.adjust_interactive_tuning(direction),
                 }
             }
             fn state_revision(&self) -> u64 {
                 match self {
                     Self::Stable(solver) => solver.state_revision(),
                     Self::Lbm(solver) => solver.state_revision(),
+                    Self::Pic(solver) => solver.state_revision(),
                 }
             }
         }
@@ -236,9 +256,10 @@ impl WasmSolver {
                 let mut solver = match solver_id {
                     "stable-fluids" => Solver32::Stable(StableFluids::new("wasm-browser")),
                     "lbm-d2q9" => Solver32::Lbm(LbmD2q9::new("wasm-browser")),
+                    "pic-flip" => Solver32::Pic(Box::new(PicFlip::new("wasm-browser"))),
                     _ => {
                         return Err(text_error(
-                            "this milestone exposes stable-fluids and lbm-d2q9",
+                            "this milestone exposes stable-fluids, lbm-d2q9, and pic-flip",
                         ));
                     }
                 };
@@ -251,9 +272,10 @@ impl WasmSolver {
                 let mut solver = match solver_id {
                     "stable-fluids" => Solver64::Stable(StableFluids::new("wasm-browser")),
                     "lbm-d2q9" => Solver64::Lbm(LbmD2q9::new("wasm-browser")),
+                    "pic-flip" => Solver64::Pic(Box::new(PicFlip::new("wasm-browser"))),
                     _ => {
                         return Err(text_error(
-                            "this milestone exposes stable-fluids and lbm-d2q9",
+                            "this milestone exposes stable-fluids, lbm-d2q9, and pic-flip",
                         ));
                     }
                 };

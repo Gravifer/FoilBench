@@ -8,10 +8,11 @@ Phase 3 starts with three deliberately separated crates:
 - `foilbench-wasm`: coarse `wasm-bindgen` boundary hosted by the existing
   TypeScript simulation worker.
 
-The workspace currently implements the shared numerical foundation, Stable
-Fluids, and D2Q9 TRT LBM. The core exposes the complete solver lifecycle, typed failure/evidence
-values, validated scenarios, strict canonical manifest dispatch, MAC grids,
-projection, viscosity, diagnostics, and shared native/WASM capability identity.
+The workspace implements the shared numerical foundation, Stable Fluids,
+D2Q9 TRT LBM, and deterministic blended PIC/FLIP. The core exposes the
+complete solver lifecycle, typed failure/evidence values, validated scenarios,
+strict canonical manifest dispatch, MAC grids, projection, viscosity,
+diagnostics, and shared native/WASM capability identity.
 The native crate reads and writes canonical NPY payloads and emits benchmark
 artifacts. The WASM crate exposes a coarse solver API that is instantiated
 inside the TypeScript simulation worker.

@@ -42,7 +42,6 @@ async function main(args: readonly string[]): Promise<void> {
     const backendValue: string = backendFlag >= 0 ? args[backendFlag + 1] ?? "" : args[3] ?? "typescript";
     if (backendValue !== "typescript" && backendValue !== "rust-wasm") throw new RangeError(`unknown backend: ${backendValue}`);
     const backend: SolverBackend = backendValue;
-    if (backend === "rust-wasm" && solverId === "pic-flip") throw new RangeError("the Rust/WASM milestone currently exposes stable-fluids and lbm-d2q9");
     const server = await createServer({root: join(repositoryRoot, "implementations/typescript"), server: {host: "127.0.0.1", port: 4173, strictPort: true}});
     await server.listen();
     const parameters = new URLSearchParams({scenario: `/@fs/${scenarioPath.replaceAll("\\", "/")}`, solver: solverId, backend});
