@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "dimension": 2,
+  "bounds": [[-1.5, 3.5], [-1.5, 1.5]],
+  "resolution": [160, 96],
+  "periodic_axes": [],
+  "time": 1.25,
+  "precision": "float32",
+  "angle_degrees": 14.0,
+  "angular_velocity_degrees": 0.0,
+  "geometry": {"family": "naca-four-digit-v1", "naca": "2412", "chord": 1.0, "pivot": [0.0, 0.0]},
+  "producer": {"implementation": "rust", "execution_target": "native", "build": null},
+  "source_solver": "stable-fluids",
+  "velocity": {"file": "velocity.npy", "axes": ["z", "y", "x", "component"], "order": "C"},
+  "density": null
+}

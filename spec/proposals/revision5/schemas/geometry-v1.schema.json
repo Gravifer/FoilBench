@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/geometry-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "descriptor", "surface_x", "surface_upper", "surface_lower", "angle_degrees", "points", "signed_distance", "normals", "contains", "angular_velocity_degrees", "wall_velocity", "maximum_radius", "absolute_tolerances"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "descriptor": {"type": "object", "additionalProperties": false, "required": ["family", "naca", "chord", "pivot"], "properties": {"family": {"const": "naca-four-digit-v1"}, "naca": {"type": "string", "pattern": "^[0-9]{4}$"}, "chord": {"type": "number", "exclusiveMinimum": 0}, "pivot": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}}},
+    "surface_x": {"type": "array", "minItems": 2, "items": {"type": "number"}},
+    "surface_upper": {"type": "array", "minItems": 2, "items": {"type": "number"}},
+    "surface_lower": {"type": "array", "minItems": 2, "items": {"type": "number"}},
+    "angle_degrees": {"type": "number"},
+    "points": {"type": "array", "minItems": 2, "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}},
+    "signed_distance": {"type": "array", "items": {"type": "number"}},
+    "normals": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}},
+    "contains": {"type": "array", "items": {"type": "boolean"}},
+    "angular_velocity_degrees": {"type": "number"},
+    "wall_velocity": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}},
+    "maximum_radius": {"type": "number", "exclusiveMinimum": 0},
+    "absolute_tolerances": {"type": "object", "additionalProperties": false, "required": ["surface", "signed_distance", "normal", "wall_velocity", "radius"], "properties": {"surface": {"type": "number", "exclusiveMinimum": 0}, "signed_distance": {"type": "number", "exclusiveMinimum": 0}, "normal": {"type": "number", "exclusiveMinimum": 0}, "wall_velocity": {"type": "number", "exclusiveMinimum": 0}, "radius": {"type": "number", "exclusiveMinimum": 0}}}
+  }
+}

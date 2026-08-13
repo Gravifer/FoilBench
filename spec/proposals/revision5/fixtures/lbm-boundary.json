@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "inlet": "prescribed-velocity-lower-x",
+  "outlet": "convective-history-upper-x",
+  "transverse": "freestream-equilibrium-or-poiseuille-wall",
+  "sponge": {"profile": "quadratic", "base_width": "max(3,floor(min(nx,ny)/16))", "transverse_width_factor": 1, "transverse_maximum": 0.12, "poiseuille_transverse": "disabled", "outlet_width_factor": 2, "outlet_maximum": 0.08, "overlap": "maximum"}
+}

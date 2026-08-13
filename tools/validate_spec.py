@@ -164,6 +164,40 @@ def _validate_revision5_proposal(root: Path) -> None:
             path.read_text(encoding="utf-8").splitlines()[:5]
         ).lower():
             raise ValueError(f"invalid Revision 5 proposal document: {document}")
+    schema_paths = _string_list(proposal.get("schemas"), "revision5 schemas")
+    expected_schemas = {
+        str(path.relative_to(proposal_root)).replace("\\", "/")
+        for path in (proposal_root / "schemas").glob("*.schema.json")
+    }
+    if set(schema_paths) != expected_schemas:
+        raise ValueError("Revision 5 proposal schema inventory is incomplete")
+    proposal_schemas: dict[str, dict[str, object]] = {}
+    for relative in schema_paths:
+        schema = _object(_resolve_manifest_path(proposal_root, relative))
+        Draft202012Validator.check_schema(schema)
+        proposal_schemas[relative] = schema
+    fixtures = proposal.get("fixtures")
+    if not isinstance(fixtures, list):
+        raise TypeError("Revision 5 proposal fixtures must be an array")
+    observed_fixtures: set[str] = set()
+    for entry in fixtures:
+        if not isinstance(entry, dict):
+            raise TypeError("Revision 5 fixture entry must be an object")
+        relative = entry.get("path")
+        schema_path = entry.get("schema")
+        if not isinstance(relative, str) or relative in observed_fixtures:
+            raise ValueError(f"invalid Revision 5 fixture path: {relative!r}")
+        if not isinstance(schema_path, str) or schema_path not in proposal_schemas:
+            raise ValueError(f"invalid Revision 5 fixture schema: {schema_path!r}")
+        observed_fixtures.add(relative)
+        fixture = _object(_resolve_manifest_path(proposal_root, relative))
+        Draft202012Validator(proposal_schemas[schema_path]).validate(fixture)
+    expected_fixtures = {
+        str(path.relative_to(proposal_root)).replace("\\", "/")
+        for path in (proposal_root / "fixtures").glob("*.json")
+    }
+    if observed_fixtures != expected_fixtures:
+        raise ValueError("Revision 5 proposal fixture inventory is incomplete")
 
 
 def main() -> None:

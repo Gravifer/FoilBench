@@ -5,12 +5,22 @@ Status: proposed Revision 5 normative component.
 ## Phase 3 D2Q9 boundary mapping
 
 Until a scenario-level boundary schema is introduced, Revision 5 freezes the
-observable Phase 2 mapping for nonperiodic airfoil cases: prescribed velocity
-at the lower-x inlet, convective history at the upper-x outlet, freestream
-equilibrium on nonperiodic transverse boundaries, interpolated moving-wall
-bounce-back on foil cut links, and a quadratic downstream sponge over the
-final 12% of x cells with maximum blend 0.18. Poiseuille replaces transverse
-freestream boundaries with channel-wall bounce-back.
+target mapping for nonperiodic airfoil cases: prescribed velocity at the
+lower-x inlet, convective history at the upper-x outlet, freestream equilibrium
+on nonperiodic transverse boundaries, interpolated moving-wall bounce-back on
+foil cut links, and quadratic sponge profiles. Let
+`w=max(3, floor(min(nx,ny)/16))`. Each nonperiodic transverse rim uses width
+`w` and maximum blend `0.12`; the downstream outlet uses width `2w` and maximum
+blend `0.08`. At integer distance `d` inward from the handled rim, the blend is
+`maximum * clamp((width-d)/width,0,1)^2`; overlapping profiles use their
+maximum. Poiseuille replaces transverse freestream boundary reconstruction
+with channel-wall bounce-back and disables the transverse sponge; the outlet
+sponge remains active.
+
+The ordinary-airfoil profile comes from the Python and Julia Phase 2 mapping;
+disabling its transverse component at channel walls corrects a shared
+Poiseuille inconsistency. TypeScript's former 12%-wide, 0.18 outlet-only
+profile is retained only in history, not in the Revision 5 target.
 
 Those constants are contract defaults, not promised live viewer controls.
 Future scenario options may override them only in a later revision. Revision 5
@@ -26,4 +36,3 @@ do not masquerade as two languages or collide as duplicate cells. A matrix
 declares which producer-target pairs are required. Phase 3 initially requires
 Rust native for numerical acceptance and a declared subset for WASM parity;
 the final roster is fixed only when Revision 5 is activated.
-

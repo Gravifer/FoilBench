@@ -8,6 +8,12 @@ Nothing in this directory establishes conformance until the proposal has
 executable fixtures, all required producers pass them, and
 `spec/contract-version.json` is advanced deliberately.
 
+The proposal now carries schema-validated executable seed fixtures under
+`fixtures/`: transformed/non-unit geometry, canonical manifest v2 identity,
+the matched fidelity-case matrix, and the target LBM boundary mapping. These
+fixtures constrain implementation work but do not become accepted evidence
+until every required producer consumes them and Revision 5 is activated.
+
 The proposal resolves the Phase 3 kickoff decisions that Rust must not infer
 from Python, Julia, or TypeScript source:
 
@@ -19,6 +25,8 @@ from Python, Julia, or TypeScript source:
   cases into one cross-language repertoire;
 - [LBM boundaries and producer identity](boundary-and-producer.md) freeze the
   Phase 2 boundary mapping and distinguish native Rust from Rust/WASM.
+- [MAC boundaries](mac-boundary.md) freeze the observable nonperiodic face
+  treatment shared by Stable Fluids and PIC/FLIP.
 
 Permanent policy: pixel-identical or pixel-distance renderer matching is a
 won't-do. Viewer conformance concerns observable controls, state, diagnostics,
@@ -27,4 +35,3 @@ and semantic overlays; renderer aesthetics remain native to each frontend.
 D3Q19 and shallow periodic 3D remain deferred until Stable Fluids, D2Q9 LBM,
 and blended PIC/FLIP all pass 2D Rust parity in both the native and intended
 WASM execution paths.
-

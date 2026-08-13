@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/canonical-manifest-v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dimension", "bounds", "resolution", "periodic_axes", "time", "precision", "angle_degrees", "angular_velocity_degrees", "geometry", "producer", "source_solver", "velocity", "density"],
+  "$defs": {
+    "array": {"type": "object", "additionalProperties": false, "required": ["file", "axes", "order"], "properties": {"file": {"type": "string", "minLength": 1}, "axes": {"type": "array", "items": {"type": "string"}}, "order": {"enum": ["C", "F"]}}}
+  },
+  "properties": {
+    "schema_version": {"const": 2},
+    "dimension": {"const": 2},
+    "bounds": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}},
+    "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+    "periodic_axes": {"type": "array", "uniqueItems": true, "items": {"enum": ["x", "y"]}},
+    "time": {"type": "number", "minimum": 0},
+    "precision": {"enum": ["float32", "float64"]},
+    "angle_degrees": {"type": "number"},
+    "angular_velocity_degrees": {"type": "number"},
+    "geometry": {"type": "object", "additionalProperties": false, "required": ["family", "naca", "chord", "pivot"], "properties": {"family": {"const": "naca-four-digit-v1"}, "naca": {"type": "string", "pattern": "^[0-9]{4}$"}, "chord": {"type": "number", "exclusiveMinimum": 0}, "pivot": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}}},
+    "producer": {"type": "object", "additionalProperties": false, "required": ["implementation", "execution_target"], "properties": {"implementation": {"enum": ["python", "julia", "typescript", "rust"]}, "execution_target": {"enum": ["native", "node", "browser-worker", "wasm-browser"]}, "build": {"type": ["object", "null"]}}},
+    "source_solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+    "velocity": {"allOf": [{"$ref": "#/$defs/array"}, {"properties": {"file": {"const": "velocity.npy"}, "axes": {"const": ["z", "y", "x", "component"]}}}]},
+    "density": {"oneOf": [{"type": "null"}, {"allOf": [{"$ref": "#/$defs/array"}, {"properties": {"file": {"const": "density.npy"}, "axes": {"const": ["z", "y", "x"]}}}]}]}
+  }
+}

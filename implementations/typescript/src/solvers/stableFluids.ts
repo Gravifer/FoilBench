@@ -100,11 +100,17 @@ export class StableFluidsSolver implements FlowSolver {
   private enforceSolidFaces(control: ControlState): void { this.enforceSolidFacesOn(this.u, this.v, control); }
 
   private applyDomainBoundaries(u: FloatArray, v: FloatArray): void {
-    const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const ux = scenario.freestream[0] ?? 0; const uy = scenario.freestream[1] ?? 0; const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y");
+    const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const ux = scenario.freestream[0] ?? 0; const uy = scenario.freestream[1] ?? 0; const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); const channelWalls = scenario.solverOptions.initialCondition === "poiseuille";
     if (periodicX) for (let y = 0; y < ny; y += 1) { const average = 0.5 * ((u[y * (nx + 1)] ?? 0) + (u[y * (nx + 1) + nx] ?? 0)); u[y * (nx + 1)] = average; u[y * (nx + 1) + nx] = average; }
     else for (let y = 0; y < ny; y += 1) { u[y * (nx + 1)] = ux; u[y * (nx + 1) + nx] = u[y * (nx + 1) + nx - 1] ?? ux; v[y * nx] = uy; v[y * nx + nx - 1] = v[y * nx + Math.max(0, nx - 2)] ?? uy; }
     if (periodicY) for (let x = 0; x < nx; x += 1) { const average = 0.5 * ((v[x] ?? 0) + (v[ny * nx + x] ?? 0)); v[x] = average; v[ny * nx + x] = average; }
-    else for (let x = 0; x < nx; x += 1) { v[x] = uy; v[ny * nx + x] = uy; }
+    else if (channelWalls) {
+      for (let x = 0; x < nx; x += 1) { v[x] = 0; v[ny * nx + x] = 0; }
+      for (let x = 0; x <= nx; x += 1) { u[x] = 0; u[(ny - 1) * (nx + 1) + x] = 0; }
+    } else {
+      for (let x = 0; x < nx; x += 1) { v[x] = uy; v[ny * nx + x] = uy; }
+      for (let x = 0; x <= nx; x += 1) { u[x] = ux; u[(ny - 1) * (nx + 1) + x] = ux; }
+    }
   }
 
   private solidFaceLeakage(control: ControlState): number {

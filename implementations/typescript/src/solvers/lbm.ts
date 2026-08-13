@@ -23,6 +23,28 @@ export function convectiveOutletPopulation(
   return previous + latticeSpeed * (interior - previous);
 }
 
+export function lbmSpongeStrength(
+  nx: number,
+  ny: number,
+  x: number,
+  y: number,
+  periodicX: boolean,
+  periodicY: boolean,
+  channelWalls = false,
+): number {
+  const width = Math.max(3, Math.floor(Math.min(nx, ny) / 16));
+  const transverseDistance = Math.min(y, ny - 1 - y);
+  const transverse = periodicY || channelWalls
+    ? 0
+    : 0.12 * Math.max(0, (width - transverseDistance) / width) ** 2;
+  const outletWidth = 2 * width;
+  const outletDistance = nx - 1 - x;
+  const outlet = periodicX
+    ? 0
+    : 0.08 * Math.max(0, (outletWidth - outletDistance) / outletWidth) ** 2;
+  return Math.max(transverse, outlet);
+}
+
 export class LbmSolver implements FlowSolver {
   public readonly info: SolverInfo = {id: "lbm-d2q9", displayName: "D2Q9 TRT LBM", dimensions: [2], supportsMovingBoundary: true, supportedPrecisions: ["float32", "float64"], acceleration: "typed-arrays"};
   public reynolds = 1;
@@ -95,7 +117,51 @@ export class LbmSolver implements FlowSolver {
 
   private captureOutlet(): void { const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; if (this.outlet.length !== 9 * ny) this.outlet = allocate(scenario.precision, 9 * ny); for (let q = 0; q < 9; q += 1) for (let y = 0; y < ny; y += 1) this.outlet[q * ny + y] = this.populations[q * count + y * nx + nx - 1] ?? 0; }
 
-  private applyOpenBoundaries(populations: FloatArray): void { const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); const channelWalls = scenario.solverOptions.initialCondition === "poiseuille"; const ux = (scenario.freestream[0] ?? 0) * this.latticeSpeed / this.referenceSpeed; const uy = (scenario.freestream[1] ?? 0) * this.latticeSpeed / this.referenceSpeed; if (!periodicX) { for (let y = 0; y < ny; y += 1) for (let q = 0; q < 9; q += 1) { populations[q * count + y * nx] = this.equilibrium(q, 1, ux, uy); const outletIndex = q * count + y * nx + nx - 1; const previous = this.outlet[q * ny + y] ?? populations[outletIndex] ?? 0; populations[outletIndex] = convectiveOutletPopulation(previous, populations[q * count + y * nx + Math.max(0, nx - 2)] ?? previous, this.latticeSpeed); } } if (!periodicY && !channelWalls) for (let x = 0; x < nx; x += 1) for (let q = 0; q < 9; q += 1) { populations[q * count + x] = this.equilibrium(q, 1, ux, uy); populations[q * count + (ny - 1) * nx + x] = this.equilibrium(q, 1, ux, uy); } const spongeStart = Math.max(1, Math.floor(0.88 * nx)); if (!periodicX) for (let x = spongeStart; x < nx; x += 1) { const fraction = ((x - spongeStart + 1) / Math.max(1, nx - spongeStart)) ** 2 * 0.18; for (let y = 1; y + 1 < ny; y += 1) { const cell = y * nx + x; if (this.solid[cell] !== 0) continue; for (let q = 0; q < 9; q += 1) { const index = q * count + cell; populations[index] = (1 - fraction) * (populations[index] ?? 0) + fraction * this.equilibrium(q, 1, ux, uy); } } } if (!periodicX) { if (this.outlet.length !== 9 * ny) this.outlet = allocate(scenario.precision, 9 * ny); for (let q = 0; q < 9; q += 1) for (let y = 0; y < ny; y += 1) this.outlet[q * ny + y] = populations[q * count + y * nx + nx - 1] ?? 0; } }
+  private applyOpenBoundaries(populations: FloatArray): void {
+    const scenario = this.requireScenario();
+    const {nx, ny} = dimensions(scenario.domain);
+    const count = nx * ny;
+    const periodicX = scenario.domain.periodicAxes.includes("x");
+    const periodicY = scenario.domain.periodicAxes.includes("y");
+    const channelWalls = scenario.solverOptions.initialCondition === "poiseuille";
+    const ux = (scenario.freestream[0] ?? 0) * this.latticeSpeed / this.referenceSpeed;
+    const uy = (scenario.freestream[1] ?? 0) * this.latticeSpeed / this.referenceSpeed;
+    if (!periodicX) {
+      for (let y = 0; y < ny; y += 1) for (let q = 0; q < 9; q += 1) {
+        populations[q * count + y * nx] = this.equilibrium(q, 1, ux, uy);
+        const outletIndex = q * count + y * nx + nx - 1;
+        const previous = this.outlet[q * ny + y] ?? populations[outletIndex] ?? 0;
+        populations[outletIndex] = convectiveOutletPopulation(
+          previous,
+          populations[q * count + y * nx + Math.max(0, nx - 2)] ?? previous,
+          this.latticeSpeed,
+        );
+      }
+    }
+    if (!periodicY && !channelWalls) {
+      for (let x = 0; x < nx; x += 1) for (let q = 0; q < 9; q += 1) {
+        populations[q * count + x] = this.equilibrium(q, 1, ux, uy);
+        populations[q * count + (ny - 1) * nx + x] = this.equilibrium(q, 1, ux, uy);
+      }
+    }
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
+      const strength = lbmSpongeStrength(nx, ny, x, y, periodicX, periodicY, channelWalls);
+      if (strength <= 0) continue;
+      const cell = y * nx + x;
+      if (this.solid[cell] !== 0) continue;
+      for (let q = 0; q < 9; q += 1) {
+        const index = q * count + cell;
+        populations[index] = (1 - strength) * (populations[index] ?? 0)
+          + strength * this.equilibrium(q, 1, ux, uy);
+      }
+    }
+    if (!periodicX) {
+      if (this.outlet.length !== 9 * ny) this.outlet = allocate(scenario.precision, 9 * ny);
+      for (let q = 0; q < 9; q += 1) for (let y = 0; y < ny; y += 1) {
+        this.outlet[q * ny + y] = populations[q * count + y * nx + nx - 1] ?? 0;
+      }
+    }
+  }
 
   private latticeFields(): {density: FloatArray; velocity: FloatArray} { const scenario = this.requireScenario(); const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; if (this.densityBuffer.length !== count) this.densityBuffer = allocate(scenario.precision, count); if (this.velocityBuffer.length !== 2 * count) this.velocityBuffer = allocate(scenario.precision, 2 * count); const density = this.densityBuffer; const velocity = this.velocityBuffer; for (let cell = 0; cell < count; cell += 1) { let rho = 0; let mx = 0; let my = 0; for (let q = 0; q < 9; q += 1) { const value = this.populations[q * count + cell] ?? 0; rho += value; mx += value * (CX[q] ?? 0); my += value * (CY[q] ?? 0); } density[cell] = rho; velocity[2 * cell] = mx / Math.max(rho, 1e-12); velocity[2 * cell + 1] = my / Math.max(rho, 1e-12); } return {density, velocity}; }
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/mac-boundary.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "x_nonperiodic", "y_freestream", "y_poiseuille", "periodic_duplicate"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "x_nonperiodic": {"const": "prescribed-inlet-zero-gradient-outlet"},
+    "y_freestream": {"const": "prescribed-freestream-normal-and-tangential"},
+    "y_poiseuille": {"const": "no-slip-channel-wall"},
+    "periodic_duplicate": {"const": "endpoint-average"}
+  }
+}

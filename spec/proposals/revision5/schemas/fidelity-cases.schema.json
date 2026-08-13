@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/fidelity-cases.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "cases": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "scenario", "resolution", "duration", "metrics"],
+        "properties": {
+          "id": {"enum": ["uniform", "taylor-green", "poiseuille", "naca0012-zero", "naca2412-dynamic"]},
+          "scenario": {"type": "string", "minLength": 1},
+          "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 4}},
+          "duration": {"type": "number", "exclusiveMinimum": 0},
+          "metrics": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "threshold"],
+              "properties": {
+                "comparison": {"enum": ["maximum", "minimum", "finite"]},
+                "threshold": {"type": ["number", "null"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

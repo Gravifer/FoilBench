@@ -4,12 +4,34 @@ import {describe, expect, it} from "vitest";
 import {controlAt, parseScenario} from "../../src/core/scenario.js";
 import {NacaFoil} from "../../src/core/geometry.js";
 import {bounds2d, dimensions} from "../../src/core/grid.js";
-import {convectiveOutletPopulation, LbmSolver} from "../../src/solvers/lbm.js";
+import {convectiveOutletPopulation, lbmSpongeStrength, LbmSolver} from "../../src/solvers/lbm.js";
 
 describe("D2Q9 TRT LBM contract", () => {
   it("advects outlet populations from their previous boundary state", () => {
     expect(convectiveOutletPopulation(0.25, 1, 0.08)).toBeCloseTo(0.31, 14);
     expect(convectiveOutletPopulation(1, 0.25, 0.08)).toBeCloseTo(0.94, 14);
+  });
+  it("uses the shared Revision 5 quadratic sponge profile", async () => {
+    const fixture = JSON.parse(
+      await readFile(resolve("../../spec/proposals/revision5/fixtures/lbm-boundary.json"), "utf8"),
+    ) as {sponge: {transverse_maximum: number; outlet_maximum: number}};
+    const nx = 160;
+    const ny = 96;
+    expect(lbmSpongeStrength(nx, ny, 80, 0, false, false)).toBeCloseTo(
+      fixture.sponge.transverse_maximum,
+      14,
+    );
+    expect(lbmSpongeStrength(nx, ny, nx - 1, 48, false, false)).toBeCloseTo(
+      fixture.sponge.outlet_maximum,
+      14,
+    );
+    expect(lbmSpongeStrength(nx, ny, nx - 1, 0, false, false)).toBeCloseTo(
+      Math.max(fixture.sponge.transverse_maximum, fixture.sponge.outlet_maximum),
+      14,
+    );
+    expect(lbmSpongeStrength(nx, ny, 80, 48, false, false)).toBe(0);
+    expect(lbmSpongeStrength(nx, ny, nx - 1, 0, true, true)).toBe(0);
+    expect(lbmSpongeStrength(nx, ny, 80, 0, false, false, true)).toBe(0);
   });
   it("advances finite populations and canonical fields", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const solver = new LbmSolver(); solver.initialize(scenario, 0); expect(solver.advance(controlAt(scenario, 0.01), 0.01).advancedDt).toBeCloseTo(0.01); expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true); expect(solver.exportState().density?.every(Number.isFinite)).toBe(true); });
   it("rejects invalid density and reconstructs finite high-speed fields", async () => { const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object; const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown; const scenario = parseScenario(raw, schema); const solver = new LbmSolver(); solver.initialize(scenario, 0); const control = controlAt(scenario, 0); const state = solver.exportState(); if (state.density === null) throw new Error("LBM density missing"); const invalidDensity = state.density.slice(); invalidDensity[0] = -1; expect(solver.importState({...state, density: invalidDensity}, control).reason).toBe("invalid_density"); const highSpeed = state.velocity.slice(); highSpeed[0] = 100; const outcome = solver.importState({...state, velocity: highSpeed}, control); expect(outcome.status).toBe("accepted"); expect(solver.exportState().velocity.every(Number.isFinite)).toBe(true); });

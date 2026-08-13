@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/lbm-boundary.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "inlet", "outlet", "transverse", "sponge"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "inlet": {"const": "prescribed-velocity-lower-x"},
+    "outlet": {"const": "convective-history-upper-x"},
+    "transverse": {"const": "freestream-equilibrium-or-poiseuille-wall"},
+    "sponge": {"type": "object", "additionalProperties": false, "required": ["profile", "base_width", "transverse_width_factor", "transverse_maximum", "poiseuille_transverse", "outlet_width_factor", "outlet_maximum", "overlap"], "properties": {
+      "profile": {"const": "quadratic"}, "base_width": {"const": "max(3,floor(min(nx,ny)/16))"},
+      "transverse_width_factor": {"const": 1}, "transverse_maximum": {"const": 0.12},
+      "poiseuille_transverse": {"const": "disabled"}, "outlet_width_factor": {"const": 2}, "outlet_maximum": {"const": 0.08}, "overlap": {"const": "maximum"}
+    }}
+  }
+}

@@ -166,7 +166,8 @@ end
 function _lbm_sponge(scenario::Scenario{2,T}) where {T}
     sponge = zeros(T, nx(scenario.domain), ny(scenario.domain))
     width = max(3, min(nx(scenario.domain), ny(scenario.domain)) ÷ 16)
-    if !(:y in scenario.domain.periodic_axes)
+    channel_walls = option(scenario, "initial_condition", "freestream") == "poiseuille"
+    if !(:y in scenario.domain.periodic_axes) && !channel_walls
         for j in 1:ny(scenario.domain)
             distance = min(j - 1, ny(scenario.domain) - j)
             strength = T(0.12) * clamp(T(width - distance) / T(width), zero(T), one(T))^2

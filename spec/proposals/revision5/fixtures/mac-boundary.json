@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "x_nonperiodic": "prescribed-inlet-zero-gradient-outlet",
+  "y_freestream": "prescribed-freestream-normal-and-tangential",
+  "y_poiseuille": "no-slip-channel-wall",
+  "periodic_duplicate": "endpoint-average"
+}

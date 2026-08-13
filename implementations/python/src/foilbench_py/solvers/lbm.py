@@ -242,7 +242,11 @@ class LBMSolver:
         )
         sponge = np.zeros((scenario.domain.ny, scenario.domain.nx), dtype=scenario.dtype)
         width = max(3, min(scenario.domain.nx, scenario.domain.ny) // 16)
-        if "y" not in scenario.domain.periodic_axes:
+        channel_walls = (
+            str(scenario.solver_options.get("initial_condition", "freestream"))
+            == "poiseuille"
+        )
+        if "y" not in scenario.domain.periodic_axes and not channel_walls:
             y = np.arange(scenario.domain.ny)
             distance_y = np.minimum(y, scenario.domain.ny - 1 - y)
             strength_y = 0.12 * np.clip((width - distance_y) / width, 0.0, 1.0) ** 2
