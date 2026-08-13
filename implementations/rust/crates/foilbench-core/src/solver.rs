@@ -183,9 +183,11 @@ impl<T: FlowScalar> CanonicalFlowState2<T> {
         let density_valid = self.density.as_ref().is_none_or(|density| {
             density.len() == cells && density.iter().copied().all(FlowScalar::is_finite)
         });
-        let metadata_valid = self.bounds.iter().all(|bound| {
-            bound[0].is_finite() && bound[1].is_finite() && bound[1] > bound[0]
-        }) && self.time.is_finite()
+        let metadata_valid = self
+            .bounds
+            .iter()
+            .all(|bound| bound[0].is_finite() && bound[1].is_finite() && bound[1] > bound[0])
+            && self.time.is_finite()
             && self.time >= 0.0
             && self.angle_degrees.is_finite()
             && self.angular_velocity_degrees.is_finite()
@@ -193,11 +195,14 @@ impl<T: FlowScalar> CanonicalFlowState2<T> {
                 .periodic_axes
                 .iter()
                 .all(|axis| matches!(axis.as_str(), "x" | "y"))
-            && self.periodic_axes.iter().collect::<BTreeSet<_>>().len()
-                == self.periodic_axes.len()
+            && self.periodic_axes.iter().collect::<BTreeSet<_>>().len() == self.periodic_axes.len()
             && self.geometry.family == "naca-four-digit-v1"
             && self.geometry.naca.len() == 4
-            && self.geometry.naca.bytes().all(|digit| digit.is_ascii_digit())
+            && self
+                .geometry
+                .naca
+                .bytes()
+                .all(|digit| digit.is_ascii_digit())
             && self.geometry.chord.is_finite()
             && self.geometry.chord > 0.0
             && self.geometry.pivot.len() == 2
