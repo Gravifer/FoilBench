@@ -26,8 +26,11 @@ The experimental scenario uses the second path at `Re=10000`, 35 degrees of
 attack, and the compact 160×96 grid. There is no vorticity confinement,
 stochastic forcing, hard-coded vortex, or time-dependent inlet perturbation.
 Because this intentionally coarse immersed-boundary case permits strongly
-separated motion, it sets an experiment-local MAC divergence cap of `7.0`.
-That envelope covers both direct and canonical-reconstructed paired
+separated motion, it uses a pressure tolerance of `1e-4` and an
+experiment-local MAC divergence cap of `7.0`. The tighter pressure solve keeps
+the independently implemented Python and Julia projections in the same
+localized-residual regime despite their different preconditioners. The
+divergence envelope covers both direct and canonical-reconstructed paired
 trajectories. The ordinary solver-validity limit remains `1e-4`; the larger
 cap prevents a finite, rolled-back visualization trajectory from being
 mistaken for a general validation case.
