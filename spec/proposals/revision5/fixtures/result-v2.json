@@ -1,0 +1,14 @@
+{
+  "schema_version": 2, "contract_id": "foilbench-phase3-v1", "contract_revision": 5,
+  "benchmark_matrix_id": "smoke", "scenario_id": "uniform", "repetition": 1,
+  "language": "rust", "implementation": "rust", "execution_target": "native", "solver": "stable-fluids", "git_commit": "fixture",
+  "machine": {}, "precision": "float32", "resolution": [8, 8], "bounds": [[0, 1], [0, 1]], "periodic_axes": ["x", "y"],
+  "reynolds": 1000, "effective_reynolds": 1000, "solver_configuration": {}, "freestream": [1, 0],
+  "foil": {"naca": "0012", "chord": 1, "pivot": [0.25, 0.5]}, "control_history": [{"time": 0, "angle_degrees": 0}],
+  "requested_duration": 0.1, "simulated_duration": 0.1, "output_dt": 0.1, "seed": 0,
+  "initialization_seconds": 0, "cold_step_seconds": 0.01, "step_seconds": [0.01], "median_step_seconds": 0.01, "p95_step_seconds": 0.01,
+  "simulated_seconds_per_wall_second": 10, "cell_updates_per_second": 6400, "particle_updates_per_second": 0,
+  "peak_rss_bytes": null, "memory_measurement": "unavailable", "runtime_startup_seconds": 0, "worker_startup_seconds": null,
+  "substeps": 1, "final_state_revision": 1, "diagnostic_state_revision": 1, "last_step": {}, "diagnostics": {},
+  "success": true, "failure": null, "warnings": []
+}

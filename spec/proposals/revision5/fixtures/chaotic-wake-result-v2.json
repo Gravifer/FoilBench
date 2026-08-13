@@ -1,0 +1,9 @@
+{
+  "schema_version": 2, "contract_id": "foilbench-phase3-v1", "contract_revision": 5,
+  "experiment": "chaotic-wake-sensitivity", "language": "rust", "implementation": "rust", "execution_target": "native",
+  "solver": "stable-fluids", "scenario": "scenarios/airfoil/chaotic-experimental.json",
+  "parameters": {"reynolds": 10000, "angle_degrees": 25, "resolution": [160, 96], "duration": 0.1, "epsilon": 0.0001},
+  "metrics": {"initial_wake_rms_difference": 0.0000083},
+  "initialization": {"reference_import_status": "accepted", "perturbed_import_status": "accepted", "authoritative_angle_degrees": 25, "requested_epsilon": 0.0001, "realized_post_import_wake_rms_difference": 0.0000083, "realized_to_requested_ratio": 0.083},
+  "series": {"times": [0], "wake_rms_differences": [0.0000083]}, "wall_seconds": 1
+}

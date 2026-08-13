@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "contract_id": "foilbench-phase3-v1",
+  "contract_revision": 5,
+  "startup": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "steps": 1,
+    "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"]
+  },
+  "scheduled_checkpoints": {
+    "scenario": "scenarios/airfoil/default.json",
+    "solver": "stable-fluids",
+    "resolution": [160, 96],
+    "times": [5.0, 10.0, 22.0]
+  },
+  "warm_switch": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "angles_degrees": [14.0, 25.0],
+    "require_all_directed_pairs": true,
+    "validate_fresh_fallback_first_step": true
+  },
+  "preview": {
+    "scenario": "scenarios/airfoil/default.json",
+    "resolution": [160, 96],
+    "solvers": ["stable-fluids", "lbm-d2q9", "pic-flip"],
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"],
+    "minimum_development_machine_steps_per_second": 10.0,
+    "hosted_ci_records_only": true
+  },
+  "artifact_interchange": {
+    "matrix": "benchmark-matrices/smoke.json",
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"],
+    "require_every_comparer": true
+  },
+  "chaotic_extension": {
+    "fixture": "spec/conformance/chaotic-wake-cases.json",
+    "required_producers": ["python/native", "julia/native", "typescript/node", "rust/native"],
+    "preflight_before_long_run": true,
+    "minimum_probe_rms": 0.05,
+    "minimum_spectral_entropy": 0.1,
+    "minimum_broadband_power_fraction": 0.05,
+    "minimum_enstrophy_coefficient_of_variation": 0.05,
+    "maximum_dominant_power_fraction": 0.9,
+    "minimum_sensitivity_amplification": 2.0
+  },
+  "wasm_browser": {
+    "producer": "rust/wasm-browser",
+    "gates": ["protocol", "scheduled-control", "deterministic-state", "recovery", "canonical", "warm-switch", "sensitivity-preflight", "preview", "production-browser"]
+  }
+}

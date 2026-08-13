@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/chaotic-wake-result-v2.schema.json",
+  "title": "FoilBench Revision 5 chaotic-wake result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "contract_revision", "experiment", "language", "implementation", "execution_target", "solver", "scenario", "parameters", "metrics", "wall_seconds"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "contract_id": {"const": "foilbench-phase3-v1"},
+    "contract_revision": {"const": 5},
+    "experiment": {"enum": ["chaotic-wake-sweep", "chaotic-wake-sensitivity"]},
+    "language": {"enum": ["python", "julia", "typescript", "rust"]},
+    "implementation": {"enum": ["python", "julia", "typescript", "rust"]},
+    "execution_target": {"enum": ["native", "node", "browser-worker", "wasm-browser"]},
+    "solver": {"const": "stable-fluids"},
+    "scenario": {"type": "string", "minLength": 1},
+    "parameters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reynolds", "angle_degrees", "resolution", "duration"],
+      "properties": {
+        "reynolds": {"type": "number", "exclusiveMinimum": 0}, "angle_degrees": {"type": "number"},
+        "resolution": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 8}, {"type": "integer", "minimum": 8}], "items": false},
+        "duration": {"type": "number", "minimum": 0}, "burn_in": {"type": "number", "minimum": 0}, "epsilon": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "metrics": {"type": "object", "additionalProperties": {"type": "number"}},
+    "initialization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reference_import_status", "perturbed_import_status", "authoritative_angle_degrees", "requested_epsilon", "realized_post_import_wake_rms_difference", "realized_to_requested_ratio"],
+      "properties": {
+        "reference_import_status": {"const": "accepted"}, "perturbed_import_status": {"const": "accepted"},
+        "authoritative_angle_degrees": {"type": "number"}, "requested_epsilon": {"type": "number", "exclusiveMinimum": 0},
+        "realized_post_import_wake_rms_difference": {"type": "number", "exclusiveMinimum": 0},
+        "realized_to_requested_ratio": {"type": "number", "minimum": 0.02, "maximum": 0.2}
+      }
+    },
+    "series": {
+      "type": "object", "additionalProperties": false,
+      "required": ["times", "wake_rms_differences"],
+      "properties": {"times": {"type": "array", "items": {"type": "number"}}, "wake_rms_differences": {"type": "array", "items": {"type": "number"}}}
+    },
+    "wall_seconds": {"type": "number", "minimum": 0}
+  },
+  "allOf": [
+    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sensitivity"}}}, "then": {"required": ["initialization", "series"], "properties": {"parameters": {"required": ["epsilon"]}}}},
+    {"if": {"properties": {"experiment": {"const": "chaotic-wake-sweep"}}}, "then": {"properties": {"parameters": {"required": ["burn_in"]}}}}
+  ]
+}

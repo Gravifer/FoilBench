@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/acceptance-cell-v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "contract_revision", "commit", "configuration_digest", "implementation", "execution_target", "gate", "case", "thresholds", "measurements", "status", "log_file", "log_sha256"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "contract_id": {"const": "foilbench-phase3-v1"},
+    "contract_revision": {"const": 5},
+    "commit": {"type": "string", "minLength": 7},
+    "configuration_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "implementation": {"enum": ["python", "julia", "typescript", "rust"]},
+    "execution_target": {"enum": ["native", "node", "browser-worker", "wasm-browser"]},
+    "gate": {"type": "string", "minLength": 1},
+    "solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
+    "case": {"type": "string", "minLength": 1},
+    "thresholds": {"type": "object", "additionalProperties": {"type": ["number", "string", "boolean", "null"]}},
+    "measurements": {"type": "object", "minProperties": 1, "additionalProperties": {"type": ["number", "string", "boolean", "null"]}},
+    "status": {"const": "passed"},
+    "log_file": {"type": "string", "minLength": 1},
+    "log_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

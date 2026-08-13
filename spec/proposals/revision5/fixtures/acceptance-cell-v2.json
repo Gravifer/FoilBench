@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "contract_id": "foilbench-phase3-v1",
+  "contract_revision": 5,
+  "commit": "0123456789abcdef",
+  "configuration_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "implementation": "rust",
+  "execution_target": "native",
+  "gate": "startup",
+  "solver": "stable-fluids",
+  "case": "default-160x96",
+  "thresholds": {"minimum_completed_steps": 1},
+  "measurements": {"completed_steps": 1, "finite": true},
+  "status": "passed",
+  "log_file": "gate.log",
+  "log_sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+}
