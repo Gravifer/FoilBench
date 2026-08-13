@@ -12,7 +12,7 @@ function usage()
     println("Usage:")
     println("  foilbench-jl view SCENARIO [--solver SOLVER_ID]")
     println("  foilbench-jl bench MATRIX [--output DIRECTORY]")
-    println("  foilbench-jl compare RESULTS_DIRECTORY [--require-complete] [--require-languages LANGUAGES]")
+    println("  foilbench-jl compare RESULTS_DIRECTORY [--require-complete] [--require-languages LANGUAGES] [--require-producers PRODUCERS]")
     println("  foilbench-jl describe [--json]")
 end
 
@@ -40,6 +40,7 @@ function main(arguments::Vector{String})
         length(arguments) >= 2 || (println(stderr, "compare requires a results directory"); return 2)
         require_complete = false
         required_languages = String[]
+        required_producers = String[]
         index = 3
         while index <= length(arguments)
             if arguments[index] == "--require-complete"
@@ -47,6 +48,9 @@ function main(arguments::Vector{String})
                 index += 1
             elseif arguments[index] == "--require-languages" && index < length(arguments)
                 required_languages = String.(split(arguments[index + 1], ','))
+                index += 2
+            elseif arguments[index] == "--require-producers" && index < length(arguments)
+                required_producers = String.(split(arguments[index + 1], ','))
                 index += 2
             else
                 println(stderr, "unexpected compare argument: $(arguments[index])")
@@ -57,6 +61,7 @@ function main(arguments::Vector{String})
             arguments[2];
             require_complete,
             required_languages,
+            required_producers,
         ))
         return 0
     elseif command == "bench"

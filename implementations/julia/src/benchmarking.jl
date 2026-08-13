@@ -566,17 +566,29 @@ end
 
 function collect_benchmark_results(directory::AbstractString)
     results = Dict{String,Any}[]
-    schema_path = joinpath(find_repository_root(@__DIR__), "spec", "schemas", "result.schema.json")
+    root_directory = find_repository_root(@__DIR__)
+    schema_paths = Dict(
+        1 => joinpath(root_directory, "spec", "schemas", "result.schema.json"),
+        2 => joinpath(root_directory, "spec", "proposals", "revision5", "schemas", "result-v2.schema.json"),
+    )
     for (root, _, files) in walkdir(directory), file in sort(files)
         endswith(file, ".json") || continue
         value = JSON3.read(read(joinpath(root, file), String), Dict{String,Any})
-        if get(value, "schema_version", 0) == 1 && haskey(value, "solver") &&
+        version = Int(get(value, "schema_version", 0))
+        if haskey(schema_paths, version) && haskey(value, "solver") &&
             haskey(value, "benchmark_matrix_id") && haskey(value, "success")
-            validate_benchmark_result(value, schema_path)
+            validate_benchmark_result(value, schema_paths[version])
             push!(results, value)
         end
     end
     return results
+end
+
+function _benchmark_producer(result::AbstractDict)
+    implementation = String(get(result, "implementation", result["language"]))
+    target = haskey(result, "execution_target") ? String(result["execution_target"]) :
+        implementation == "typescript" ? "browser-worker" : "native"
+    return "$implementation/$target"
 end
 
 const _BENCHMARK_IDENTITY_FIELDS = (
@@ -634,6 +646,7 @@ end
 function _assert_complete_benchmark_matrices(
     results::Vector{Dict{String,Any}},
     required_languages::Vector{String} = String[],
+    required_producers::Vector{String} = String[],
 )
     root = find_repository_root(@__DIR__)
     matrix_paths = Dict{String,String}()
@@ -644,14 +657,17 @@ function _assert_complete_benchmark_matrices(
     end
     grouped = Dict{Tuple{String,String},Vector{Dict{String,Any}}}()
     for result in results
-        key = (String(result["benchmark_matrix_id"]), String(result["language"]))
+        key = (
+            String(result["benchmark_matrix_id"]),
+            isempty(required_producers) ? String(result["language"]) : _benchmark_producer(result),
+        )
         push!(get!(grouped, key, Dict{String,Any}[]), result)
     end
     matrix_ids = Set(String(result["benchmark_matrix_id"]) for result in results)
-    languages = isempty(required_languages) ?
+    producers = !isempty(required_producers) ? Set(required_producers) : isempty(required_languages) ?
         Set(String(result["language"]) for result in results) : Set(required_languages)
-    for matrix_id in matrix_ids, language in languages
-        selected = get(grouped, (matrix_id, language), Dict{String,Any}[])
+    for matrix_id in matrix_ids, producer in producers
+        selected = get(grouped, (matrix_id, producer), Dict{String,Any}[])
         haskey(matrix_paths, matrix_id) ||
             throw(ArgumentError("cannot verify completeness of unknown matrix $matrix_id"))
         matrix = load_benchmark_matrix(matrix_paths[matrix_id])
@@ -671,15 +687,33 @@ function _assert_complete_benchmark_matrices(
         ]
         observed = Set(observed_values)
         length(observed) == length(observed_values) ||
-            throw(ArgumentError("duplicate $language artifacts for matrix $matrix_id"))
+            throw(ArgumentError("duplicate $producer artifacts for matrix $matrix_id"))
         missing = setdiff(expected, observed)
         extra = setdiff(observed, expected)
         failed = count(result -> result["success"] !== true, selected)
         isempty(missing) && isempty(extra) && failed == 0 || throw(ArgumentError(
-            "incomplete $language artifacts for matrix $matrix_id: " *
+            "incomplete $producer artifacts for matrix $matrix_id: " *
             "missing=$(collect(missing)) extra=$(collect(extra)) failed=$failed",
         ))
     end
+    return nothing
+end
+
+
+function _assert_required_benchmark_producers(
+    results::Vector{Dict{String,Any}},
+    required_producers::Vector{String},
+)
+    isempty(required_producers) && throw(ArgumentError("required producers must be non-empty"))
+    length(Set(required_producers)) == length(required_producers) ||
+        throw(ArgumentError("required producers must be unique"))
+    expected = Set(required_producers)
+    observed = Set(_benchmark_producer(result) for result in results)
+    expected == observed || throw(ArgumentError(
+        "benchmark producer/target roster mismatch: " *
+        "missing=$(sort!(collect(setdiff(expected, observed)))) " *
+        "extra=$(sort!(collect(setdiff(observed, expected))))",
+    ))
     return nothing
 end
 
@@ -704,15 +738,18 @@ function format_benchmark_comparison(
     directory::AbstractString;
     require_complete::Bool = false,
     required_languages::Vector{String} = String[],
+    required_producers::Vector{String} = String[],
 )
     results = collect_benchmark_results(directory)
-    isempty(results) && (require_complete || !isempty(required_languages)) &&
+    isempty(results) && (require_complete || !isempty(required_languages) || !isempty(required_producers)) &&
         throw(ArgumentError("strict benchmark comparison found no result artifacts"))
     isempty(results) && return "No benchmark result JSON files found."
     _assert_matched_benchmark_identities(results)
     isempty(required_languages) ||
         _assert_required_benchmark_languages(results, required_languages)
-    require_complete && _assert_complete_benchmark_matrices(results, required_languages)
+    isempty(required_producers) ||
+        _assert_required_benchmark_producers(results, required_producers)
+    require_complete && _assert_complete_benchmark_matrices(results, required_languages, required_producers)
     header = rpad("language", 12) * rpad("solver", 20) * lpad("median ms", 12) *
         lpad("p95 ms", 12) * lpad("sim/wall", 12) * lpad("success", 10)
     lines = [header, repeat('-', length(header))]
