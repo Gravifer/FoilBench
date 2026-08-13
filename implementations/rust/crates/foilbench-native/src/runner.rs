@@ -16,8 +16,8 @@ use std::{
 };
 
 use foilbench_core::{
-    EvidenceValue, FlowScalar, FlowSolver, LbmD2q9, NacaFoil, Precision, Scenario, StableFluids,
-    StepReport,
+    EvidenceValue, FlowScalar, FlowSolver, LbmD2q9, NacaFoil, PicFlip, Precision, Scenario,
+    StableFluids, StepReport,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -121,6 +121,7 @@ fn run_typed<T: FlowScalar>(
     let mut solver: Box<dyn FlowSolver<T>> = match solver_id {
         "stable-fluids" => Box::new(StableFluids::<T>::new("native")),
         "lbm-d2q9" => Box::new(LbmD2q9::<T>::new("native")),
+        "pic-flip" => Box::new(PicFlip::<T>::new("native")),
         _ => return Err(format!("unsupported Rust solver {solver_id}")),
     };
     let initialization_started = Instant::now();
@@ -287,9 +288,9 @@ pub fn run_matrix(resolver: &ResourceResolver, options: &BenchOptions) -> Result
     if solvers.is_empty()
         || solvers
             .iter()
-            .any(|solver| !matches!(solver.as_str(), "stable-fluids" | "lbm-d2q9"))
+            .any(|solver| !matches!(solver.as_str(), "stable-fluids" | "lbm-d2q9" | "pic-flip"))
     {
-        return Err("this milestone implements stable-fluids and lbm-d2q9".into());
+        return Err("this milestone implements stable-fluids, lbm-d2q9, and pic-flip".into());
     }
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

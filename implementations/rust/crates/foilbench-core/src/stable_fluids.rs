@@ -82,6 +82,13 @@ struct StableState<T: FlowScalar> {
 }
 
 #[derive(Clone)]
+pub(crate) struct ParticleGridSnapshot<T: FlowScalar> {
+    pub velocity: MacGrid2<T>,
+    pub solid: crate::field::ScalarField2<u8>,
+    pub control: ControlState,
+}
+
+#[derive(Clone)]
 pub struct StableFluids<T: FlowScalar> {
     info: SolverInfo,
     execution_target: String,
@@ -117,6 +124,108 @@ impl<T: FlowScalar> StableFluids<T> {
     #[must_use]
     pub fn current_reynolds(&self) -> Option<f64> {
         self.state.as_ref().map(|state| state.reynolds)
+    }
+
+    pub(crate) fn particle_grid_snapshot(&self) -> Result<ParticleGridSnapshot<T>, SolverError> {
+        let state = self.state()?;
+        Ok(ParticleGridSnapshot {
+            velocity: state.velocity.clone(),
+            solid: state.geometry_fields.solid.clone(),
+            control: state.control,
+        })
+    }
+
+    pub(crate) fn stage_particle_faces(
+        &mut self,
+        velocity: MacGrid2<T>,
+    ) -> Result<(), SolverError> {
+        let state = self.state.as_mut().ok_or_else(|| {
+            SolverError::new(
+                FailureReason::UnsupportedConversion,
+                FailureStage::Initialization,
+                "Stable Fluids has not been initialized",
+            )
+        })?;
+        if (velocity.nx(), velocity.ny()) != (state.domain.nx(), state.domain.ny())
+            || !velocity.is_finite()
+        {
+            return Err(SolverError::new(
+                FailureReason::TransferFailure,
+                FailureStage::ParticleTransfer,
+                "particle transfer produced an invalid MAC grid",
+            ));
+        }
+        state.velocity = velocity;
+        Ok(())
+    }
+
+    pub(crate) fn advance_particle_grid(
+        &mut self,
+        control: ControlState,
+        dt: f64,
+    ) -> Result<(ProjectionReport, DiffusionReport), SolverError> {
+        let state = self.state.as_mut().ok_or_else(|| {
+            SolverError::new(
+                FailureReason::UnsupportedConversion,
+                FailureStage::Initialization,
+                "Stable Fluids has not been initialized",
+            )
+        })?;
+        if !dt.is_finite() || dt <= 0.0 {
+            return Err(SolverError::new(
+                FailureReason::TimeContractFailure,
+                FailureStage::TimeMapping,
+                "particle-grid interval must be finite and positive",
+            ));
+        }
+        state.geometry_fields = rasterize_geometry(&state.geometry, state.domain, control);
+        let freestream = [
+            state.scenario.freestream()[0],
+            state.scenario.freestream()[1],
+        ];
+        let poiseuille = Self::is_poiseuille(&state.scenario);
+        apply_domain_boundaries(&mut state.velocity, state.domain, freestream, poiseuille);
+        enforce_solid_faces(
+            &mut state.velocity,
+            &state.geometry_fields.solid,
+            &state.geometry_fields.wall_velocity,
+        );
+        state.last_diffusion = diffuse_mac(
+            &mut state.velocity,
+            state.domain,
+            &state.geometry_fields.solid,
+            &state.geometry_fields.wall_velocity,
+            1.0 / state.reynolds,
+            dt,
+            Self::option_f64(&state.scenario, "viscosity_tolerance", 1.0e-5)?,
+            Self::option_usize(&state.scenario, "viscosity_max_iterations", 640)?,
+            freestream,
+            poiseuille,
+        )?;
+        state.last_projection = project_incompressible(
+            &mut state.velocity,
+            state.domain,
+            &state.geometry_fields.solid,
+            dt,
+            Self::option_f64(&state.scenario, "pressure_tolerance", 1.0e-5)?,
+            Self::option_usize(&state.scenario, "pressure_max_iterations", 640)?,
+            freestream,
+            poiseuille,
+        )?;
+        enforce_solid_faces(
+            &mut state.velocity,
+            &state.geometry_fields.solid,
+            &state.geometry_fields.wall_velocity,
+        );
+        if !state.velocity.is_finite() {
+            return Err(SolverError::new(
+                FailureReason::NonfiniteState,
+                FailureStage::Postcondition,
+                "particle-grid projection produced non-finite velocity",
+            ));
+        }
+        state.control = control;
+        Ok((state.last_projection, state.last_diffusion))
     }
 
     /// Select a transport mode without advancing physical time.

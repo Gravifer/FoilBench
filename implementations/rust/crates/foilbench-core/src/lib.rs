@@ -8,6 +8,7 @@ pub mod implementation;
 pub mod lbm;
 pub mod metrics;
 pub mod pcg32;
+pub mod pic_flip;
 pub mod projection;
 pub mod raster;
 pub mod scenario;
@@ -29,6 +30,7 @@ pub use implementation::{ExecutionTarget, ImplementationDescription, implementat
 pub use lbm::{LbmD2q9, convective_outlet_population, lbm_sponge_strength};
 pub use metrics::{FlowMetrics, compute_flow_metrics};
 pub use pcg32::Pcg32;
+pub use pic_flip::PicFlip;
 pub use projection::{ProjectionReport, project_incompressible};
 pub use raster::{GeometryFields2, rasterize_geometry};
 pub use scenario::{ControlState, Precision, Scenario, ScenarioError};
