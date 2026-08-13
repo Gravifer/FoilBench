@@ -17,7 +17,9 @@ $configuration = @(
     'scenarios/airfoil/default.json'
 )
 $digestInput = foreach ($path in $configuration) {
-    (Get-FileHash -LiteralPath (Join-Path $root $path) -Algorithm SHA256).Hash.ToLowerInvariant()
+    $blob = (& git -C $root rev-parse "$commit`:$path").Trim()
+    if ($LASTEXITCODE -ne 0) { throw "cannot identify acceptance input $path at $commit" }
+    "$path`0$blob"
 }
 $configurationDigest = [Convert]::ToHexString(
     [Security.Cryptography.SHA256]::HashData(

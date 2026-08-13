@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from types import ModuleType
 
@@ -17,11 +18,7 @@ def _module(root: Path) -> ModuleType:
 
 
 def _roster(root: Path, repository: Path, commit: str, module: ModuleType) -> None:
-    hashes = [
-        hashlib.sha256((repository / path).read_bytes()).hexdigest()
-        for path in module.CONFIGURATION
-    ]
-    digest = hashlib.sha256("\n".join(hashes).encode()).hexdigest()
+    digest = module.configuration_digest(repository, commit)
     for (producer, gate), target in module.TARGETS.items():
         directory = root / producer / gate
         directory.mkdir(parents=True)
@@ -44,19 +41,31 @@ def _roster(root: Path, repository: Path, commit: str, module: ModuleType) -> No
 def test_acceptance_aggregator_requires_twelve_distinct_cells(tmp_path: Path) -> None:
     repository = Path(__file__).resolve().parents[4]
     module = _module(repository)
-    _roster(tmp_path, repository, "abc123", module)
-    module.validate_cells(tmp_path, "abc123", repository)
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _roster(tmp_path, repository, commit, module)
+    module.validate_cells(tmp_path, commit, repository)
 
     missing = tmp_path / "typescript" / "preview" / "cell.json"
     missing.unlink()
     with pytest.raises(ValueError, match="roster mismatch"):
-        module.validate_cells(tmp_path, "abc123", repository)
+        module.validate_cells(tmp_path, commit, repository)
 
 
 def test_acceptance_aggregator_rejects_log_tampering(tmp_path: Path) -> None:
     repository = Path(__file__).resolve().parents[4]
     module = _module(repository)
-    _roster(tmp_path, repository, "abc123", module)
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _roster(tmp_path, repository, commit, module)
     (tmp_path / "python" / "startup" / "gate.log").write_text("changed", encoding="utf-8")
     with pytest.raises(ValueError, match="log digest mismatch"):
-        module.validate_cells(tmp_path, "abc123", repository)
+        module.validate_cells(tmp_path, commit, repository)

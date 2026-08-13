@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 LANGUAGES = ("python", "julia", "typescript")
@@ -26,9 +27,21 @@ TARGETS = {
 }
 
 
+def configuration_digest(repository: Path, commit: str) -> str:
+    identities: list[str] = []
+    for path in CONFIGURATION:
+        blob = subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", f"{commit}:{path}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        identities.append(f"{path}\0{blob}")
+    return hashlib.sha256("\n".join(identities).encode()).hexdigest()
+
+
 def validate_cells(root: Path, commit: str, repository: Path) -> None:
-    hashes = [hashlib.sha256((repository / path).read_bytes()).hexdigest() for path in CONFIGURATION]
-    digest = hashlib.sha256("\n".join(hashes).encode()).hexdigest()
+    digest = configuration_digest(repository, commit)
     observed: set[tuple[str, str]] = set()
     for path in root.rglob("cell.json"):
         cell = json.loads(path.read_text(encoding="utf-8"))
