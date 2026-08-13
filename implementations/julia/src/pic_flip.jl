@@ -3,6 +3,7 @@ const PIC_FLIP_INFO = SolverInfo(
     "Blended PIC/FLIP",
     (2,),
     true,
+    (:float32, :float64),
     :julia_cpu,
 )
 
@@ -283,10 +284,7 @@ end
 function _pic_resolve_collisions!(solver::PicFlipSolver{T}, control::ControlState) where {T}
     scenario, geometry = _pic_require(solver)
     margin = T(1.0e-4) * scenario.foil.chord
-    radius = hypot(
-        T(0.75) * scenario.foil.chord,
-        (maximum_camber(geometry) + T(0.51) * thickness(geometry)) * scenario.foil.chord,
-    ) + margin
+    radius = maximum_radius(geometry) + margin
     radius_squared = radius^2
     pivot_x = scenario.foil.pivot[1]
     pivot_y = scenario.foil.pivot[2]
@@ -307,10 +305,7 @@ function _pic_resolve_swept!(
     control::ControlState,
 ) where {T}
     scenario, geometry = _pic_require(solver)
-    radius = hypot(
-        T(0.75) * scenario.foil.chord,
-        (maximum_camber(geometry) + T(0.51) * thickness(geometry)) * scenario.foil.chord,
-    )
+    radius = maximum_radius(geometry)
     margin = T(0.05) * min(dx(scenario.domain), dy(scenario.domain))
     collisions = 0
     for particle in axes(solver.positions, 2)
@@ -584,8 +579,7 @@ function _advance_pic_once!(
     boundary_angular_velocity = T(control.angular_velocity_degrees)
     pose_sweep_angular_velocity =
         (T(control.angle_degrees) - solver.control.angle_degrees) / target
-    radius = hypot(T(0.75) * scenario.foil.chord,
-        (maximum_camber(geometry) + T(0.51) * thickness(geometry)) * scenario.foil.chord)
+    radius = maximum_radius(geometry)
     wall_speed = radius * max(
         abs(T(deg2rad(boundary_angular_velocity))),
         abs(T(deg2rad(pose_sweep_angular_velocity))),

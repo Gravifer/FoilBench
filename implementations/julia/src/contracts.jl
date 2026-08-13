@@ -5,6 +5,7 @@ struct SolverInfo
     display_name::String
     dimensions::Tuple{Vararg{Int}}
     supports_moving_boundary::Bool
+    supported_precisions::Tuple{Vararg{Symbol}}
     acceleration::Symbol
 end
 
@@ -163,11 +164,15 @@ adjust_interactive_tuning!(::AbstractFlowSolver, ::Integer) = nothing
 apply_interactive_tuning!(::AbstractFlowSolver, ::InteractiveTuningValue) = nothing
 
 function supports(info::SolverInfo, scenario)
-    return dimension(scenario) in info.dimensions
+    return dimension(scenario) in info.dimensions && scenario.precision in info.supported_precisions
 end
 
 function require_supported(info::SolverInfo, scenario)
     supports(info, scenario) && return nothing
-    supported = join(info.dimensions, ", ")
-    throw(ArgumentError("$(info.id) supports dimensions [$supported], not $(dimension(scenario))D"))
+    dimensions = join(info.dimensions, ", ")
+    precisions = join(String.(info.supported_precisions), ", ")
+    throw(ArgumentError(
+        "$(info.id) supports dimensions [$dimensions] and precisions [$precisions], " *
+        "not $(dimension(scenario))D/$(scenario.precision)",
+    ))
 end

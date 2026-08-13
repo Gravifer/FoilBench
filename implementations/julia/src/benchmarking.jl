@@ -83,6 +83,7 @@ function describe_implementation()
             "display_name" => info.display_name,
             "dimensions" => collect(info.dimensions),
             "moving_boundary" => info.supports_moving_boundary,
+            "supported_precisions" => String.(info.supported_precisions),
             "acceleration" => String(info.acceleration),
         ))
     end

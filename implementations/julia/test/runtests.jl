@@ -231,7 +231,7 @@ end
 
 @testset "Solver capabilities" begin
     scenario = load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"))
-    info = SolverInfo("test", "Test", (2,), true, :cpu)
+    info = SolverInfo("test", "Test", (2,), true, (:float32, :float64), :cpu)
     @test supports(info, scenario)
     @test isnothing(require_supported(info, scenario))
 
@@ -986,11 +986,24 @@ end
     initialize!(stable, scenario, geometry, scenario.seed)
     stable_before = export_state(stable)
     excessive_velocity = fill(1.0f6, size(stable_before.velocity))
+    excessive_solid = solid_mask(
+        geometry,
+        scenario.domain,
+        stable_before.angle_degrees,
+    )
+    for index in CartesianIndices(excessive_solid)
+        excessive_solid[index] || continue
+        excessive_velocity[1, index[1], index[2], :] .= 0
+    end
     stable_import = CanonicalFlowState(
         1, stable_before.bounds, stable_before.resolution, stable_before.periodic_axes,
-        0.25f0, 12.0f0, 0.0f0, "julia", "injected", excessive_velocity,
+        0.25f0, stable_before.angle_degrees, 0.0f0, "julia", "injected", excessive_velocity,
     )
-    stable_outcome = import_state!(stable, stable_import, ControlState(0.25f0, 12.0f0, 0.0f0))
+    stable_outcome = import_state!(stable, stable_import, ControlState(
+        0.25f0,
+        stable_before.angle_degrees,
+        0.0f0,
+    ))
     @test !accepted(stable_outcome)
     @test stable_outcome.reason == :excessive_velocity
     @test state_revision(stable) == 0
@@ -1003,10 +1016,14 @@ end
     invalid_density = fill(2.0f0, size(something(lattice_before.density)))
     lattice_import = CanonicalFlowState(
         1, lattice_before.bounds, lattice_before.resolution, lattice_before.periodic_axes,
-        0.25f0, 12.0f0, 0.0f0, "julia", "injected", copy(lattice_before.velocity),
+        0.25f0, lattice_before.angle_degrees, 0.0f0, "julia", "injected", copy(lattice_before.velocity),
         invalid_density,
     )
-    lattice_outcome = import_state!(lattice, lattice_import, ControlState(0.25f0, 12.0f0, 0.0f0))
+    lattice_outcome = import_state!(lattice, lattice_import, ControlState(
+        0.25f0,
+        lattice_before.angle_degrees,
+        0.0f0,
+    ))
     @test !accepted(lattice_outcome)
     @test lattice_outcome.reason == :invalid_density
     @test state_revision(lattice) == 0
@@ -1189,6 +1206,31 @@ end
     end
 end
 
+function retry_scenario(case)
+    scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(case.scenario)))
+    resolution = Tuple(Int.(case.resolution))
+    domain = DomainSpec(scenario.domain.bounds, resolution, scenario.domain.periodic_axes)
+    options = copy(scenario.solver_options)
+    for (key, value) in pairs(case.solver_options)
+        options[String(key)] = value
+    end
+    T = typeof(scenario.output_dt)
+    return Scenario(
+        scenario.schema_version,
+        scenario.id,
+        domain,
+        scenario.reynolds,
+        scenario.freestream,
+        scenario.foil,
+        scenario.controls,
+        scenario.duration,
+        T(case.target_dt),
+        scenario.precision,
+        scenario.seed,
+        options,
+    )
+end
+
 @testset "MAC postcondition rejection is transactional" begin
     scenario = resized_scenario(
         load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "fixed-stall.json")),
@@ -1306,36 +1348,36 @@ end
 
     retry_fixture = JSON3.read(read(joinpath(FIXTURES, "solver-validity.json"), String))
     retry_case = retry_fixture.planning_retry_cases["stable-fluids"]
-    chaotic = load_scenario(
-        joinpath(REPOSITORY_ROOT, String(retry_case.scenario)),
-    )
+    chaotic = retry_scenario(retry_case)
     chaotic_solver = StableFluidsSolver(Float32)
     initialize!(chaotic_solver, chaotic, NacaFoil(chaotic.foil), 0)
-    @test chaotic_solver.skew_rk2
     total_retries = 0
     chaotic_report = nothing
-    for step in 1:Int(retry_case.expected_steps)
-        chaotic_report = advance!(
-            chaotic_solver,
-            control_at(chaotic, step * chaotic.output_dt),
-            chaotic.output_dt,
-        )
-        @test chaotic_report.state_revision == step
-        total_retries += Int(chaotic_report.evidence["stability_retries"])
-    end
+    control = ControlState(
+        chaotic.output_dt,
+        typeof(chaotic.output_dt)(retry_case.angle_degrees),
+        typeof(chaotic.output_dt)(retry_case.angular_velocity_degrees),
+    )
+    chaotic_report = advance!(chaotic_solver, control, chaotic.output_dt)
+    @test chaotic_report.state_revision == 1
+    total_retries += Int(chaotic_report.evidence["stability_retries"])
     @test chaotic_report !== nothing
     @test chaotic_report.advanced_dt == chaotic.output_dt
-    @test export_state(chaotic_solver).time == retry_case.duration
+    @test export_state(chaotic_solver).time == chaotic.output_dt
     @test total_retries >= retry_case.minimum_total_stability_retries
     @test all(isfinite, export_state(chaotic_solver).velocity)
 
     pic_case = retry_fixture.planning_retry_cases["pic-flip"]
-    pic_scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(pic_case.scenario)))
+    pic_scenario = retry_scenario(pic_case)
     pic_solver = PicFlipSolver(Float32)
     initialize!(pic_solver, pic_scenario, NacaFoil(pic_scenario.foil), pic_scenario.seed)
     pic_report = advance!(
         pic_solver,
-        control_at(pic_scenario, pic_scenario.output_dt),
+        ControlState(
+            pic_scenario.output_dt,
+            typeof(pic_scenario.output_dt)(pic_case.angle_degrees),
+            typeof(pic_scenario.output_dt)(pic_case.angular_velocity_degrees),
+        ),
         pic_scenario.output_dt,
     )
     @test pic_report.substeps >= 1

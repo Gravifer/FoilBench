@@ -71,6 +71,7 @@ class LBMSolver:
         display_name="D2Q9 TRT LBM",
         dimensions=(2,),
         supports_moving_boundary=True,
+        supported_precisions=("float32", "float64"),
         acceleration="Numba TRT collision + vectorized NumPy streaming",
     )
 

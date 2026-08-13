@@ -19,6 +19,8 @@ export class NacaFoil {
     this.pivotX = pivotX; this.pivotY = pivotY; this.camber = Number(spec.naca[0]) / 100; this.camberPosition = Number(spec.naca[1]) / 10; this.thickness = Number(spec.naca.slice(2)) / 100;
   }
 
+  public get maximumRadius(): number { return Math.hypot(0.75 * this.spec.chord, (this.camber + 0.51 * this.thickness) * this.spec.chord); }
+
   private updateSurfaces(x: number): void {
     const selected = Math.max(0, Math.min(1, x / this.spec.chord));
     const selected2 = selected * selected; const selected3 = selected2 * selected; const selected4 = selected2 * selected2;

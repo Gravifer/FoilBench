@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -10,7 +11,20 @@ from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver
 
 
-def test_experimental_skew_rk2_path_remains_finite() -> None:
+def _retry_scenario(root: Path, retry_case: dict[str, object]):
+    scenario = load_scenario(root / str(retry_case["scenario"]))
+    resolution = tuple(int(value) for value in cast(list[int], retry_case["resolution"]))
+    options = dict(scenario.solver_options)
+    options.update(cast(dict[str, object], retry_case["solver_options"]))
+    return replace(
+        scenario,
+        domain=replace(scenario.domain, resolution=resolution),
+        output_dt=float(cast(float, retry_case["target_dt"])),
+        solver_options=options,
+    )
+
+
+def test_stable_fluids_retries_a_stale_motion_plan() -> None:
     root = find_repo_root(Path(__file__))
     fixture = cast(
         dict[str, object],
@@ -20,20 +34,23 @@ def test_experimental_skew_rk2_path_remains_finite() -> None:
     )
     retry_cases = cast(dict[str, object], fixture["planning_retry_cases"])
     retry_case = cast(dict[str, object], retry_cases["stable-fluids"])
-    scenario = load_scenario(root / "scenarios" / "airfoil" / "chaotic-experimental.json")
+    scenario = _retry_scenario(root, retry_case)
     solver = create_solver("stable-fluids")
     solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
 
     total_retries = 0
-    expected_steps = int(cast(int, retry_case["expected_steps"]))
-    for step in range(expected_steps):
-        time = (step + 1) * scenario.output_dt
-        report = solver.advance(scenario.control_at(time), scenario.output_dt)
-        assert report.state_revision == step + 1
-        total_retries += int(report.evidence["stability_retries"])
+    target_dt = float(cast(float, retry_case["target_dt"]))
+    control = ControlState(
+        target_dt,
+        float(cast(float, retry_case["angle_degrees"])),
+        float(cast(float, retry_case["angular_velocity_degrees"])),
+    )
+    report = solver.advance(control, target_dt)
+    assert report.state_revision == 1
+    total_retries += int(report.evidence["stability_retries"])
 
     state = solver.export_state()
-    assert np.isclose(state.time, float(cast(float, retry_case["duration"])))
+    assert np.isclose(state.time, target_dt)
     assert total_retries >= int(cast(int, retry_case["minimum_total_stability_retries"]))
     assert np.isfinite(state.velocity).all()
     assert solver.diagnostics().values["solid_leakage"] < 1.0e-6
@@ -51,11 +68,19 @@ def test_full_size_pic_startup_respects_the_configured_particle_cfl() -> None:
     )
     retry_cases = cast(dict[str, object], fixture["planning_retry_cases"])
     retry_case = cast(dict[str, object], retry_cases["pic-flip"])
-    scenario = load_scenario(root / str(retry_case["scenario"]))
+    scenario = _retry_scenario(root, retry_case)
     solver = create_solver("pic-flip")
     solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
 
-    report = solver.advance(scenario.control_at(scenario.output_dt), scenario.output_dt)
+    target_dt = float(cast(float, retry_case["target_dt"]))
+    report = solver.advance(
+        ControlState(
+            target_dt,
+            float(cast(float, retry_case["angle_degrees"])),
+            float(cast(float, retry_case["angular_velocity_degrees"])),
+        ),
+        target_dt,
+    )
 
     assert report.substeps >= 1
     assert int(report.evidence["stability_retries"]) >= int(

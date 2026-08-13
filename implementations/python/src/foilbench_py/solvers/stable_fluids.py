@@ -122,6 +122,7 @@ class StableFluidsSolver:
         display_name="Stable Fluids (MAC)",
         dimensions=(2,),
         supports_moving_boundary=True,
+        supported_precisions=("float32", "float64"),
         acceleration="NumPy + SciPy matrix-free CG",
     )
 

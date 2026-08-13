@@ -220,6 +220,7 @@ class SolverInfo:
     display_name: str
     dimensions: tuple[int, ...]
     supports_moving_boundary: bool
+    supported_precisions: tuple[str, ...]
     acceleration: str
 
 

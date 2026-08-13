@@ -88,6 +88,7 @@ export implicit_diffuse_velocity
 export initialize!
 export restart!
 export kinetic_energy
+export maximum_radius
 export lbm_equilibrium
 export lbm_macroscopic
 export lbm_scaling

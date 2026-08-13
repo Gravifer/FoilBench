@@ -24,6 +24,10 @@ camber_position(foil::NacaFoil{D,T}) where {D,T} =
     T(parse(Int, foil.spec.naca[2:2])) / T(10)
 thickness(foil::NacaFoil{D,T}) where {D,T} =
     T(parse(Int, foil.spec.naca[3:4])) / T(100)
+maximum_radius(foil::NacaFoil{D,T}) where {D,T} = hypot(
+    T(0.75) * foil.spec.chord,
+    (maximum_camber(foil) + T(0.51) * thickness(foil)) * foil.spec.chord,
+)
 
 function surfaces(foil::NacaFoil{D,T}, x_local::AbstractVector{T}) where {D,T}
     chord = foil.spec.chord

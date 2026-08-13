@@ -83,6 +83,7 @@ export class StableFluidsSolver implements FlowSolver {
     return this.interactiveTuning();
   }
   private requireScenario(): Scenario { if (this.scenario === null) throw new Error("solver is not initialized"); return this.scenario; }
+  private requireFoil(): NacaFoil { if (this.foil === null) throw new Error("foil is missing"); return this.foil; }
 
   private updateSolid(control: ControlState): void {
     const scenario = this.requireScenario(); const foil = this.foil; if (foil === null) throw new Error("foil is missing");
@@ -269,7 +270,7 @@ export class StableFluidsSolver implements FlowSolver {
   }
 
   private motionEvidence(maxSpeed: number, substepDt: number, control: ControlState, angleDeltaDegrees: number): Readonly<Record<string, number | boolean>> {
-    const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const omega = Math.abs(control.angularVelocityDegrees) * Math.PI / 180; const maximumWallSpeed = omega * scenario.foil.chord; const fluidCfl = substepDt * maxSpeed * (1 / dx + 1 / dy); const displacement = substepDt * maxSpeed / Math.min(dx, dy); const boundarySweep = scenario.foil.chord * Math.abs(angleDeltaDegrees) * Math.PI / (180 * Math.min(dx, dy));
+    const scenario = this.requireScenario(); const {dx, dy} = dimensions(scenario.domain); const radius = this.requireFoil().maximumRadius; const omega = Math.abs(control.angularVelocityDegrees) * Math.PI / 180; const maximumWallSpeed = omega * radius; const fluidCfl = substepDt * maxSpeed * (1 / dx + 1 / dy); const displacement = substepDt * maxSpeed / Math.min(dx, dy); const boundarySweep = radius * Math.abs(angleDeltaDegrees) * Math.PI / (180 * Math.min(dx, dy));
     return {maximum_fluid_speed: maxSpeed, maximum_wall_speed: maximumWallSpeed, maximum_cfl: fluidCfl, maximum_characteristic_displacement: displacement, maximum_boundary_sweep: boundarySweep, pressure_converged: this.lastProjection.converged, pressure_iterations: this.lastProjection.iterations, pressure_relative_residual: this.lastProjection.relativeResidual, divergence_linf: this.lastProjection.divergenceLinf, solid_leakage: this.solidFaceLeakage(control), viscosity_converged: this.lastViscosity.converged, viscosity_iterations: this.lastViscosity.iterations, viscosity_final_residual: this.lastViscosity.finalResidual, requested_reynolds: this.reynolds, effective_reynolds: this.reynolds, degraded_motion: maximumWallSpeed === 0 && Math.abs(angleDeltaDegrees) > 1e-9};
   }
 
@@ -284,9 +285,10 @@ export class StableFluidsSolver implements FlowSolver {
     const configuredCfl = scenario.solverOptions.stableCfl ?? 0.7;
     const cfl = this.transportMode === "skew-rk2" ? Math.min(configuredCfl, 0.4) : configuredCfl;
     const angleDelta = control.angleDegrees - this.control.angleDegrees;
-    const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * scenario.foil.chord;
+    const radius = this.requireFoil().maximumRadius;
+    const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * radius;
     const spacing = Math.min(dx, dy);
-    const sweepCells = scenario.foil.chord * Math.abs(angleDelta) * Math.PI / (180 * spacing);
+    const sweepCells = radius * Math.abs(angleDelta) * Math.PI / (180 * spacing);
     let fluidRate = this.transportMode === "skew-rk2" ? this.skewFaceAdvectionRate(this.u, this.v) : maxSpeed / spacing;
     const required = Math.max(targetDt * fluidRate / cfl, targetDt * wallSpeed / (cfl * spacing), sweepCells / cfl);
     let substeps = Math.max(1, Math.ceil(required));

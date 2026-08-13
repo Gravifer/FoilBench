@@ -3,6 +3,7 @@ const LBM_D2Q9_INFO = SolverInfo(
     "D2Q9 TRT LBM",
     (2,),
     true,
+    (:float32, :float64),
     :julia_cpu,
 )
 
@@ -559,10 +560,10 @@ function _advance_lbm_once!(
     )
     current_velocity = cell_velocity(solver)
     current_maximum = _maximum_speed(current_velocity)
-    maximum_radius = geometry.spec.chord
-    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius
+    radius = maximum_radius(geometry)
+    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * radius
     sweep_speed = abs(deg2rad(T(control.angle_degrees) - solver.control.angle_degrees)) *
-        maximum_radius / target
+        radius / target
     maximum_physical_speed = max(
         current_maximum, solver.reference_speed, wall_speed, sweep_speed,
     )
@@ -751,7 +752,7 @@ function import_state!(
         validate_canonical_import(state, scenario, control)
         physical = T.(canonical_to_cell(state))
         maximum_speed = _maximum_speed(physical)
-        wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * geometry.spec.chord
+        wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius(geometry)
         _lbm_configure_import_scaling!(
             solver,
             max(maximum_speed, wall_speed, solver.reference_speed),

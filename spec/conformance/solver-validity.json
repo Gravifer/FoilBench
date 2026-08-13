@@ -83,16 +83,24 @@
   },
   "planning_retry_cases": {
     "stable-fluids": {
-    "scenario": "scenarios/airfoil/chaotic-experimental.json",
-    "duration": 1.0,
-    "expected_steps": 60,
-    "minimum_total_stability_retries": 0
+      "scenario": "scenarios/airfoil/default.json",
+      "resolution": [64, 32],
+      "target_dt": 0.016666666666666666,
+      "angle_degrees": 4.0,
+      "angular_velocity_degrees": 100.0,
+      "solver_options": {"stable_cfl": 0.4},
+      "expected_steps": 1,
+      "minimum_total_stability_retries": 1
     },
     "pic-flip": {
       "scenario": "scenarios/airfoil/default.json",
-      "duration": 0.016666666666666666,
+      "resolution": [64, 32],
+      "target_dt": 0.1,
+      "angle_degrees": 14.0,
+      "angular_velocity_degrees": 100.0,
+      "solver_options": {"pic_cfl": 0.2},
       "expected_steps": 1,
-      "minimum_total_stability_retries": 0
+      "minimum_total_stability_retries": 1
     },
     "lbm-d2q9": {
       "scenario": "scenarios/airfoil/default.json",

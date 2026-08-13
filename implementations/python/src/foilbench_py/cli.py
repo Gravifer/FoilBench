@@ -71,6 +71,7 @@ def _describe(as_json: bool) -> None:
                 "display_name": info.display_name,
                 "dimensions": info.dimensions,
                 "moving_boundary": info.supports_moving_boundary,
+                "supported_precisions": info.supported_precisions,
                 "acceleration": info.acceleration,
             }
         )

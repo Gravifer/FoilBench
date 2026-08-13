@@ -138,6 +138,7 @@ class PicFlipSolver:
         display_name="Blended PIC/FLIP",
         dimensions=(2,),
         supports_moving_boundary=True,
+        supported_precisions=("float32", "float64"),
         acceleration="Numba quadratic transfer + NumPy/SciPy grid",
     )
 

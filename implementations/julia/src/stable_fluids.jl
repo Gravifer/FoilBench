@@ -3,6 +3,7 @@ const STABLE_FLUIDS_INFO = SolverInfo(
     "Stable Fluids (MAC)",
     (2,),
     true,
+    (:float32, :float64),
     :julia_cpu,
 )
 
@@ -215,6 +216,11 @@ function _project!(solver::StableFluidsSolver{T}, timestep::T) where {T}
     projection_cfl <= projection_limit || throw(NumericalFailure(
         :excessive_velocity,
         "Stable Fluids projection CFL $projection_cfl exceeds $projection_limit",
+        :projection,
+        Dict{String,Any}(
+            "projection_cfl" => projection_cfl,
+            "maximum_projection_cfl" => projection_limit,
+        ),
     ))
     channel_walls = option(scenario, "initial_condition", "") == "poiseuille"
     tolerance = option(scenario, "pressure_tolerance", T(1.0e-5))
@@ -302,10 +308,10 @@ function advance!(
     cfl = option(scenario, "stable_cfl", T(0.7))
     solver.skew_rk2 && (cfl = min(cfl, T(0.4)))
     spacing = min(dx(scenario.domain), dy(scenario.domain))
-    maximum_radius = geometry.spec.chord
-    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * maximum_radius
+    radius = maximum_radius(geometry)
+    wall_speed = abs(deg2rad(T(control.angular_velocity_degrees))) * radius
     sweep_cells = abs(deg2rad(T(control.angle_degrees) - solver.control.angle_degrees)) *
-        maximum_radius / spacing
+        radius / spacing
     advective_rate = solver.skew_rk2 ?
         skew_face_advection_rate(solver.u, solver.v, scenario.domain) :
         maximum_speed / spacing
@@ -399,12 +405,27 @@ function advance!(
                 skew_face_advection_rate(solver.u, solver.v, scenario.domain) :
                 final_speed / spacing
             accepted_measure = timestep * advective_rate
-        catch
+        catch error
             solver.u = copy(checkpoint[1])
             solver.v = copy(checkpoint[2])
             solver.solid = copy(checkpoint[3])
             solver.control, solver.time, solver.projection_iterations,
                 solver.diffusion_iterations, solver.revision = checkpoint[4:end]
+            if error isa NumericalFailure && error.reason == :excessive_velocity &&
+                    error.stage == :projection
+                observed = get(error.evidence, "projection_cfl", NaN)
+                limit = get(error.evidence, "maximum_projection_cfl", NaN)
+                isfinite(observed) && isfinite(limit) && observed > limit > 0 || rethrow()
+                next_substeps = max(
+                    substeps + 1,
+                    ceil(Int, T(1.05) * T(substeps) * T(observed) / T(limit)),
+                )
+                next_substeps <= 512 || rethrow()
+                stability_retries += 1
+                substeps = next_substeps
+                timestep = target / T(substeps)
+                continue
+            end
             rethrow()
         end
         accepted_measure <= cfl * (one(T) + T(1.0e-6)) && break
