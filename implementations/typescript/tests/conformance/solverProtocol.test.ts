@@ -87,6 +87,13 @@ describe("shared solver protocol", () => {
     }
   });
 
+  for (const solverId of solverIds) it(`${solverId} rejects nonzero velocity at authoritative solid cells`, async () => {
+    const scenario = await airfoilScenario(); const source = createSolver("stable-fluids"); source.initialize(scenario, 0); const state = source.exportState(); const velocity = state.velocity.slice() as typeof state.velocity; const foil = new NacaFoil(scenario.foil); const {nx, ny, dx, dy} = dimensions(scenario.domain); const {x: bx, y: by} = bounds2d(scenario.domain); let changed = 0;
+    for (let y = 0; y < ny && changed === 0; y += 1) for (let x = 0; x < nx && changed === 0; x += 1) if (foil.signedDistance(bx[0] + (x + 0.5) * dx, by[0] + (y + 0.5) * dy, state.angleDegrees) <= 0) { velocity[2 * (y * nx + x)] = 0.125; changed += 1; }
+    expect(changed).toBe(1); const destination = createSolver(solverId); destination.initialize(scenario, 0); const before = destination.exportState(); const outcome = destination.importState({...state, velocity}, {time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: state.angularVelocityDegrees});
+    expect(outcome.status).toBe("rejected"); expect(outcome.reason).toBe("postcondition_failure"); expect(outcome.stage).toBe("canonical-import"); expect(Number(outcome.evidence["nonzero_solid_cells"])).toBeGreaterThan(0); expect(destination.stateRevision).toBe(0); expect([...destination.exportState().velocity]).toEqual([...before.velocity]);
+  });
+
   for (const solverId of solverIds) it(`${solverId} rejects non-finite pose controls without mutation`, async () => {
     const scenario = await uniformScenario(); const solver = createSolver(solverId); solver.initialize(scenario, 0);
     const before = solver.exportState(); const revision = solver.stateRevision;

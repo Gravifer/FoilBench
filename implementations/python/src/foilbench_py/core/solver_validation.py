@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 
+from foilbench_py.core.geometry import NacaFoil
 from foilbench_py.core.models import (
     CanonicalFlowState,
     ControlState,
@@ -184,3 +185,20 @@ def validate_canonical_import(
                 "control_angle": control.angle_degrees,
             },
         )
+    if state.dimension == 2:
+        solid = NacaFoil(scenario.foil).mask(
+            scenario.domain,
+            control.angle_degrees,
+        )
+        if np.any(state.velocity[0][solid] != 0.0):
+            nonzero_solid_cells = int(
+                np.count_nonzero(
+                    np.any(state.velocity[0][solid] != 0.0, axis=1)
+                )
+            )
+            raise NumericalFailure(
+                "postcondition_failure",
+                "canonical solid-cell velocity must be exactly zero",
+                "canonical-import",
+                {"nonzero_solid_cells": nonzero_solid_cells},
+            )

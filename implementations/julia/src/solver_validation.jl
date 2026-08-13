@@ -126,5 +126,21 @@ function validate_canonical_import(
             "control_angle" => control.angle_degrees,
         ),
     ))
+    if StateD == 2
+        geometry = NacaFoil(scenario.foil)
+        solid = solid_mask(geometry, scenario.domain, control.angle_degrees)
+        nonzero = 0
+        for j in 1:state.resolution[2], i in 1:state.resolution[1]
+            solid[i, j] || continue
+            any(state.velocity[1, j, i, component] != zero(S) for component in 1:StateD) &&
+                (nonzero += 1)
+        end
+        nonzero == 0 || throw(NumericalFailure(
+            :postcondition_failure,
+            "canonical solid-cell velocity must be exactly zero",
+            Symbol("canonical-import"),
+            Dict{String,Any}("nonzero_solid_cells" => nonzero),
+        ))
+    end
     return nothing
 end

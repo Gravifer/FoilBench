@@ -179,6 +179,38 @@ def test_import_revalidates_mutated_canonical_arrays(
     _assert_same_canonical_state(destination.export_state(), before)
 
 
+@pytest.mark.parametrize("solver_id", solver_ids())
+def test_import_rejects_nonzero_velocity_at_authoritative_solid_cells(
+    solver_id: str,
+) -> None:
+    loaded = load_scenario(_REPOSITORY_ROOT / "scenarios/airfoil/default.json")
+    scenario = replace(loaded, domain=replace(loaded.domain, resolution=(64, 32)))
+    geometry = NacaFoil(scenario.foil)
+    source = StableFluidsSolver()
+    source.initialize(scenario, geometry, scenario.seed)
+    state = source.export_state()
+    solid = geometry.mask(scenario.domain, state.angle_degrees)
+    velocity = state.velocity.copy()
+    row, column = np.argwhere(solid)[0]
+    velocity[0, row, column, 0] = 0.125
+    malformed = replace(state, velocity=velocity)
+    destination = create_solver(solver_id)
+    destination.initialize(scenario, geometry, scenario.seed)
+    before = destination.export_state()
+
+    outcome = destination.import_state(
+        malformed,
+        ControlState(state.time, state.angle_degrees, state.angular_velocity_degrees),
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.reason == "postcondition_failure"
+    assert outcome.stage == "canonical-import"
+    assert int(outcome.evidence["nonzero_solid_cells"]) > 0
+    assert destination.state_revision == 0
+    _assert_same_canonical_state(destination.export_state(), before)
+
+
 @pytest.mark.parametrize("solver_type", [StableFluidsSolver, PicFlipSolver])
 def test_mac_postcondition_failure_rolls_back_atomically(
     solver_type: type[StableFluidsSolver] | type[PicFlipSolver],

@@ -889,6 +889,42 @@ end
         @test all(isfinite, export_state(destination).velocity)
     end
 
+    solid_scenario = resized_scenario(scenario, (64, 32))
+    solid_geometry = NacaFoil(solid_scenario.foil)
+    solid_source = StableFluidsSolver(Float32)
+    initialize!(solid_source, solid_scenario, solid_geometry, solid_scenario.seed)
+    solid_state = export_state(solid_source)
+    import_solid = solid_mask(
+        solid_geometry, solid_scenario.domain, solid_state.angle_degrees,
+    )
+    selected = findfirst(import_solid)
+    @test selected !== nothing
+    if selected !== nothing
+        solid_state.velocity[1, selected[2], selected[1], 1] = 0.125f0
+        for solver_type in (StableFluidsSolver, LBMSolver, PicFlipSolver)
+            destination = solver_type(Float32)
+            initialize!(
+                destination, solid_scenario, solid_geometry, solid_scenario.seed,
+            )
+            before = export_state(destination)
+            outcome = import_state!(
+                destination,
+                solid_state,
+                ControlState(
+                    solid_state.time,
+                    solid_state.angle_degrees,
+                    solid_state.angular_velocity_degrees,
+                ),
+            )
+            @test !accepted(outcome)
+            @test outcome.reason == :postcondition_failure
+            @test outcome.stage == Symbol("canonical-import")
+            @test outcome.evidence["nonzero_solid_cells"] > 0
+            @test state_revision(destination) == 0
+            @test export_state(destination).velocity == before.velocity
+        end
+    end
+
     density_source = LBMSolver(Float32)
     initialize!(density_source, scenario, geometry, scenario.seed)
     corrupted_density = export_state(density_source)

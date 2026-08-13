@@ -1,4 +1,5 @@
 import {NumericalFailure, type CanonicalFlowState, type ControlState, type ImportOutcome, type Scenario} from "./contracts.js";
+import {NacaFoil} from "./geometry.js";
 import {rejectedImport} from "./outcomes.js";
 
 const rejected = (reason: Exclude<ImportOutcome["reason"], "none">): ImportOutcome => rejectedImport(reason, "canonical-import");
@@ -68,6 +69,11 @@ export function validateCanonicalState(
     || Math.abs(state.angleDegrees - control.angleDegrees) > controlTolerance
     || Math.abs(state.angularVelocityDegrees - control.angularVelocityDegrees) > controlTolerance
   ) return rejected("time_contract_failure");
+  if (state.dimension === 2) {
+    const nx = scenario.domain.resolution[0] ?? 0; const ny = scenario.domain.resolution[1] ?? 0; const xBounds = scenario.domain.bounds[0] ?? [0, 0]; const yBounds = scenario.domain.bounds[1] ?? [0, 0]; const dx = (xBounds[1] - xBounds[0]) / nx; const dy = (yBounds[1] - yBounds[0]) / ny; const foil = new NacaFoil(scenario.foil); let nonzero = 0;
+    for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const px = xBounds[0] + (x + 0.5) * dx; const py = yBounds[0] + (y + 0.5) * dy; if (foil.signedDistance(px, py, control.angleDegrees) <= 0 && ((state.velocity[2 * (y * nx + x)] ?? 0) !== 0 || (state.velocity[2 * (y * nx + x) + 1] ?? 0) !== 0)) nonzero += 1; }
+    if (nonzero > 0) return rejectedImport("postcondition_failure", "canonical-import", {nonzero_solid_cells: nonzero});
+  }
   return null;
 }
 
