@@ -65,8 +65,8 @@ pub struct CanonicalManifestV2 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanonicalManifest {
-    V1(CanonicalManifestV1),
-    V2(CanonicalManifestV2),
+    V1(Box<CanonicalManifestV1>),
+    V2(Box<CanonicalManifestV2>),
 }
 
 impl CanonicalManifest {
@@ -83,8 +83,12 @@ impl CanonicalManifest {
             .and_then(Value::as_u64)
             .ok_or(CanonicalManifestError::MissingVersion)?;
         let manifest = match version {
-            1 => Self::V1(serde_json::from_value(value).map_err(CanonicalManifestError::Json)?),
-            2 => Self::V2(serde_json::from_value(value).map_err(CanonicalManifestError::Json)?),
+            1 => Self::V1(Box::new(
+                serde_json::from_value(value).map_err(CanonicalManifestError::Json)?,
+            )),
+            2 => Self::V2(Box::new(
+                serde_json::from_value(value).map_err(CanonicalManifestError::Json)?,
+            )),
             unsupported => return Err(CanonicalManifestError::UnsupportedVersion(unsupported)),
         };
         manifest.validate()?;

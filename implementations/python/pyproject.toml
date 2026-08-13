@@ -2,7 +2,7 @@
 name = "foilbench-py"
 version = "0.1.0"
 description = "Typed Python reference implementation for FoilBench"
-readme = "../../README.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "beartype>=0.20",
