@@ -5,6 +5,7 @@ pub mod field;
 pub mod geometry;
 pub mod grid;
 pub mod implementation;
+pub mod lbm;
 pub mod metrics;
 pub mod pcg32;
 pub mod projection;
@@ -25,6 +26,7 @@ pub use grid::{
     faces_to_cells, rk2_backtrace, sample_cells,
 };
 pub use implementation::{ExecutionTarget, ImplementationDescription, implementation_description};
+pub use lbm::{LbmD2q9, convective_outlet_population, lbm_sponge_strength};
 pub use metrics::{FlowMetrics, compute_flow_metrics};
 pub use pcg32::Pcg32;
 pub use projection::{ProjectionReport, project_incompressible};

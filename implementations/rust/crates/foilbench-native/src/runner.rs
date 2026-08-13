@@ -16,7 +16,8 @@ use std::{
 };
 
 use foilbench_core::{
-    EvidenceValue, FlowScalar, FlowSolver, NacaFoil, Precision, Scenario, StableFluids, StepReport,
+    EvidenceValue, FlowScalar, FlowSolver, LbmD2q9, NacaFoil, Precision, Scenario, StableFluids,
+    StepReport,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -114,9 +115,14 @@ fn run_typed<T: FlowScalar>(
     scenario: &Scenario,
     repetition: usize,
     destination: &Path,
+    solver_id: &str,
 ) -> Result<Value, String> {
     let geometry = NacaFoil::new(scenario.foil().clone()).map_err(str::to_string)?;
-    let mut solver = StableFluids::<T>::new("native");
+    let mut solver: Box<dyn FlowSolver<T>> = match solver_id {
+        "stable-fluids" => Box::new(StableFluids::<T>::new("native")),
+        "lbm-d2q9" => Box::new(LbmD2q9::<T>::new("native")),
+        _ => return Err(format!("unsupported Rust solver {solver_id}")),
+    };
     let initialization_started = Instant::now();
     solver
         .initialize(scenario, &geometry, scenario.seed())
@@ -168,7 +174,7 @@ fn run_typed<T: FlowScalar>(
         "language": "rust",
         "implementation": "rust",
         "execution_target": "native",
-        "solver": "stable-fluids",
+        "solver": solver_id,
         "git_commit": git_commit(root),
         "machine": {"platform": std::env::consts::OS, "architecture": std::env::consts::ARCH},
         "precision": precision,
@@ -278,8 +284,12 @@ pub fn run_matrix(resolver: &ResourceResolver, options: &BenchOptions) -> Result
         .solver_filter
         .as_ref()
         .map_or_else(|| matrix.solvers.clone(), |solver| vec![solver.clone()]);
-    if solvers != [String::from("stable-fluids")] {
-        return Err("this milestone implements only --solver stable-fluids".into());
+    if solvers.is_empty()
+        || solvers
+            .iter()
+            .any(|solver| !matches!(solver.as_str(), "stable-fluids" | "lbm-d2q9"))
+    {
+        return Err("this milestone implements stable-fluids and lbm-d2q9".into());
     }
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -300,43 +310,56 @@ pub fn run_matrix(resolver: &ResourceResolver, options: &BenchOptions) -> Result
         .map_err(|error| error.to_string())?;
     let base: Value = serde_json::from_str(&base_document).map_err(|error| error.to_string())?;
     let mut summary = vec!["solver,resolution,repetition,median_step_seconds,p95_step_seconds,simulated_seconds_per_wall_second,success".to_string()];
-    for resolution in &matrix.resolutions {
-        for repetition in 1..=matrix.repetitions {
-            let mut selected = base.clone();
-            selected["resolution"] = json!(resolution);
-            let scenario = Scenario::from_json(
-                &serde_json::to_string(&selected).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
-            let stem = format!(
-                "stable-fluids-{}x{}-r{repetition}",
-                resolution[0], resolution[1]
-            );
-            let snapshot = output.join(format!("{stem}-state"));
-            let artifact = match scenario.precision() {
-                Precision::Float32 => {
-                    run_typed::<f32>(resolver.root(), &matrix, &scenario, repetition, &snapshot)?
-                }
-                Precision::Float64 => {
-                    run_typed::<f64>(resolver.root(), &matrix, &scenario, repetition, &snapshot)?
-                }
-            };
-            fs::write(
-                output.join(format!("{stem}.json")),
-                format!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&artifact).map_err(|error| error.to_string())?
-                ),
-            )
-            .map_err(|error| error.to_string())?;
-            summary.push(format!(
-                "stable-fluids,{}x{},{repetition},{},{},{},true",
-                resolution[0],
-                resolution[1],
-                artifact["median_step_seconds"],
-                artifact["p95_step_seconds"],
-                artifact["simulated_seconds_per_wall_second"]
-            ));
+    for solver_id in &solvers {
+        for resolution in &matrix.resolutions {
+            for repetition in 1..=matrix.repetitions {
+                let mut selected = base.clone();
+                selected["resolution"] = json!(resolution);
+                let scenario = Scenario::from_json(
+                    &serde_json::to_string(&selected).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+                let stem = format!(
+                    "{solver_id}-{}x{}-r{repetition}",
+                    resolution[0], resolution[1]
+                );
+                let snapshot = output.join(format!("{stem}-state"));
+                let artifact = match scenario.precision() {
+                    Precision::Float32 => run_typed::<f32>(
+                        resolver.root(),
+                        &matrix,
+                        &scenario,
+                        repetition,
+                        &snapshot,
+                        solver_id,
+                    )?,
+                    Precision::Float64 => run_typed::<f64>(
+                        resolver.root(),
+                        &matrix,
+                        &scenario,
+                        repetition,
+                        &snapshot,
+                        solver_id,
+                    )?,
+                };
+                fs::write(
+                    output.join(format!("{stem}.json")),
+                    format!(
+                        "{}\n",
+                        serde_json::to_string_pretty(&artifact)
+                            .map_err(|error| error.to_string())?
+                    ),
+                )
+                .map_err(|error| error.to_string())?;
+                summary.push(format!(
+                    "{solver_id},{}x{},{repetition},{},{},{},true",
+                    resolution[0],
+                    resolution[1],
+                    artifact["median_step_seconds"],
+                    artifact["p95_step_seconds"],
+                    artifact["simulated_seconds_per_wall_second"]
+                ));
+            }
         }
     }
     fs::write(

@@ -22,8 +22,8 @@ pub fn implementation_description(target: ExecutionTarget) -> ImplementationDesc
     ImplementationDescription {
         implementation: "rust",
         execution_target: target,
-        phase: "3-stable-fluids",
-        solvers: vec!["stable-fluids"],
+        phase: "3-lbm",
+        solvers: vec!["stable-fluids", "lbm-d2q9"],
         canonical_manifest_models: vec![1, 2],
         canonical_payload_io: matches!(target, ExecutionTarget::Native),
     }
