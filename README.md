@@ -7,7 +7,9 @@ including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 three-language contract closure are complete and revalidated after extensive
 QA. Revision 4 is the accepted implemented baseline after full-size,
 interchange, fallback, and chaotic-extension acceptance. Rust/WASM work may now
-begin against that baseline.
+begin against that baseline. Phase 3 kickoff has scaffolded the Rust
+core/native/WASM workspace and a proposed Revision 5 contract; no Rust solver
+is advertised yet.
 
 The implementations share scenarios, schemas, and result artifacts. They do
 not import or host one another's solvers.
@@ -22,6 +24,7 @@ just setup
 just py-view
 just jl-view
 just ts-view
+just rs-describe
 just ts-preview-gate
 just py-chaos
 just verify
@@ -84,6 +87,21 @@ The viewer prints its local URL; open it in Chromium. Controls are `1/2/3`
 for solvers, left-drag for foil pose, `Space` pause, `R` reset, `+/-/0`
 Reynolds control, `[/]` solver tuning, and `V/T/C` for vorticity, tracer mode,
 and diagnostic cropping.
+
+## Rust/WASM kickoff
+
+The platform-neutral core currently implements PCG32, typed scenarios, NACA
+geometry, canonical version 1/2 models, and the solver trait. Native and WASM
+crates share it, but the three flow solvers intentionally remain absent:
+
+```powershell
+cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
+cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- describe
+```
+
+The accepted Revision 4 contract remains authoritative. Candidate Phase 3
+semantics live under `spec/proposals/revision5/` until cross-language evidence
+supports activation.
 
 Run every implemented language's native checks through the root convenience
 entry point (or pass `-Python`, `-Julia`, or `-TypeScript` to select one):

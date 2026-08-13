@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Install every currently implemented language environment.
-setup: py-setup jl-setup ts-setup
+setup: py-setup jl-setup ts-setup rs-setup
 
 # Install the Python reference and development dependencies.
 py-setup:
@@ -22,6 +22,11 @@ ts-setup:
     @$client = [System.Net.Sockets.TcpClient]::new(); $viewerRunning = $false; try { $client.Connect('127.0.0.1', 4173); $viewerRunning = $true } catch [System.Net.Sockets.SocketException] { } finally { $client.Dispose() }; if ($viewerRunning) { throw 'FoilBench TypeScript viewer is running on port 4173. Stop ts-view before ts-setup so npm ci can replace native modules on Windows.' }
     npm --prefix implementations/typescript ci
     npm --prefix implementations/typescript run setup:browser
+
+# Fetch and build the Rust Phase 3 workspace.
+rs-setup:
+    cargo fetch --manifest-path implementations/rust/Cargo.toml --locked
+    cargo build --manifest-path implementations/rust/Cargo.toml --workspace --locked
 
 # Validate the contract manifest, specification layout, schemas, and acceptance fixtures.
 verify-spec:
@@ -47,6 +52,16 @@ verify-julia:
 # Run only the TypeScript checks.
 verify-typescript:
     pwsh -NoProfile -File tools/verify.ps1 -TypeScript
+
+# Run Rust formatting, lint, and foundation tests.
+verify-rust:
+    cargo fmt --manifest-path implementations/rust/Cargo.toml --all -- --check
+    cargo clippy --manifest-path implementations/rust/Cargo.toml --workspace --all-targets --locked -- -D warnings
+    cargo test --manifest-path implementations/rust/Cargo.toml --workspace --locked
+
+# Describe the Rust foundation without advertising unfinished solvers.
+rs-describe:
+    cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p foilbench-native -- describe
 
 # Open the Python viewer.
 py-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":

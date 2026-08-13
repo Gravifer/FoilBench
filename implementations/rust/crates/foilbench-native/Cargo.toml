@@ -1,0 +1,18 @@
+[package]
+name = "foilbench-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "foilbench-rs"
+path = "src/main.rs"
+
+[dependencies]
+foilbench-core = { path = "../foilbench-core" }
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
