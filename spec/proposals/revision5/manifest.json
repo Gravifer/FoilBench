@@ -9,21 +9,24 @@
     "canonical-state-v2.md",
     "fidelity-cases.md",
     "boundary-and-producer.md",
-    "mac-boundary.md"
+    "mac-boundary.md",
+    "scenario-semantics.md"
   ],
   "schemas": [
     "schemas/geometry-v1.schema.json",
     "schemas/canonical-manifest-v2.schema.json",
     "schemas/fidelity-cases.schema.json",
     "schemas/lbm-boundary.schema.json",
-    "schemas/mac-boundary.schema.json"
+    "schemas/mac-boundary.schema.json",
+    "schemas/scenario-negative.schema.json"
   ],
   "fixtures": [
     {"path": "fixtures/geometry-v1.json", "schema": "schemas/geometry-v1.schema.json"},
     {"path": "fixtures/canonical-manifest-v2.json", "schema": "schemas/canonical-manifest-v2.schema.json"},
     {"path": "fixtures/fidelity-cases.json", "schema": "schemas/fidelity-cases.schema.json"},
     {"path": "fixtures/lbm-boundary.json", "schema": "schemas/lbm-boundary.schema.json"},
-    {"path": "fixtures/mac-boundary.json", "schema": "schemas/mac-boundary.schema.json"}
+    {"path": "fixtures/mac-boundary.json", "schema": "schemas/mac-boundary.schema.json"},
+    {"path": "fixtures/scenario-negative.json", "schema": "schemas/scenario-negative.schema.json"}
   ],
   "permanent_wont_do": ["pixel-level-renderer-matching"],
   "deferred_until_2d_rust_parity": ["d3q19", "shallow-periodic-3d"]

@@ -135,3 +135,7 @@ function normals(foil::NacaFoil{2,T}, points::AbstractMatrix{T}, angle_degrees::
     end
     return output
 end
+
+function foil_contains(foil::NacaFoil{2,T}, points::AbstractMatrix{T}, angle_degrees::Real) where {T}
+    return signed_distance(foil, points, angle_degrees) .<= zero(T)
+end

@@ -34,12 +34,22 @@ export function validateDocument(document: unknown, schema: object): void {
 export function parseScenario(document: unknown, schema: object): Scenario {
   validateDocument(document, schema);
   const raw = document as RawScenario;
+  if (raw.bounds.some((bound) => !(Number.isFinite(bound[0]) && Number.isFinite(bound[1]) && bound[1] > bound[0]))) {
+    throw new RangeError("domain bounds must be finite and strictly increasing");
+  }
   for (let index = 1; index < raw.controls.length; index += 1) {
-    if (required(raw.controls[index], "control").time < required(raw.controls[index - 1], "control").time) throw new RangeError("control times must be nondecreasing");
+    if (required(raw.controls[index], "control").time <= required(raw.controls[index - 1], "control").time) throw new RangeError("control times must be strictly increasing");
   }
   const options: Record<string, unknown> = {};
   for (const [rawName, value] of Object.entries(raw.solver_options ?? {})) {
     options[required(optionNames[rawName], "solver option name")] = value;
+  }
+  const periodic = new Set(raw.periodic_axes);
+  if (options["initialCondition"] === "taylor-green" && (raw.dimension !== 2 || !periodic.has("x") || !periodic.has("y"))) {
+    throw new RangeError("Taylor-Green requires a 2D domain periodic in x and y");
+  }
+  if (options["initialCondition"] === "poiseuille" && (raw.dimension !== 2 || !periodic.has("x") || periodic.has("y"))) {
+    throw new RangeError("Poiseuille requires a 2D domain periodic in x and nonperiodic in y");
   }
   return {
     schemaVersion: 1, id: raw.id,

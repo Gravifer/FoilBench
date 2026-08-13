@@ -20,7 +20,7 @@
     "geometry": {"type": "object", "additionalProperties": false, "required": ["family", "naca", "chord", "pivot"], "properties": {"family": {"const": "naca-four-digit-v1"}, "naca": {"type": "string", "pattern": "^[0-9]{4}$"}, "chord": {"type": "number", "exclusiveMinimum": 0}, "pivot": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}}},
     "producer": {"type": "object", "additionalProperties": false, "required": ["implementation", "execution_target"], "properties": {"implementation": {"enum": ["python", "julia", "typescript", "rust"]}, "execution_target": {"enum": ["native", "node", "browser-worker", "wasm-browser"]}, "build": {"type": ["object", "null"]}}},
     "source_solver": {"enum": ["stable-fluids", "lbm-d2q9", "pic-flip"]},
-    "velocity": {"allOf": [{"$ref": "#/$defs/array"}, {"properties": {"file": {"const": "velocity.npy"}, "axes": {"const": ["z", "y", "x", "component"]}}}]},
-    "density": {"oneOf": [{"type": "null"}, {"allOf": [{"$ref": "#/$defs/array"}, {"properties": {"file": {"const": "density.npy"}, "axes": {"const": ["z", "y", "x"]}}}]}]}
+    "velocity": {"allOf": [{"$ref": "#/$defs/array"}, {"type": "object", "properties": {"file": {"const": "velocity.npy"}, "axes": {"const": ["z", "y", "x", "component"]}}}]},
+    "density": {"oneOf": [{"type": "null"}, {"allOf": [{"$ref": "#/$defs/array"}, {"type": "object", "properties": {"file": {"const": "density.npy"}, "axes": {"const": ["z", "y", "x"]}}}]}]}
   }
 }

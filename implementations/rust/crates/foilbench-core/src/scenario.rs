@@ -225,7 +225,7 @@ impl TryFrom<RawScenario> for Scenario {
             || raw
                 .controls
                 .windows(2)
-                .any(|pair| pair[1].time < pair[0].time)
+                .any(|pair| pair[1].time <= pair[0].time)
         {
             return Err(ScenarioError::Semantic("control history is invalid"));
         }
@@ -241,6 +241,26 @@ impl TryFrom<RawScenario> for Scenario {
             ));
         }
         NacaFoil::new(raw.foil.clone()).map_err(ScenarioError::Semantic)?;
+        let initial_condition = raw
+            .solver_options
+            .get("initial_condition")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("freestream");
+        let periodic: BTreeSet<&str> = raw.periodic_axes.iter().map(String::as_str).collect();
+        if initial_condition == "taylor-green"
+            && (raw.dimension != 2 || periodic != BTreeSet::from(["x", "y"]))
+        {
+            return Err(ScenarioError::Semantic(
+                "Taylor-Green requires a 2D domain periodic in x and y",
+            ));
+        }
+        if initial_condition == "poiseuille"
+            && (raw.dimension != 2 || !periodic.contains("x") || periodic.contains("y"))
+        {
+            return Err(ScenarioError::Semantic(
+                "Poiseuille requires a 2D domain periodic in x and nonperiodic in y",
+            ));
+        }
         Ok(Self {
             id: raw.id,
             dimension: raw.dimension,
@@ -280,6 +300,27 @@ impl std::error::Error for ScenarioError {}
 #[cfg(test)]
 mod tests {
     use super::Scenario;
+    use serde_json::Value;
+
+    fn set_fixture_path(document: &mut Value, path: &[Value], value: Value) {
+        let mut cursor = document;
+        for component in &path[..path.len() - 1] {
+            cursor = match component {
+                Value::String(name) => cursor.get_mut(name).unwrap(),
+                Value::Number(index) => cursor
+                    .get_mut(usize::try_from(index.as_u64().unwrap()).unwrap())
+                    .unwrap(),
+                _ => panic!("invalid fixture path component"),
+            };
+        }
+        match path.last().unwrap() {
+            Value::String(name) => cursor[name] = value,
+            Value::Number(index) => {
+                cursor[usize::try_from(index.as_u64().unwrap()).unwrap()] = value;
+            }
+            _ => panic!("invalid fixture path component"),
+        }
+    }
 
     #[test]
     fn loads_repository_default_scenario() {
@@ -301,5 +342,76 @@ mod tests {
         let document = include_str!("../../../../../scenarios/validation/uniform.json");
         let malformed = document.replace("[\"x\", \"y\"]", "[\"x\", \"x\"]");
         assert!(Scenario::from_json(&malformed).is_err());
+    }
+
+    #[test]
+    fn consumes_revision5_fidelity_inventory() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../../spec/proposals/revision5/fixtures/fidelity-cases.json"
+        ))
+        .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let source = match case["scenario"].as_str().unwrap() {
+                "scenarios/validation/uniform.json" => {
+                    include_str!("../../../../../scenarios/validation/uniform.json")
+                }
+                "scenarios/validation/taylor-green.json" => {
+                    include_str!("../../../../../scenarios/validation/taylor-green.json")
+                }
+                "scenarios/validation/poiseuille.json" => {
+                    include_str!("../../../../../scenarios/validation/poiseuille.json")
+                }
+                "scenarios/validation/naca0012-zero.json" => {
+                    include_str!("../../../../../scenarios/validation/naca0012-zero.json")
+                }
+                "scenarios/airfoil/default.json" => {
+                    include_str!("../../../../../scenarios/airfoil/default.json")
+                }
+                path => panic!("unrecognized fidelity scenario {path}"),
+            };
+            let scenario = Scenario::from_json(source).unwrap();
+            assert_eq!(
+                case["resolution"].as_array().unwrap().len(),
+                usize::from(scenario.dimension())
+            );
+            assert!(
+                case["metrics"]
+                    .as_object()
+                    .is_some_and(|value| !value.is_empty())
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_revision5_negative_scenario_fixture() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../../spec/proposals/revision5/fixtures/scenario-negative.json"
+        ))
+        .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let base = match case["base"].as_str().unwrap() {
+                "scenarios/validation/uniform.json" => {
+                    include_str!("../../../../../scenarios/validation/uniform.json")
+                }
+                "scenarios/validation/taylor-green.json" => {
+                    include_str!("../../../../../scenarios/validation/taylor-green.json")
+                }
+                "scenarios/validation/poiseuille.json" => {
+                    include_str!("../../../../../scenarios/validation/poiseuille.json")
+                }
+                path => panic!("unrecognized negative-fixture scenario {path}"),
+            };
+            let mut document: Value = serde_json::from_str(base).unwrap();
+            set_fixture_path(
+                &mut document,
+                case["path"].as_array().unwrap(),
+                case["value"].clone(),
+            );
+            assert!(
+                Scenario::from_json(&serde_json::to_string(&document).unwrap()).is_err(),
+                "negative case {} was accepted",
+                case["id"]
+            );
+        }
     }
 }

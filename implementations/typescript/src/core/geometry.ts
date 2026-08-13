@@ -21,6 +21,11 @@ export class NacaFoil {
 
   public get maximumRadius(): number { return Math.hypot(0.75 * this.spec.chord, (this.camber + 0.51 * this.thickness) * this.spec.chord); }
 
+  public surface(x: number): readonly [number, number] {
+    this.updateSurfaces(x);
+    return [this.surfaceUpper, this.surfaceLower];
+  }
+
   private updateSurfaces(x: number): void {
     const selected = Math.max(0, Math.min(1, x / this.spec.chord));
     const selected2 = selected * selected; const selected3 = selected2 * selected; const selected4 = selected2 * selected2;
@@ -58,6 +63,19 @@ export class NacaFoil {
       this.updateRotation(angleDegrees); dx = -this.cachedSine; dy = this.cachedCosine; length = 1;
     }
     return [dx / Math.max(length, epsilon), dy / Math.max(length, epsilon)];
+  }
+
+  public contains(x: number, y: number, angleDegrees: number): boolean {
+    return this.signedDistance(x, y, angleDegrees) <= 0;
+  }
+
+  public wallVelocity(
+    x: number,
+    y: number,
+    angularVelocityDegrees: number,
+  ): readonly [number, number] {
+    const omega = angularVelocityDegrees * Math.PI / 180;
+    return [-omega * (y - this.pivotY), omega * (x - this.pivotX)];
   }
 
   public outline(angleDegrees: number, samples = 192, destination?: Float32Array): Float32Array {

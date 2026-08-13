@@ -46,6 +46,33 @@ from foilbench_py.types import (
     VelocityField,
 )
 
+
+def lbm_sponge_strength(
+    nx: int,
+    ny: int,
+    x: int,
+    y: int,
+    *,
+    periodic_x: bool,
+    periodic_y: bool,
+    channel_walls: bool = False,
+) -> float:
+    """Return the Revision 5 quadratic open-boundary sponge strength."""
+
+    width = max(3, min(nx, ny) // 16)
+    strength = 0.0
+    if not periodic_y and not channel_walls:
+        distance_y = min(y, ny - 1 - y)
+        strength = max(strength, 0.12 * max((width - distance_y) / width, 0.0) ** 2)
+    if not periodic_x:
+        outlet_width = 2 * width
+        distance_outlet = nx - 1 - x
+        strength = max(
+            strength,
+            0.08 * max((outlet_width - distance_outlet) / outlet_width, 0.0) ** 2,
+        )
+    return strength
+
 type LBMCheckpoint = tuple[
     LatticePopulation,
     LatticePopulation | None,

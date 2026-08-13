@@ -38,6 +38,7 @@ export RestartState
 export ReynoldsOutcome
 export accepted
 export CanonicalFlowState
+export foil_contains
 export ControlKeyframe
 export ControlState
 export Diagnostics
@@ -139,6 +140,7 @@ export reference_speed
 export vorticity
 export wake_width
 export wall_velocity_grid
+export wall_velocity
 export AdjustReynoldsCommand
 export AdjustTuningCommand
 export ReleaseAngleCommand

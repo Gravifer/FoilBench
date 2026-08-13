@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foilbench.local/spec/proposals/revision5/scenario-negative.schema.json",
+  "title": "FoilBench Revision 5 negative scenario cases",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "base", "path", "value", "reason"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "base": {"type": "string", "minLength": 1},
+          "path": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"oneOf": [{"type": "string"}, {"type": "integer", "minimum": 0}]}
+          },
+          "value": {},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

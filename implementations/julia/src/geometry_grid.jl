@@ -66,3 +66,16 @@ function foil_outline(
     end
     return output
 end
+function wall_velocity(
+    foil::NacaFoil{2,T},
+    points::AbstractMatrix{T},
+    control::ControlState,
+) where {T}
+    size(points, 2) == 2 || throw(DimensionMismatch("points must have shape point × 2"))
+    relative = points .- permutedims(foil.spec.pivot)
+    omega = T(deg2rad(control.angular_velocity_degrees))
+    output = similar(points)
+    output[:, 1] .= .-omega .* relative[:, 2]
+    output[:, 2] .= omega .* relative[:, 1]
+    return output
+end

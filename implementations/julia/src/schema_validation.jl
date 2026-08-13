@@ -70,10 +70,14 @@ function _validate_json_schema(value, schema, path::String, root::AbstractDict)
 
     if haskey(schema, "type")
         selected_type = schema["type"]
-        selected_type isa AbstractString ||
-            _schema_failure(path, "unsupported non-string type declaration")
-        _matches_json_type(value, selected_type) ||
-            _schema_failure(path, "expected JSON type $selected_type")
+        matches = if selected_type isa AbstractString
+            _matches_json_type(value, selected_type)
+        elseif selected_type isa AbstractVector && all(item -> item isa AbstractString, selected_type)
+            any(item -> _matches_json_type(value, item), selected_type)
+        else
+            _schema_failure(path, "unsupported JSON type declaration")
+        end
+        matches || _schema_failure(path, "expected JSON type $selected_type")
     end
     haskey(schema, "const") && !isequal(value, schema["const"]) &&
         _schema_failure(path, "does not equal the required constant")

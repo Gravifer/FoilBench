@@ -49,6 +49,7 @@ using Test
 
 const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const FIXTURES = joinpath(REPOSITORY_ROOT, "spec", "conformance")
+const REVISION5 = joinpath(REPOSITORY_ROOT, "spec", "proposals", "revision5")
 
 function rows_to_matrix(rows)
     isempty(rows) && return Matrix{Float64}(undef, 0, 0)
@@ -136,6 +137,114 @@ end
         @test normals(foil, points, query.angle_degrees) ≈
               rows_to_matrix(query.normals) atol = document.absolute_tolerances.normal
         @test (distance .<= 0) == Bool.(query.contains)
+    end
+end
+
+function set_fixture_path!(document, path, value)
+    cursor = document
+    for segment in path[1:(end - 1)]
+        cursor = cursor[segment isa Integer ? Int(segment) + 1 : String(segment)]
+    end
+    final = last(path)
+    cursor[final isa Integer ? Int(final) + 1 : String(final)] = value
+    return document
+end
+
+@testset "Revision 5 proposal fixtures" begin
+    geometry_document = JSON3.read(
+        read(joinpath(REVISION5, "fixtures", "geometry-v1.json"), String),
+    )
+    descriptor = geometry_document.descriptor
+    foil = NacaFoil(FoilSpec(
+        String(descriptor.naca),
+        Float64(descriptor.chord),
+        SVector{2,Float64}(descriptor.pivot),
+    ))
+    x = Float64.(geometry_document.surface_x)
+    upper, lower = surfaces(foil, x)
+    tolerances = geometry_document.absolute_tolerances
+    @test upper ≈ Float64.(geometry_document.surface_upper) atol = tolerances.surface
+    @test lower ≈ Float64.(geometry_document.surface_lower) atol = tolerances.surface
+    points = rows_to_matrix(geometry_document.points)
+    angle = Float64(geometry_document.angle_degrees)
+    @test signed_distance(foil, points, angle) ≈
+          Float64.(geometry_document.signed_distance) atol = tolerances.signed_distance
+    @test normals(foil, points, angle) ≈
+          rows_to_matrix(geometry_document.normals) atol = tolerances.normal
+    @test foil_contains(foil, points, angle) == Bool.(geometry_document.contains)
+    control = ControlState(
+        0.0,
+        angle,
+        Float64(geometry_document.angular_velocity_degrees),
+    )
+    @test wall_velocity(foil, points, control) ≈
+          rows_to_matrix(geometry_document.wall_velocity) atol = tolerances.wall_velocity
+    @test maximum_radius(foil) ≈
+          Float64(geometry_document.maximum_radius) atol = tolerances.radius
+
+    manifest = JSON3.read(
+        read(joinpath(REVISION5, "fixtures", "canonical-manifest-v2.json"), String),
+        Dict{String,Any},
+    )
+    FoilBenchJulia.validate_json_file(
+        manifest,
+        joinpath(REVISION5, "schemas", "canonical-manifest-v2.schema.json"),
+    )
+    @test manifest["geometry"]["family"] == "naca-four-digit-v1"
+    @test manifest["producer"]["implementation"] == "rust"
+    @test manifest["producer"]["execution_target"] == "native"
+
+    fidelity = JSON3.read(
+        read(joinpath(REVISION5, "fixtures", "fidelity-cases.json"), String),
+    )
+    for case in fidelity.cases
+        scenario = load_scenario(joinpath(REPOSITORY_ROOT, String(case.scenario)))
+        @test length(case.resolution) == dimension(scenario)
+        @test case.duration > 0
+        @test !isempty(propertynames(case.metrics))
+    end
+
+    mac = JSON3.read(read(joinpath(REVISION5, "fixtures", "mac-boundary.json"), String))
+    @test mac.periodic_duplicate == "endpoint-average"
+    domain = DomainSpec(((0.0, 2.0), (-1.0, 1.0)), (8, 6))
+    u = fill(-3.0, 9, 6)
+    v = fill(-4.0, 8, 7)
+    apply_domain_boundaries!(u, v, domain, SVector(1.25, -0.5))
+    @test u[1, :] == fill(1.25, 6)
+    @test u[:, 1] == fill(1.25, 9)
+    @test u[:, end] == fill(1.25, 9)
+    @test v[:, 1] == fill(-0.5, 8)
+    @test v[:, end] == fill(-0.5, 8)
+
+    lbm = JSON3.read(read(joinpath(REVISION5, "fixtures", "lbm-boundary.json"), String))
+    default = load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"))
+    preview = resized_scenario(default, (160, 96))
+    sponge = FoilBenchJulia._lbm_sponge(preview)
+    @test sponge[81, 1] ≈ lbm.sponge.transverse_maximum
+    @test sponge[end, 49] ≈ lbm.sponge.outlet_maximum
+    @test sponge[end, 1] ≈ max(lbm.sponge.transverse_maximum, lbm.sponge.outlet_maximum)
+    @test sponge[81, 49] == 0
+
+    negative = JSON3.read(
+        read(joinpath(REVISION5, "fixtures", "scenario-negative.json"), String),
+        Dict{String,Any},
+    )
+    scenario_schema = joinpath(REPOSITORY_ROOT, "spec", "schemas", "scenario.schema.json")
+    for case in negative["cases"]
+        document = JSON3.read(
+            read(joinpath(REPOSITORY_ROOT, String(case["base"])), String),
+            Dict{String,Any},
+        )
+        set_fixture_path!(document, case["path"], case["value"])
+        rejected = false
+        try
+            FoilBenchJulia.validate_json_file(document, scenario_schema)
+            selected_dimension = Int(document["dimension"])
+            FoilBenchJulia._load_scenario(document, Val(selected_dimension))
+        catch
+            rejected = true
+        end
+        @test rejected
     end
 end
 
@@ -2173,51 +2282,76 @@ end
 end
 
 @testset "Matched canonical fidelity cases" begin
+    fidelity_fixture = JSON3.read(
+        read(joinpath(REVISION5, "fixtures", "fidelity-cases.json"), String),
+    )
+    fidelity_cases = Dict(String(case.id) => case for case in fidelity_fixture.cases)
     for solver_id in solver_ids()
-        uniform = resized_scenario(
-            load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "validation", "uniform.json")),
-            (32, 16),
+        uniform_case = fidelity_cases["uniform"]
+        uniform = scenario_with_run(
+            load_scenario(joinpath(REPOSITORY_ROOT, String(uniform_case.scenario))),
+            Tuple(Int.(uniform_case.resolution)),
+            Float64(uniform_case.duration),
         )
         solver = create_solver(solver_id, Float64)
         initialize!(solver, uniform, NacaFoil(uniform.foil), 0)
         before = cell_velocity(solver)
-        for step in 1:5
+        for step in 1:round(Int, uniform.duration / uniform.output_dt)
             advance!(solver, control_at(uniform, step * uniform.output_dt), uniform.output_dt)
         end
         after = cell_velocity(solver)
-        @test sqrt(sum(abs2, after .- before) / length(after)) < 1.0e-5
-        @test sqrt(sum(abs2, vorticity(after, uniform.domain)) / prod(size(after)[1:2])) < 1.0e-5
+        @test sqrt(sum(abs2, after .- before) / length(after)) <
+              uniform_case.metrics.velocity_rms_drift.threshold
+        @test sqrt(sum(abs2, vorticity(after, uniform.domain)) / prod(size(after)[1:2])) <
+              uniform_case.metrics.spurious_vorticity_rms.threshold
 
+        taylor_case = fidelity_cases["taylor-green"]
         taylor_base = load_scenario(
-            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "taylor-green.json"),
+            joinpath(REPOSITORY_ROOT, String(taylor_case.scenario)),
         )
-        taylor = scenario_with_run(taylor_base, (32, 32), 0.1)
+        taylor = scenario_with_run(
+            taylor_base,
+            Tuple(Int.(taylor_case.resolution)),
+            Float64(taylor_case.duration),
+        )
         solver = create_solver(solver_id, Float64)
         initialize!(solver, taylor, NacaFoil(taylor.foil), 0)
         initial_energy = diagnostics(solver).values["kinetic_energy"]
-        for step in 1:5
+        for step in 1:round(Int, taylor.duration / taylor.output_dt)
             advance!(solver, control_at(taylor, step * taylor.output_dt), taylor.output_dt)
         end
         centers = cell_centers(taylor.domain)
-        expected = Array{Float64,3}(undef, 32, 32, 2)
+        expected = Array{Float64,3}(
+            undef,
+            taylor.domain.resolution[1],
+            taylor.domain.resolution[2],
+            2,
+        )
         decay = exp(-2 * reference_speed(taylor) * taylor.foil.chord /
             taylor.reynolds * taylor.duration)
-        for j in 1:32, i in 1:32
+        for j in axes(expected, 2), i in axes(expected, 1)
             x, y = centers[i, j, 1], centers[i, j, 2]
             expected[i, j, 1] = sin(x) * cos(y) * decay
             expected[i, j, 2] = -cos(x) * sin(y) * decay
         end
         actual = cell_velocity(solver)
-        @test sqrt(sum(abs2, actual .- expected) / length(actual)) < 0.08
-        @test 0 <= diagnostics(solver).values["kinetic_energy"] <= 1.01 * initial_energy
+        @test sqrt(sum(abs2, actual .- expected) / length(actual)) <
+              taylor_case.metrics.velocity_l2_error.threshold
+        @test 0 <= diagnostics(solver).values["kinetic_energy"] <=
+              taylor_case.metrics.kinetic_energy_ratio.threshold * initial_energy
 
+        poiseuille_case = fidelity_cases["poiseuille"]
         poiseuille_base = load_scenario(
-            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "poiseuille.json"),
+            joinpath(REPOSITORY_ROOT, String(poiseuille_case.scenario)),
         )
-        poiseuille = scenario_with_run(poiseuille_base, (32, 16), 0.1)
+        poiseuille = scenario_with_run(
+            poiseuille_base,
+            Tuple(Int.(poiseuille_case.resolution)),
+            Float64(poiseuille_case.duration),
+        )
         solver = create_solver(solver_id, Float64)
         initialize!(solver, poiseuille, NacaFoil(poiseuille.foil), 0)
-        for step in 1:5
+        for step in 1:round(Int, poiseuille.duration / poiseuille.output_dt)
             advance!(solver, control_at(poiseuille, step * poiseuille.output_dt), poiseuille.output_dt)
         end
         velocity = cell_velocity(solver)
@@ -2239,16 +2373,21 @@ end
         normal_leakage = max(maximum(abs, view(velocity, :, 1, 2)),
             maximum(abs, view(velocity, :, top_row, 2)))
         @test center_speed > wall_speed
-        @test profile_error < 0.25
-        @test normal_leakage < 0.01
+        @test profile_error < poiseuille_case.metrics.profile_l2_error.threshold
+        @test normal_leakage < poiseuille_case.metrics.normal_wall_leakage.threshold
 
+        naca_case = fidelity_cases["naca0012-zero"]
         naca_base = load_scenario(
-            joinpath(REPOSITORY_ROOT, "scenarios", "validation", "naca0012-zero.json"),
+            joinpath(REPOSITORY_ROOT, String(naca_case.scenario)),
         )
-        naca = scenario_with_run(naca_base, (40, 24), 0.1)
+        naca = scenario_with_run(
+            naca_base,
+            Tuple(Int.(naca_case.resolution)),
+            Float64(naca_case.duration),
+        )
         solver = create_solver(solver_id, Float32)
         initialize!(solver, naca, NacaFoil(naca.foil), naca.seed)
-        for step in 1:6
+        for step in 1:round(Int, naca.duration / naca.output_dt)
             advance!(solver, control_at(naca, step * naca.output_dt), naca.output_dt)
         end
         velocity = cell_velocity(solver)
@@ -2259,20 +2398,27 @@ end
                 velocity[i, j, component] + velocity[i, mirror, component]
             symmetry_error += delta^2
         end
-        @test sqrt(symmetry_error / length(velocity)) < 0.01
-        @test diagnostics(solver).values["solid_leakage"] < 1.0e-6
+        @test sqrt(symmetry_error / length(velocity)) <
+              naca_case.metrics.symmetry_l2_error.threshold
+        @test diagnostics(solver).values["solid_leakage"] <
+              naca_case.metrics.solid_leakage.threshold
 
+        dynamic_case = fidelity_cases["naca2412-dynamic"]
         dynamic_base = load_scenario(
-            joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "default.json"),
+            joinpath(REPOSITORY_ROOT, String(dynamic_case.scenario)),
         )
-        dynamic = scenario_with_run(dynamic_base, (32, 20), 0.05)
+        dynamic = scenario_with_run(
+            dynamic_base,
+            Tuple(Int.(dynamic_case.resolution)),
+            Float64(dynamic_case.duration),
+        )
         solver = create_solver(solver_id, Float32)
         initialize!(solver, dynamic, NacaFoil(dynamic.foil), dynamic.seed)
-        for step in 1:3
+        for step in 1:round(Int, dynamic.duration / dynamic.output_dt)
             advance!(solver, control_at(dynamic, step * dynamic.output_dt), dynamic.output_dt)
         end
         dynamic_diagnostics = diagnostics(solver).values
-        for name in ("wake_width", "recirculation_area", "enstrophy", "solid_leakage")
+        for name in String.(propertynames(dynamic_case.metrics))
             @test haskey(dynamic_diagnostics, name)
             @test isfinite(dynamic_diagnostics[name])
         end

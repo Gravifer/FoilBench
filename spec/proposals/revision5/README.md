@@ -27,6 +27,8 @@ from Python, Julia, or TypeScript source:
   Phase 2 boundary mapping and distinguish native Rust from Rust/WASM.
 - [MAC boundaries](mac-boundary.md) freeze the observable nonperiodic face
   treatment shared by Stable Fluids and PIC/FLIP.
+- [scenario semantics](scenario-semantics.md) define cross-field validity and
+  analytic initial-condition meanings that JSON Schema cannot express alone.
 
 Permanent policy: pixel-identical or pixel-distance renderer matching is a
 won't-do. Viewer conformance concerns observable controls, state, diagnostics,

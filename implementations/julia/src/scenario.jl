@@ -129,6 +129,25 @@ function _load_scenario(document::Dict{String,Any}, ::Val{D}) where {D}
         ControlKeyframe(T(value["time"]), T(value["angle_degrees"]))
         for value in document["controls"]
     ]
+    all(
+        controls[index].time < controls[index + 1].time
+        for index in 1:(length(controls) - 1)
+    ) || throw(ArgumentError("control times must be strictly increasing"))
+    initial_condition = String(get(
+        get(document, "solver_options", Dict{String,Any}()),
+        "initial_condition",
+        "freestream",
+    ))
+    periodic = Set(axes)
+    if initial_condition == "taylor-green"
+        D == 2 && periodic == Set((:x, :y)) || throw(ArgumentError(
+            "Taylor-Green requires a 2D domain periodic in x and y",
+        ))
+    elseif initial_condition == "poiseuille"
+        D == 2 && :x in periodic && !(:y in periodic) || throw(ArgumentError(
+            "Poiseuille requires a 2D domain periodic in x and nonperiodic in y",
+        ))
+    end
     return Scenario(
         Int(document["schema_version"]),
         String(document["id"]),

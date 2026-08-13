@@ -37,6 +37,14 @@ def load_scenario(path: str | Path) -> Scenario:
     raw = _load_object(scenario_path)
     root = find_repo_root(scenario_path)
     schema = _load_object(root / "spec" / "schemas" / "scenario.schema.json")
+    return load_scenario_document(raw, schema)
+
+
+def load_scenario_document(
+    raw: dict[str, object], schema: dict[str, object]
+) -> Scenario:
+    """Validate and construct a scenario from an in-memory JSON document."""
+
     validate_json(raw, schema)
 
     dimension = cast(int, raw["dimension"])

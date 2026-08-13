@@ -116,8 +116,8 @@ class ControlKeyframe:
     def __post_init__(self) -> None:
         if not np.isfinite(self.time) or self.time < 0.0:
             raise ValueError("control keyframe time must be finite and nonnegative")
-        if not np.isfinite(self.angle_degrees):
-            raise ValueError("control keyframe angle must be finite")
+        if not np.isfinite(self.angle_degrees) or not -90.0 <= self.angle_degrees <= 90.0:
+            raise ValueError("control keyframe angle must be finite and within [-90, 90]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,8 +164,8 @@ class Scenario:
             raise ValueError("foil pivot dimensionality must match the domain")
         if not self.controls:
             raise ValueError("a scenario needs at least one control keyframe")
-        if any(b.time < a.time for a, b in zip(self.controls, self.controls[1:], strict=False)):
-            raise ValueError("control keyframes must be sorted by time")
+        if any(b.time <= a.time for a, b in zip(self.controls, self.controls[1:], strict=False)):
+            raise ValueError("control keyframe times must be strictly increasing")
         if not all(
             np.isfinite(value)
             for value in (
@@ -178,6 +178,16 @@ class Scenario:
             raise ValueError("scenario physical values must be finite")
         if self.reynolds <= 0.0 or self.duration <= 0.0 or self.output_dt <= 0.0:
             raise ValueError("Reynolds number, duration, and output_dt must be positive")
+        initial_condition = str(self.solver_options.get("initial_condition", "freestream"))
+        periodic = set(self.domain.periodic_axes)
+        if initial_condition == "taylor-green" and (
+            self.domain.dimension != 2 or periodic != {"x", "y"}
+        ):
+            raise ValueError("Taylor-Green requires a 2D domain periodic in x and y")
+        if initial_condition == "poiseuille" and (
+            self.domain.dimension != 2 or "x" not in periodic or "y" in periodic
+        ):
+            raise ValueError("Poiseuille requires a 2D domain periodic in x and nonperiodic in y")
 
     @property
     def dtype(self) -> np.dtype[np.floating]:

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "non-increasing-bounds", "base": "scenarios/validation/uniform.json", "path": ["bounds", 0], "value": [1.0, 1.0], "reason": "bounds must be strictly increasing"},
+    {"id": "decreasing-control-time", "base": "scenarios/validation/uniform.json", "path": ["controls"], "value": [{"time": 0.2, "angle_degrees": 0.0}, {"time": 0.1, "angle_degrees": 4.0}], "reason": "control times must be strictly increasing"},
+    {"id": "duplicate-control-time", "base": "scenarios/validation/uniform.json", "path": ["controls"], "value": [{"time": 0.0, "angle_degrees": 0.0}, {"time": 0.0, "angle_degrees": 4.0}], "reason": "control times must be strictly increasing"},
+    {"id": "dimension-array-mismatch", "base": "scenarios/validation/uniform.json", "path": ["dimension"], "value": 3, "reason": "dimensioned arrays must agree"},
+    {"id": "unsupported-precision", "base": "scenarios/validation/uniform.json", "path": ["precision"], "value": "float16", "reason": "precision must be supported"},
+    {"id": "invalid-geometry-code", "base": "scenarios/validation/uniform.json", "path": ["foil", "naca"], "value": "12A4", "reason": "geometry descriptor must be valid"},
+    {"id": "taylor-green-nonperiodic", "base": "scenarios/validation/taylor-green.json", "path": ["periodic_axes"], "value": ["x"], "reason": "Taylor-Green requires periodic x and y"},
+    {"id": "poiseuille-periodic-transverse", "base": "scenarios/validation/poiseuille.json", "path": ["periodic_axes"], "value": ["x", "y"], "reason": "Poiseuille requires periodic x and nonperiodic y"}
+  ]
+}

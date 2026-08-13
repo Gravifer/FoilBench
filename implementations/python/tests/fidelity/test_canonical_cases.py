@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -12,19 +13,38 @@ from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import create_solver, solver_ids
 from tests.helpers import ScenarioFactory
 
+ROOT = find_repo_root(Path(__file__))
+FIDELITY = cast(
+    dict[str, object],
+    json.loads(
+        (ROOT / "spec/proposals/revision5/fixtures/fidelity-cases.json").read_text(
+            encoding="utf-8"
+        )
+    ),
+)
 
-def _validation_scenario(
-    name: str,
-    resolution: tuple[int, int],
-    duration: float,
-) -> Scenario:
-    root = find_repo_root(Path(__file__))
-    scenario = load_scenario(root / "scenarios" / "validation" / name)
+
+def _case(case_id: str) -> dict[str, object]:
+    for case in cast(list[dict[str, object]], FIDELITY["cases"]):
+        if case["id"] == case_id:
+            return case
+    raise KeyError(case_id)
+
+
+def _fidelity_scenario(case_id: str) -> Scenario:
+    case = _case(case_id)
+    scenario = load_scenario(ROOT / str(case["scenario"]))
+    resolution_values = cast(list[int], case["resolution"])
     return replace(
         scenario,
-        domain=replace(scenario.domain, resolution=resolution),
-        duration=duration,
+        domain=replace(scenario.domain, resolution=tuple(resolution_values)),
+        duration=float(cast(float, case["duration"])),
     )
+
+
+def _threshold(case_id: str, metric: str) -> float:
+    metrics = cast(dict[str, dict[str, object]], _case(case_id)["metrics"])
+    return float(cast(float, metrics[metric]["threshold"]))
 
 
 @pytest.mark.fidelity
@@ -32,13 +52,15 @@ def _validation_scenario(
 def test_uniform_flow_remains_finite_and_near_uniform(
     solver_id: str,
 ) -> None:
-    scenario = _validation_scenario("uniform.json", (40, 20), 0.2)
+    scenario = _fidelity_scenario("uniform")
     geometry = NacaFoil(scenario.foil)
     solver = create_solver(solver_id)
     solver.initialize(scenario, geometry, 0)
     before = solver.export_state()
-    for step in range(10):
-        solver.advance(scenario.control_at((step + 1) * 0.02), 0.02)
+    for step in range(round(scenario.duration / scenario.output_dt)):
+        solver.advance(
+            scenario.control_at((step + 1) * scenario.output_dt), scenario.output_dt
+        )
     after = solver.export_state()
     velocity_drift = float(np.sqrt(np.mean((after.velocity - before.velocity) ** 2)))
     spurious_vorticity = float(
@@ -49,20 +71,22 @@ def test_uniform_flow_remains_finite_and_near_uniform(
         if after.density is None or before.density is None
         else float(np.max(np.abs(after.density - before.density)))
     )
-    assert velocity_drift < 1.0e-5
-    assert spurious_vorticity < 1.0e-5
-    assert density_drift < 1.0e-5
+    assert velocity_drift < _threshold("uniform", "velocity_rms_drift")
+    assert spurious_vorticity < _threshold("uniform", "spurious_vorticity_rms")
+    assert density_drift < _threshold("uniform", "density_linf_drift")
 
 
 @pytest.mark.fidelity
 @pytest.mark.parametrize("solver_id", solver_ids())
 def test_taylor_green_velocity_error_and_energy_decay(solver_id: str) -> None:
-    scenario = _validation_scenario("taylor-green.json", (48, 48), 0.2)
+    scenario = _fidelity_scenario("taylor-green")
     solver = create_solver(solver_id)
     solver.initialize(scenario, NacaFoil(scenario.foil), 0)
     before = solver.diagnostics().values["kinetic_energy"]
-    for step in range(10):
-        solver.advance(scenario.control_at((step + 1) * 0.02), 0.02)
+    for step in range(round(scenario.duration / scenario.output_dt)):
+        solver.advance(
+            scenario.control_at((step + 1) * scenario.output_dt), scenario.output_dt
+        )
     positions = cell_centers(scenario.domain)
     initial = np.stack(
         (
@@ -77,8 +101,8 @@ def test_taylor_green_velocity_error_and_energy_decay(solver_id: str) -> None:
     mean_square_error = cast(np.floating, np.mean((actual - expected) ** 2))
     velocity_l2_error = float(np.sqrt(mean_square_error))
     after = solver.diagnostics().values["kinetic_energy"]
-    assert velocity_l2_error < 0.08
-    assert 0.0 <= after <= before * 1.01
+    assert velocity_l2_error < _threshold("taylor-green", "velocity_l2_error")
+    assert 0.0 <= after <= before * _threshold("taylor-green", "kinetic_energy_ratio")
 
 
 @pytest.mark.fidelity
@@ -86,11 +110,13 @@ def test_taylor_green_velocity_error_and_energy_decay(solver_id: str) -> None:
 def test_poiseuille_profile_has_faster_center(
     solver_id: str,
 ) -> None:
-    scenario = _validation_scenario("poiseuille.json", (64, 32), 0.2)
+    scenario = _fidelity_scenario("poiseuille")
     solver = create_solver(solver_id)
     solver.initialize(scenario, NacaFoil(scenario.foil), 0)
-    for step in range(10):
-        solver.advance(scenario.control_at((step + 1) * 0.02), 0.02)
+    for step in range(round(scenario.duration / scenario.output_dt)):
+        solver.advance(
+            scenario.control_at((step + 1) * scenario.output_dt), scenario.output_dt
+        )
     velocity = solver.export_state().velocity[0]
     positions = cell_centers(scenario.domain)
     y0, y1 = scenario.domain.bounds[1]
@@ -113,16 +139,16 @@ def test_poiseuille_profile_has_faster_center(
         float(np.max(np.abs(velocity[-1, :, 1]))),
     )
     assert center > walls
-    assert profile_error < 0.25
-    assert normal_wall_leakage < 0.01
+    assert profile_error < _threshold("poiseuille", "profile_l2_error")
+    assert normal_wall_leakage < _threshold("poiseuille", "normal_wall_leakage")
 
 
 @pytest.mark.parametrize("solver_id", solver_ids())
 def test_naca0012_zero_angle_is_symmetric_and_impenetrable(solver_id: str) -> None:
-    scenario = _validation_scenario("naca0012-zero.json", (80, 48), 0.5)
+    scenario = _fidelity_scenario("naca0012-zero")
     solver = create_solver(solver_id)
     solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
-    for step in range(30):
+    for step in range(round(scenario.duration / scenario.output_dt)):
         time = (step + 1) * scenario.output_dt
         solver.advance(scenario.control_at(time), scenario.output_dt)
     velocity = solver.export_state().velocity[0]
@@ -135,8 +161,24 @@ def test_naca0012_zero_angle_is_symmetric_and_impenetrable(solver_id: str) -> No
         np.mean((velocity[:, :, 1] + velocity[::-1, :, 1]) ** 2),
     )
     symmetry_error = float(np.sqrt(streamwise_error + transverse_error))
-    assert symmetry_error < 0.01
-    assert solver.diagnostics().values["solid_leakage"] < 1.0e-6
+    assert symmetry_error < _threshold("naca0012-zero", "symmetry_l2_error")
+    assert solver.diagnostics().values["solid_leakage"] < _threshold(
+        "naca0012-zero", "solid_leakage"
+    )
+
+
+@pytest.mark.fidelity
+@pytest.mark.parametrize("solver_id", solver_ids())
+def test_dynamic_naca_reports_declared_finite_metrics(solver_id: str) -> None:
+    scenario = _fidelity_scenario("naca2412-dynamic")
+    solver = create_solver(solver_id)
+    solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
+    for step in range(round(scenario.duration / scenario.output_dt)):
+        time = (step + 1) * scenario.output_dt
+        solver.advance(scenario.control_at(time), scenario.output_dt)
+    diagnostics = solver.diagnostics().values
+    for metric in cast(dict[str, object], _case("naca2412-dynamic")["metrics"]):
+        assert np.isfinite(diagnostics[metric])
 
 
 @pytest.mark.fidelity
