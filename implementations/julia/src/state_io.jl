@@ -10,6 +10,8 @@ struct CanonicalFlowState{D,T<:AbstractFloat}
     source_solver::String
     velocity::Array{T,4}
     density::Union{Nothing,Array{T,3}}
+    geometry::Union{Nothing,FoilSpec{D,T}}
+    producer_execution_target::Union{Nothing,String}
 
     function CanonicalFlowState(
         schema_version::Int,
@@ -23,9 +25,13 @@ struct CanonicalFlowState{D,T<:AbstractFloat}
         source_solver::AbstractString,
         velocity::Array{T,4},
         density::Union{Nothing,Array{T,3}} = nothing,
+        geometry::Union{Nothing,FoilSpec{D,T}} = nothing,
+        producer_execution_target::Union{Nothing,AbstractString} = nothing,
     ) where {D,T<:AbstractFloat}
         D in (2, 3) || throw(ArgumentError("canonical dimension must be two or three"))
-        schema_version == 1 || throw(ArgumentError("unsupported canonical schema version"))
+        schema_version in (1, 2) || throw(ArgumentError("unsupported canonical schema version"))
+        schema_version == 1 || (geometry !== nothing && producer_execution_target !== nothing) ||
+            throw(ArgumentError("canonical v2 requires geometry and producer target identity"))
         all(pair -> all(isfinite, pair) && pair[2] > pair[1], bounds) ||
             throw(ArgumentError("canonical bounds must be finite and increasing"))
         all(>(0), resolution) || throw(ArgumentError("canonical resolution must be positive"))
@@ -59,6 +65,8 @@ struct CanonicalFlowState{D,T<:AbstractFloat}
             String(source_solver),
             velocity,
             density,
+            geometry,
+            producer_execution_target === nothing ? nothing : String(producer_execution_target),
         )
     end
 end
@@ -92,25 +100,44 @@ function _load_canonical_state(manifest::Dict{String,Any}, directory::AbstractSt
     velocity = Array{T,4}(npzread(joinpath(directory, "velocity.npy")))
     density = density_metadata === nothing ? nothing :
         Array{T,3}(npzread(joinpath(directory, "density.npy")))
+    version = Int(manifest["schema_version"])
+    geometry = if version == 2
+        raw = manifest["geometry"]
+        FoilSpec(
+            String(raw["naca"]),
+            T(raw["chord"]),
+            SVector{D,T}(T.(raw["pivot"])),
+        )
+    else
+        nothing
+    end
+    source_language = version == 2 ? String(manifest["producer"]["implementation"]) :
+        String(manifest["source_language"])
+    producer_target = version == 2 ? String(manifest["producer"]["execution_target"]) : nothing
     return CanonicalFlowState(
-        Int(manifest["schema_version"]),
+        version,
         bounds,
         resolution,
         periodic_axes,
         T(manifest["time"]),
         T(manifest["angle_degrees"]),
         T(manifest["angular_velocity_degrees"]),
-        String(manifest["source_language"]),
+        source_language,
         String(manifest["source_solver"]),
         velocity,
         density,
+        geometry,
+        producer_target,
     )
 end
 
 function load_canonical_state(directory::AbstractString)
     manifest = JSON3.read(read(joinpath(directory, "manifest.json"), String), Dict{String,Any})
-    schema_path = normpath(
+    version = Int(get(manifest, "schema_version", 0))
+    schema_path = version == 1 ? normpath(
         joinpath(@__DIR__, "..", "..", "..", "spec", "schemas", "canonical-manifest.schema.json"),
+    ) : normpath(
+        joinpath(@__DIR__, "..", "..", "..", "spec", "proposals", "revision5", "schemas", "canonical-manifest-v2.schema.json"),
     )
     validate_json_file(manifest, schema_path)
     dimension_value = Int(manifest["dimension"])
@@ -132,7 +159,6 @@ function save_canonical_state(state::CanonicalFlowState{D,T}, directory::Abstrac
         "precision" => T === Float32 ? "float32" : "float64",
         "angle_degrees" => state.angle_degrees,
         "angular_velocity_degrees" => state.angular_velocity_degrees,
-        "source_language" => state.source_language,
         "source_solver" => state.source_solver,
         "velocity" => Dict(
             "file" => "velocity.npy",
@@ -145,6 +171,23 @@ function save_canonical_state(state::CanonicalFlowState{D,T}, directory::Abstrac
             "order" => "F",
         ),
     )
+    if state.schema_version == 1
+        manifest["source_language"] = state.source_language
+    else
+        state.geometry === nothing && throw(ArgumentError("canonical v2 geometry missing"))
+        state.producer_execution_target === nothing &&
+            throw(ArgumentError("canonical v2 producer target missing"))
+        manifest["geometry"] = Dict(
+            "family" => "naca-four-digit-v1",
+            "naca" => state.geometry.naca,
+            "chord" => state.geometry.chord,
+            "pivot" => collect(state.geometry.pivot),
+        )
+        manifest["producer"] = Dict(
+            "implementation" => state.source_language,
+            "execution_target" => state.producer_execution_target,
+        )
+    end
     open(joinpath(directory, "manifest.json"), "w") do io
         JSON3.pretty(io, manifest)
     end

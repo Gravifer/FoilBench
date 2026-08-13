@@ -5,7 +5,7 @@ from typing import cast
 import numpy as np
 import pytest
 
-from foilbench_py.core.models import CanonicalFlowState, Precision
+from foilbench_py.core.models import CanonicalFlowState, FoilSpec, Precision
 from foilbench_py.core.scenario import find_repo_root
 from foilbench_py.core.state_io import load_canonical_state, midspan_velocity, save_canonical_state
 
@@ -87,6 +87,32 @@ def test_canonical_state_reader_rejects_semantically_swapped_axes() -> None:
 
     with pytest.raises(ValueError, match="axes"):
         load_canonical_state(directory)
+
+
+def test_canonical_v2_round_trips_geometry_and_producer_identity() -> None:
+    state = CanonicalFlowState(
+        schema_version=2,
+        dimension=2,
+        bounds=((0.0, 2.0), (-1.0, 1.0)),
+        resolution=(8, 4),
+        periodic_axes=(),
+        time=0.25,
+        precision="float32",
+        angle_degrees=14.0,
+        angular_velocity_degrees=0.0,
+        source_language="rust",
+        source_solver="stable-fluids",
+        velocity=np.zeros((1, 4, 8, 2), dtype=np.float32),
+        geometry=FoilSpec("2412", 1.0, (0.0, 0.0)),
+        producer_execution_target="native",
+    )
+    root = find_repo_root(Path(__file__))
+    directory = save_canonical_state(state, root / "results" / "test-state-io-v2")
+    loaded = load_canonical_state(directory)
+    assert loaded.schema_version == 2
+    assert loaded.geometry == state.geometry
+    assert loaded.source_language == "rust"
+    assert loaded.producer_execution_target == "native"
 
 
 def test_canonical_state_reader_honors_fortran_storage_metadata() -> None:

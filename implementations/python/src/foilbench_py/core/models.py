@@ -333,10 +333,16 @@ class CanonicalFlowState:
     source_solver: str
     velocity: VelocityVolume
     density: ScalarVolume | None = None
+    geometry: FoilSpec | None = None
+    producer_execution_target: str | None = None
 
     def __post_init__(self) -> None:
-        if self.schema_version != 1:
+        if self.schema_version not in (1, 2):
             raise ValueError("unsupported canonical schema version")
+        if self.schema_version == 2 and (
+            self.geometry is None or not self.producer_execution_target
+        ):
+            raise ValueError("canonical v2 requires geometry and producer target identity")
         if len(self.bounds) != self.dimension or len(self.resolution) != self.dimension:
             raise ValueError("canonical bounds and resolution must match dimension")
         if any(

@@ -47,6 +47,23 @@ using JSON3
 using StaticArrays
 using Test
 
+@testset "Canonical state v2 identity round trip" begin
+    geometry = FoilSpec("2412", 1.0f0, SVector{2,Float32}(0, 0))
+    state = CanonicalFlowState(
+        2, ((0.0f0, 2.0f0), (-1.0f0, 1.0f0)), (8, 4), (), 0.25f0,
+        14.0f0, 0.0f0, "rust", "stable-fluids", zeros(Float32, 1, 4, 8, 2),
+        nothing, geometry, "native",
+    )
+    mktempdir() do directory
+        save_canonical_state(state, directory)
+        roundtrip = load_canonical_state(directory)
+        @test roundtrip.schema_version == 2
+        @test roundtrip.geometry == geometry
+        @test roundtrip.source_language == "rust"
+        @test roundtrip.producer_execution_target == "native"
+    end
+end
+
 const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const FIXTURES = joinpath(REPOSITORY_ROOT, "spec", "conformance")
 const REVISION5 = joinpath(REPOSITORY_ROOT, "spec", "proposals", "revision5")
@@ -1165,6 +1182,8 @@ end
             solid_density_state.source_solver,
             copy(solid_density_state.velocity),
             modified_density,
+            solid_density_state.geometry,
+            solid_density_state.producer_execution_target,
         )
         solid_density_destination = LBMSolver(Float32)
         initialize!(solid_density_destination, scenario, geometry, scenario.seed)

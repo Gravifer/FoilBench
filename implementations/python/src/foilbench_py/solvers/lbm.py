@@ -897,7 +897,7 @@ class LBMSolver:
         density = np.asarray(density, dtype=scenario.dtype).copy()
         density[solid] = 1.0
         return CanonicalFlowState(
-            schema_version=1,
+            schema_version=2,
             dimension=2,
             bounds=scenario.domain.bounds,
             resolution=scenario.domain.resolution,
@@ -910,6 +910,8 @@ class LBMSolver:
             source_solver=self.info.id,
             velocity=velocity[None, ...],
             density=density[None, ...],
+            geometry=scenario.foil,
+            producer_execution_target="native",
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:

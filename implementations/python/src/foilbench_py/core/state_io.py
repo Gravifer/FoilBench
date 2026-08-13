@@ -8,7 +8,7 @@ import numpy as np
 from jsonschema.exceptions import ValidationError
 
 from foilbench_py.core._schema_adapter import validate_json
-from foilbench_py.core.models import AxisName, CanonicalFlowState, Precision
+from foilbench_py.core.models import AxisName, CanonicalFlowState, FoilSpec, Precision
 from foilbench_py.core.scenario import find_repo_root
 from foilbench_py.types import VelocityField
 
@@ -71,7 +71,6 @@ def save_canonical_state(state: CanonicalFlowState, directory: str | Path) -> Pa
         "precision": state.precision,
         "angle_degrees": state.angle_degrees,
         "angular_velocity_degrees": state.angular_velocity_degrees,
-        "source_language": state.source_language,
         "source_solver": state.source_solver,
         "velocity": {
             "file": "velocity.npy",
@@ -82,6 +81,21 @@ def save_canonical_state(state: CanonicalFlowState, directory: str | Path) -> Pa
         if state.density is None
         else {"file": "density.npy", "axes": ["z", "y", "x"], "order": "C"},
     }
+    if state.schema_version == 1:
+        manifest["source_language"] = state.source_language
+    else:
+        if state.geometry is None or state.producer_execution_target is None:
+            raise ValueError("canonical v2 requires geometry and producer target")
+        manifest["geometry"] = {
+            "family": "naca-four-digit-v1",
+            "naca": state.geometry.naca,
+            "chord": state.geometry.chord,
+            "pivot": state.geometry.pivot,
+        }
+        manifest["producer"] = {
+            "implementation": state.source_language,
+            "execution_target": state.producer_execution_target,
+        }
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return destination
 
@@ -92,10 +106,13 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     manifest = _json_object(source / "manifest.json")
     root = find_repo_root(source)
     try:
-        validate_json(
-            manifest,
-            _json_object(root / "spec" / "schemas" / "canonical-manifest.schema.json"),
+        version = int(cast(int, manifest.get("schema_version", 0)))
+        schema_path = (
+            root / "spec" / "schemas" / "canonical-manifest.schema.json"
+            if version == 1
+            else root / "spec" / "proposals" / "revision5" / "schemas" / "canonical-manifest-v2.schema.json"
         )
+        validate_json(manifest, _json_object(schema_path))
     except ValidationError as error:
         raise ValueError(
             f"invalid canonical manifest at {error.json_path}: {error.message}"
@@ -134,8 +151,25 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
     dimension_value = int(cast(int, manifest["dimension"]))
     if dimension_value not in (2, 3):
         raise ValueError("canonical dimension must be 2 or 3")
+    version = int(cast(int, manifest["schema_version"]))
+    raw_geometry = manifest.get("geometry")
+    geometry = None
+    if isinstance(raw_geometry, dict):
+        typed_geometry = cast(dict[str, object], raw_geometry)
+        geometry = FoilSpec(
+            naca=str(typed_geometry["naca"]),
+            chord=float(cast(float, typed_geometry["chord"])),
+            pivot=tuple(float(value) for value in cast(list[float], typed_geometry["pivot"])),
+        )
+    raw_producer = manifest.get("producer")
+    source_language = str(manifest.get("source_language", ""))
+    producer_target = None
+    if isinstance(raw_producer, dict):
+        typed_producer = cast(dict[str, object], raw_producer)
+        source_language = str(typed_producer["implementation"])
+        producer_target = str(typed_producer["execution_target"])
     return CanonicalFlowState(
-        schema_version=int(cast(int, manifest["schema_version"])),
+        schema_version=version,
         dimension=dimension_value,
         bounds=tuple((float(pair[0]), float(pair[1])) for pair in raw_bounds),
         resolution=tuple(int(value) for value in raw_resolution),
@@ -144,10 +178,12 @@ def load_canonical_state(directory: str | Path) -> CanonicalFlowState:
         precision=precision,
         angle_degrees=float(cast(float, manifest["angle_degrees"])),
         angular_velocity_degrees=float(cast(float, manifest["angular_velocity_degrees"])),
-        source_language=str(manifest["source_language"]),
+        source_language=source_language,
         source_solver=str(manifest["source_solver"]),
         velocity=velocity,
         density=density,
+        geometry=geometry,
+        producer_execution_target=producer_target,
     )
 
 

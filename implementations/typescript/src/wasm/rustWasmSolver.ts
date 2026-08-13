@@ -201,12 +201,15 @@ export class RustWasmFlowSolver implements FlowSolver {
     const bounds = parsed["bounds"] as readonly (readonly [number, number])[];
     const resolution = parsed["resolution"] as readonly number[];
     const periodicAxes = parsed["periodic_axes"] as readonly ("x" | "y" | "z")[];
+    const geometry = parsed["geometry"] as Readonly<Record<string, unknown>>;
     return {
-      schemaVersion: 1, dimension: 2, bounds, resolution, periodicAxes,
+      schemaVersion: 2, dimension: 2, bounds, resolution, periodicAxes,
       time: numberValue(parsed, "time"), precision: binding.precision as "float32" | "float64",
       angleDegrees: numberValue(parsed, "angle_degrees"),
       angularVelocityDegrees: numberValue(parsed, "angular_velocity_degrees"),
       sourceLanguage: "rust", sourceSolver: String(parsed["source_solver"]), velocity, density: density ?? null,
+      geometry: {naca: String(geometry["naca"]), chord: numberValue(geometry, "chord"), pivot: geometry["pivot"] as readonly number[]},
+      producerExecutionTarget: "wasm-browser",
     };
   }
 
@@ -218,7 +221,7 @@ export class RustWasmFlowSolver implements FlowSolver {
       time: control.time, angle_degrees: control.angleDegrees,
       angular_velocity_degrees: control.angularVelocityDegrees,
       geometry: {family: "naca-four-digit-v1", naca: scenario.foil.naca, chord: scenario.foil.chord, pivot: scenario.foil.pivot},
-      producer: {implementation: state.sourceLanguage, execution_target: "native", build: null},
+      producer: {implementation: state.sourceLanguage, execution_target: state.producerExecutionTarget ?? "native", build: null},
       source_solver: state.sourceSolver,
     });
     const document = state.velocity instanceof Float32Array

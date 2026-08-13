@@ -836,7 +836,7 @@ function export_state(solver::PicFlipSolver{T}) where {T}
         velocity[index, 2] = zero(T)
     end
     return CanonicalFlowState(
-        1,
+        2,
         scenario.domain.bounds,
         scenario.domain.resolution,
         scenario.domain.periodic_axes,
@@ -846,6 +846,9 @@ function export_state(solver::PicFlipSolver{T}) where {T}
         "julia",
         solver_info(solver).id,
         cell_to_canonical(velocity),
+        nothing,
+        scenario.foil,
+        "native",
     )
 end
 

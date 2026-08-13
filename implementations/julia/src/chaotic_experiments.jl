@@ -234,6 +234,8 @@ function run_chaos_sensitivity(
         "deterministic-perturbation",
         cell_to_canonical(velocity),
         state.density,
+        state.geometry,
+        state.producer_execution_target,
     )
     perturbed_outcome = import_state!(perturbed, perturbed_state, initial_control)
     accepted(perturbed_outcome) || throw(ErrorException(

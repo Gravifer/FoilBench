@@ -9,14 +9,16 @@ results = abspath(ARGS[1])
 scenario_base = load_scenario(joinpath(root, "scenarios", "airfoil", "default.json"))
 expected = Set(
     (language, solver_id)
-    for language in ("python", "julia", "typescript")
+    for language in ("python", "julia", "typescript", "rust")
     for solver_id in solver_ids()
 )
 observed = Set{Tuple{String,String}}()
 for (directory, _, files) in walkdir(results)
     "manifest.json" in files || continue
     manifest = JSON3.read(read(joinpath(directory, "manifest.json"), String))
-    source = (String(manifest.source_language), String(manifest.source_solver))
+    source_language = Int(manifest.schema_version) == 2 ?
+        String(manifest.producer.implementation) : String(manifest.source_language)
+    source = (source_language, String(manifest.source_solver))
     source in observed && error("duplicate canonical snapshot from $source")
     push!(observed, source)
     state = load_canonical_state(directory)
@@ -48,4 +50,4 @@ observed == expected || error(
     "canonical producer roster mismatch: missing=$(setdiff(expected, observed)) " *
     "extra=$(setdiff(observed, expected))",
 )
-println("Julia imported all 27 cross-language canonical conversions")
+println("Julia imported all 36 cross-language canonical conversions")

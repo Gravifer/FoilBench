@@ -70,7 +70,7 @@ def validate_canonical_import(
     scenario: Scenario,
     control: ControlState,
 ) -> None:
-    if state.schema_version != 1:
+    if state.schema_version not in (1, 2):
         raise NumericalFailure(
             "incompatible_domain",
             "canonical schema version is unsupported",
@@ -184,6 +184,12 @@ def validate_canonical_import(
                 "state_angle": state.angle_degrees,
                 "control_angle": control.angle_degrees,
             },
+        )
+    if state.schema_version == 2 and state.geometry != scenario.foil:
+        raise NumericalFailure(
+            "incompatible_geometry",
+            "canonical geometry does not match the scenario",
+            "canonical-import",
         )
     if state.dimension == 2:
         solid = NacaFoil(scenario.foil).mask(

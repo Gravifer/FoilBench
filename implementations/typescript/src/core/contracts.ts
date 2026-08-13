@@ -93,7 +93,7 @@ export interface ImportOutcome {readonly status: "accepted" | "rejected"; readon
 export interface ReynoldsOutcome {readonly requested: number; readonly effective: number; readonly warnings: readonly string[]}
 
 export interface CanonicalFlowState {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly dimension: 2 | 3;
   readonly bounds: readonly (readonly [number, number])[];
   readonly resolution: readonly number[];
@@ -106,6 +106,8 @@ export interface CanonicalFlowState {
   readonly sourceSolver: string;
   readonly velocity: FloatArray;
   readonly density: FloatArray | null;
+  readonly geometry?: FoilSpec;
+  readonly producerExecutionTarget?: "native" | "node" | "browser-worker" | "wasm-browser";
 }
 
 export interface FlowSolver {

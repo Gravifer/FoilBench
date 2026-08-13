@@ -617,7 +617,7 @@ class StableFluidsSolver:
         velocity_2d[solid] = 0.0
         velocity = velocity_2d[None, ...]
         return CanonicalFlowState(
-            schema_version=1,
+            schema_version=2,
             dimension=2,
             bounds=scenario.domain.bounds,
             resolution=scenario.domain.resolution,
@@ -629,6 +629,8 @@ class StableFluidsSolver:
             source_language="python",
             source_solver=self.info.id,
             velocity=velocity,
+            geometry=scenario.foil,
+            producer_execution_target="native",
         )
 
     def import_state(self, state: CanonicalFlowState, control: ControlState) -> ImportOutcome:

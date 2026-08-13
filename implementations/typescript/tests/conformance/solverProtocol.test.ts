@@ -74,7 +74,8 @@ describe("shared solver protocol", () => {
     expect(solver.importState({...state, angleDegrees: state.angleDegrees + 1}, control).reason).toBe("time_contract_failure");
     expect(solver.importState({...state, angularVelocityDegrees: state.angularVelocityDegrees + 1}, control).reason).toBe("time_contract_failure");
     if (state.density !== null) expect(solver.importState({...state, density: state.density.slice(1)}, control).reason).toBe("incompatible_domain");
-    expect(solver.importState({...state, schemaVersion: 2} as unknown as CanonicalFlowState, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, schemaVersion: 3} as unknown as CanonicalFlowState, control).reason).toBe("incompatible_domain");
+    expect(solver.importState({...state, geometry: {...scenario.foil, naca: "2412"}}, control).reason).toBe("incompatible_geometry");
     const wrongVelocityType = state.velocity instanceof Float32Array
       ? new Float64Array(state.velocity)
       : new Float32Array(state.velocity);

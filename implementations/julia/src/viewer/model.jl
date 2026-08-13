@@ -908,6 +908,8 @@ function _state_at_control(
         state.source_solver,
         velocity,
         state.density === nothing ? nothing : copy(state.density),
+        state.geometry,
+        state.producer_execution_target,
     )
 end
 

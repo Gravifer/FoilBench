@@ -31,7 +31,7 @@ export function validateCanonicalState(
     ? state.velocity instanceof Float32Array && (state.density === null || state.density instanceof Float32Array)
     : state.velocity instanceof Float64Array && (state.density === null || state.density instanceof Float64Array);
   if (
-    runtimeSchemaVersion !== 1
+    (runtimeSchemaVersion !== 1 && runtimeSchemaVersion !== 2)
     || state.dimension !== scenario.domain.dimension
     || !sameNumbers(state.resolution, scenario.domain.resolution)
     || state.bounds.length !== scenario.domain.bounds.length
@@ -42,6 +42,16 @@ export function validateCanonicalState(
     || state.velocity.length !== expectedVelocity
     || (state.density !== null && state.density.length !== expectedDensity)
   ) return rejected("incompatible_domain");
+  if (runtimeSchemaVersion === 2) {
+    const geometry = state.geometry;
+    if (
+      geometry === undefined
+      || state.producerExecutionTarget === undefined
+      || geometry.naca !== scenario.foil.naca
+      || Math.abs(geometry.chord - scenario.foil.chord) > tolerance
+      || !sameNumbers(geometry.pivot, scenario.foil.pivot, tolerance)
+    ) return rejected("incompatible_geometry");
+  }
   if (
     !Number.isFinite(state.time)
     || state.time < 0

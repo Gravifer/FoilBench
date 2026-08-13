@@ -205,7 +205,7 @@ function initialize!(
     solver.reference_speed = reference_speed(scenario)
     solver.reynolds_value = scenario.reynolds
     reference_substeps = max(
-        1,
+        2,
         ceil(Int, scenario.output_dt * solver.reference_speed /
             (T(LBM_MAXIMUM_LATTICE_SPEED) * dx(scenario.domain)) - T(1.0e-12)),
     )
@@ -724,7 +724,7 @@ function export_state(solver::LBMSolver{T}) where {T}
         canonical_density[1, j, i] = density[i, j]
     end
     return CanonicalFlowState(
-        1,
+        2,
         scenario.domain.bounds,
         scenario.domain.resolution,
         scenario.domain.periodic_axes,
@@ -735,6 +735,8 @@ function export_state(solver::LBMSolver{T}) where {T}
         solver_info(solver).id,
         cell_to_canonical(velocity),
         canonical_density,
+        scenario.foil,
+        "native",
     )
 end
 

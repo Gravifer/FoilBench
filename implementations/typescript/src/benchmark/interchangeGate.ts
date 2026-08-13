@@ -11,7 +11,7 @@ const resultsRoot = resolve(process.argv[2] ?? "results");
 const schema = JSON.parse(await readFile(join(repositoryRoot, "spec/schemas/scenario.schema.json"), "utf8")) as object;
 const base = parseScenario(JSON.parse(await readFile(join(repositoryRoot, "scenarios/airfoil/default.json"), "utf8")) as unknown, schema);
 const solverIds: readonly SolverId[] = ["stable-fluids", "lbm-d2q9", "pic-flip"];
-const expected = new Set(["python", "julia", "typescript"].flatMap((language) => solverIds.map((solver) => `${language}/${solver}`)));
+const expected = new Set(["python", "julia", "typescript", "rust"].flatMap((language) => solverIds.map((solver) => `${language}/${solver}`)));
 const observed = new Set<string>();
 
 for (const relative of await readdir(resultsRoot, {recursive: true})) {
@@ -31,4 +31,4 @@ for (const relative of await readdir(resultsRoot, {recursive: true})) {
 const missing = [...expected].filter((value) => !observed.has(value));
 const extra = [...observed].filter((value) => !expected.has(value));
 if (missing.length > 0 || extra.length > 0) throw new Error(`canonical producer roster mismatch: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
-console.log("TypeScript imported all 27 cross-language canonical conversions");
+console.log("TypeScript imported all 36 cross-language canonical conversions");

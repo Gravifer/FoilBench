@@ -46,7 +46,7 @@ function validate_canonical_import(
     scenario::Scenario{ScenarioD,T},
     control::ControlState,
 ) where {StateD,ScenarioD,S,T<:AbstractFloat}
-    state.schema_version == 1 || throw(NumericalFailure(
+    state.schema_version in (1, 2) || throw(NumericalFailure(
         :incompatible_domain,
         "canonical schema version is unsupported",
         Symbol("canonical-import"),
@@ -125,6 +125,11 @@ function validate_canonical_import(
             "state_angle" => state.angle_degrees,
             "control_angle" => control.angle_degrees,
         ),
+    ))
+    state.schema_version == 1 || state.geometry == scenario.foil || throw(NumericalFailure(
+        :incompatible_geometry,
+        "canonical geometry does not match the scenario",
+        Symbol("canonical-import"),
     ))
     if StateD == 2
         geometry = NacaFoil(scenario.foil)

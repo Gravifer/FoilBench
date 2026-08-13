@@ -21,7 +21,7 @@ def main() -> None:
     scenario_base = load_scenario(root / "scenarios/airfoil/default.json")
     expected = {
         (language, solver_id)
-        for language in ("python", "julia", "typescript")
+        for language in ("python", "julia", "typescript", "rust")
         for solver_id in solver_ids()
     }
     observed: set[tuple[str, str]] = set()
@@ -30,7 +30,13 @@ def main() -> None:
             dict[str, object],
             json.loads(manifest_path.read_text(encoding="utf-8")),
         )
-        source = (str(manifest["source_language"]), str(manifest["source_solver"]))
+        producer = manifest.get("producer")
+        source_language = (
+            str(cast(dict[str, object], producer)["implementation"])
+            if isinstance(producer, dict)
+            else str(manifest["source_language"])
+        )
+        source = (source_language, str(manifest["source_solver"]))
         if source in observed:
             raise ValueError(f"duplicate canonical snapshot from {source!r}")
         observed.add(source)
@@ -57,7 +63,7 @@ def main() -> None:
             f"canonical producer roster mismatch: missing={sorted(expected - observed)!r} "
             f"extra={sorted(observed - expected)!r}"
         )
-    print("Python imported all 27 cross-language canonical conversions")
+    print("Python imported all 36 cross-language canonical conversions")
 
 
 if __name__ == "__main__":
