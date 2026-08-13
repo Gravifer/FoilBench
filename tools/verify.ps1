@@ -155,6 +155,10 @@ try {
                 Invoke-Checked npm @('run', 'gate:warm-switch')
                 Write-Host '==> TypeScript: 160x96 scheduled-control gate'
                 Invoke-Checked npm @('run', 'gate:scheduled')
+                Write-Host '==> Rust/WASM: 160x96 preview gate'
+                Invoke-Checked npm @('run', 'gate:rust-wasm-preview')
+                Write-Host '==> Rust/WASM: production browser repertoire gate'
+                Invoke-Checked npm @('run', 'gate:rust-wasm-production')
             }
         }
         finally {
@@ -189,12 +193,22 @@ try {
         else {
             Write-Warning 'wasm32-unknown-unknown is not installed locally; pinned CI performs the mandatory WASM target check'
         }
+        if ($Representative) {
+            foreach ($gate in @('startup', 'preview', 'warm-switch', 'scheduled')) {
+                Write-Host "==> Rust/native: $gate gate"
+                Invoke-Checked cargo @(
+                    'run', '--release', '--quiet', '--locked',
+                    '--manifest-path', 'implementations/rust/Cargo.toml',
+                    '-p', 'foilbench-native', '--', 'gate', $gate
+                )
+            }
+        }
     }
 
-    if ($Representative -and $Python -and $Julia -and $TypeScript) {
-        Write-Host '==> Revision 4: cross-language artifacts and chaotic extension'
+    if ($Representative -and $Python -and $Julia -and $TypeScript -and $Rust) {
+        Write-Host '==> Revision 5: cross-target artifacts and chaotic extension'
         Invoke-Checked pwsh @(
-            '-NoProfile', '-File', 'tools/revision4_acceptance.ps1'
+            '-NoProfile', '-File', 'tools/revision5_acceptance.ps1'
         )
     }
 }

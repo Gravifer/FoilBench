@@ -43,6 +43,10 @@ verify:
 verify-representative:
     pwsh -NoProfile -File tools/verify.ps1 -Representative
 
+# Run only the Revision 5 cross-target artifact and chaos aggregate.
+revision5-acceptance:
+    pwsh -NoProfile -File tools/revision5_acceptance.ps1
+
 # Run only the Python checks.
 verify-python:
     pwsh -NoProfile -File tools/verify.ps1 -Python
