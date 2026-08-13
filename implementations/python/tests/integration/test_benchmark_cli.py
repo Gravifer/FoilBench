@@ -50,8 +50,13 @@ def test_smoke_benchmark_emits_comparable_artifacts(tmp_path: Path) -> None:
     assert "stable-fluids" in format_comparison(
         output, required_languages=("python",)
     )
+    assert "stable-fluids" in format_comparison(
+        output, required_producers=("python/native",)
+    )
     with pytest.raises(ValueError, match="producer roster mismatch"):
         format_comparison(output, required_languages=("python", "julia"))
+    with pytest.raises(ValueError, match="producer/target roster mismatch"):
+        format_comparison(output, required_producers=("python/native", "rust/native"))
     missing_directory = tmp_path / "test-artifacts-incomplete"
     missing_directory.mkdir()
     (missing_directory / result_files[0].name).write_text(

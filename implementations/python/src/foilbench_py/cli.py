@@ -40,6 +40,10 @@ def _parser() -> argparse.ArgumentParser:
         "--require-languages",
         help="require an exact comma-separated producer roster",
     )
+    compare.add_argument(
+        "--require-producers",
+        help="require an exact comma-separated implementation/target roster",
+    )
 
     chaos = subcommands.add_parser(
         "chaos-validate", help="validate optional chaotic-wake result artifacts"
@@ -107,11 +111,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             if arguments.require_languages
             else ()
         )
+        required_producers = (
+            tuple(str(arguments.require_producers).split(","))
+            if arguments.require_producers
+            else ()
+        )
         print(
             format_comparison(
                 arguments.results,
                 require_complete=arguments.require_complete,
                 required_languages=required_languages,
+                required_producers=required_producers,
             )
         )
     elif arguments.command == "chaos-validate":
