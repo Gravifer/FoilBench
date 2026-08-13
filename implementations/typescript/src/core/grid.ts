@@ -73,7 +73,12 @@ export interface ProjectionReport {
 }
 
 export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: number, ny: number, dx: number, dy: number, precision: Precision, iterations: number, tolerance: number, periodicX = false, periodicY = false): ProjectionReport {
-  const divergenceBefore = divergence(u, v, nx, ny, dx, dy, precision); const pressure = allocate(precision, nx * ny); const rightHandSide = allocate(precision, nx * ny); const diagonal = allocate(precision, nx * ny);
+  const divergenceBefore = divergence(u, v, nx, ny, dx, dy, precision);
+  // Retain the requested storage precision for velocity, but perform the
+  // pressure iteration in Float64 so the independently recomputed residual is
+  // not limited by recursive Float32 CG drift.
+  const solvePrecision: Precision = "float64";
+  const pressure = allocate(solvePrecision, nx * ny); const rightHandSide = allocate(solvePrecision, nx * ny); const diagonal = allocate(solvePrecision, nx * ny);
   const invDx2 = 1 / (dx * dx); const invDy2 = 1 / (dy * dy);
   let fluidCount = 0; let rightMean = 0;
   for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) {
@@ -102,12 +107,12 @@ export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: num
       destination[index] = value;
     }
   };
-  const residual = rightHandSide.slice(); const preconditioned = allocate(precision, nx * ny); const preconditionerScratch = allocate(precision, nx * ny); const direction = allocate(precision, nx * ny); const operatorDirection = allocate(precision, nx * ny);
+  const residual = rightHandSide.slice(); const preconditioned = allocate(solvePrecision, nx * ny); const preconditionerScratch = allocate(solvePrecision, nx * ny); const direction = allocate(solvePrecision, nx * ny); const operatorDirection = allocate(solvePrecision, nx * ny);
   const applyPreconditioner = (source: FloatArray, destination: FloatArray): void => {
     for (let y = 0; y < ny; y += 1) for (let x = 0; x < nx; x += 1) { const index = y * nx + x; if (solid[index] !== 0) { preconditionerScratch[index] = source[index] ?? 0; continue; } let value = source[index] ?? 0; if (x > 0 && solid[index - 1] === 0) value += invDx2 * (preconditionerScratch[index - 1] ?? 0); if (y > 0 && solid[index - nx] === 0) value += invDy2 * (preconditionerScratch[index - nx] ?? 0); preconditionerScratch[index] = value / Math.max(diagonal[index] ?? 0, epsilon); }
     for (let y = ny - 1; y >= 0; y -= 1) for (let x = nx - 1; x >= 0; x -= 1) { const index = y * nx + x; if (solid[index] !== 0) { destination[index] = preconditionerScratch[index] ?? 0; continue; } let value = (diagonal[index] ?? 0) * (preconditionerScratch[index] ?? 0); if (x + 1 < nx && solid[index + 1] === 0) value += invDx2 * (destination[index + 1] ?? 0); if (y + 1 < ny && solid[index + nx] === 0) value += invDy2 * (destination[index + nx] ?? 0); destination[index] = value / Math.max(diagonal[index] ?? 0, epsilon); }
   };
-  const epsilon = precision === "float32" ? 1e-7 : 1e-15; applyPreconditioner(residual, preconditioned);
+  const epsilon = 1e-15; applyPreconditioner(residual, preconditioned);
   let rightNormSquared = 0; let residualDot = 0; for (let index = 0; index < residual.length; index += 1) { const right = rightHandSide[index] ?? 0; direction[index] = preconditioned[index] ?? 0; rightNormSquared += right * right; residualDot += (residual[index] ?? 0) * (preconditioned[index] ?? 0); }
   // The recursively accumulated CG residual can be slightly more optimistic
   // than the independently recomputed contract residual, especially in
