@@ -270,7 +270,7 @@ pub fn diffuse_mac<T: FlowScalar>(
             return Ok(DiffusionReport {
                 converged: true,
                 iterations: iteration,
-                residual_linf,
+                residual_linf: residual_linf / source_scale.max(1.0),
             });
         }
         std::mem::swap(&mut current, &mut next);

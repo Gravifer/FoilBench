@@ -11,6 +11,7 @@ pub mod projection;
 pub mod raster;
 pub mod scenario;
 pub mod solver;
+pub mod stable_fluids;
 pub mod viscosity;
 
 pub use canonical::{
@@ -34,4 +35,5 @@ pub use solver::{
     FlowScalar, FlowSolver, ImportOutcome, InteractiveTuning, RestartState, ReynoldsOutcome,
     SolverError, SolverInfo, StepReport, TuningValue,
 };
+pub use stable_fluids::{StableFluids, StableTransport};
 pub use viscosity::{DiffusionReport, diffuse_mac};

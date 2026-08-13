@@ -297,7 +297,13 @@ pub fn project_incompressible<T: FlowScalar>(
     Ok(ProjectionReport {
         converged,
         iterations,
-        residual_linf,
+        residual_linf: residual_linf
+            / rhs
+                .iter()
+                .copied()
+                .map(f64::abs)
+                .fold(0.0, f64::max)
+                .max(1.0),
         divergence_before_linf: before,
         divergence_after_linf: after,
     })

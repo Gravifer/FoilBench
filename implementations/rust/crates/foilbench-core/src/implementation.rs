@@ -23,7 +23,7 @@ pub fn implementation_description(target: ExecutionTarget) -> ImplementationDesc
         implementation: "rust",
         execution_target: target,
         phase: "3-foundation",
-        solvers: Vec::new(),
+        solvers: vec!["stable-fluids"],
         canonical_manifest_models: vec![1, 2],
         canonical_payload_io: false,
     }
