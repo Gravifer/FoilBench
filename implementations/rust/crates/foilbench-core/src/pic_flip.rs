@@ -1397,4 +1397,39 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn float64_validation_path_advances_and_exports_finite_state() {
+        let mut document: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(repository_root().join("scenarios/airfoil/default.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        document["resolution"] = serde_json::json!([24, 12]);
+        document["precision"] = serde_json::json!("float64");
+        document["output_dt"] = serde_json::json!(0.01);
+        let scenario = Scenario::from_json(&serde_json::to_string(&document).unwrap()).unwrap();
+        let geometry = NacaFoil::new(scenario.foil().clone()).unwrap();
+        let mut solver = PicFlip::<f64>::default();
+        solver.initialize(&scenario, &geometry, 11).unwrap();
+        solver
+            .advance(
+                ControlState {
+                    time: 0.01,
+                    angle_degrees: 4.0,
+                    angular_velocity_degrees: 0.0,
+                },
+                0.01,
+            )
+            .unwrap();
+        assert!(
+            solver
+                .export_state()
+                .unwrap()
+                .velocity
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+        );
+    }
 }

@@ -71,4 +71,6 @@ test("production viewer loads and switches the Rust/WASM solver repertoire", asy
   await expect(overlay).toContainText("lbm-d2q9 [rust-wasm]", {timeout: 30_000});
   await page.keyboard.press("3");
   await expect(overlay).toContainText("pic-flip [rust-wasm]", {timeout: 30_000});
+  await page.keyboard.press("1");
+  await expect(overlay).toContainText("stable-fluids [rust-wasm]", {timeout: 30_000});
 });
