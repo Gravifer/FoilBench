@@ -20,13 +20,20 @@
     "machine": {"type": "object"},
     "precision": {"enum": ["float32", "float64"]},
     "resolution": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "integer", "minimum": 4}},
-    "bounds": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "items": false}},
+    "bounds": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"type": "number"}, {"type": "number"}], "items": false}},
     "periodic_axes": {"type": "array", "uniqueItems": true, "items": {"enum": ["x", "y", "z"]}},
     "reynolds": {"type": "number", "exclusiveMinimum": 0},
     "effective_reynolds": {"type": "number", "exclusiveMinimum": 0},
     "solver_configuration": {"type": "object"},
     "freestream": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}},
-    "foil": {"type": "object", "required": ["naca", "chord", "pivot"]},
+    "foil": {
+      "type": "object", "additionalProperties": false, "required": ["naca", "chord", "pivot"],
+      "properties": {
+        "naca": {"type": "string", "pattern": "^[0-9]{4}$"},
+        "chord": {"type": "number", "exclusiveMinimum": 0},
+        "pivot": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}}
+      }
+    },
     "control_history": {"type": "array", "minItems": 1},
     "requested_duration": {"type": "number", "exclusiveMinimum": 0},
     "simulated_duration": {"type": "number", "minimum": 0},
@@ -54,7 +61,7 @@
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
   "allOf": [
-    {"if": {"properties": {"success": {"const": true}}}, "then": {"properties": {"failure": {"type": "null"}, "last_step": {"type": "object"}, "diagnostic_state_revision": {"type": "integer"}, "step_seconds": {"minItems": 1}}}},
+    {"if": {"properties": {"success": {"const": true}}}, "then": {"properties": {"failure": {"type": "null"}, "last_step": {"type": "object"}, "diagnostic_state_revision": {"type": "integer"}, "step_seconds": {"type": "array", "minItems": 1}}}},
     {"if": {"properties": {"memory_measurement": {"const": "unavailable"}}}, "then": {"properties": {"peak_rss_bytes": {"type": "null"}}}, "else": {"properties": {"peak_rss_bytes": {"type": "integer"}}}}
   ]
 }

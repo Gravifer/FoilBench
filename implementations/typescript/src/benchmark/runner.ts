@@ -1,4 +1,5 @@
 import Ajv2020 from "ajv/dist/2020.js";
+import type {ValidateFunction} from "ajv";
 import {chromium} from "playwright";
 import {execFileSync} from "node:child_process";
 import {mkdir, readFile, writeFile} from "node:fs/promises";
@@ -158,27 +159,35 @@ export async function loadCanonicalSnapshot(directory: string): Promise<Canonica
   };
 }
 
-export async function assertCompleteMatrices(results: readonly Readonly<Record<string, unknown>>[], requiredLanguages: readonly string[] = []): Promise<void> {
+function producerIdentity(result: Readonly<Record<string, unknown>>): string {
+  const rawImplementation = result["implementation"] ?? result["language"];
+  const implementation = typeof rawImplementation === "string" ? rawImplementation : "unknown";
+  const rawTarget = result["execution_target"];
+  const target = typeof rawTarget === "string" ? rawTarget : implementation === "typescript" ? "browser-worker" : "native";
+  return `${implementation}/${target}`;
+}
+
+export async function assertCompleteMatrices(results: readonly Readonly<Record<string, unknown>>[], requiredLanguages: readonly string[] = [], requiredProducers: readonly string[] = []): Promise<void> {
   const root = repositoryRoot();
   const matrixFiles = (await import("node:fs/promises").then(({readdir}) => readdir(join(root, "benchmark-matrices")))).filter((name) => name.endsWith(".json"));
   const matrices = new Map<string, BenchmarkMatrix>();
   for (const file of matrixFiles) { const matrix = await loadMatrix(join(root, "benchmark-matrices", file)); matrices.set(matrix.id, matrix); }
   const grouped = new Map<string, Readonly<Record<string, unknown>>[]>();
-  for (const result of results) { const key = JSON.stringify([result["benchmark_matrix_id"], result["language"]]); const selected = grouped.get(key) ?? []; selected.push(result); grouped.set(key, selected); }
+  for (const result of results) { const key = JSON.stringify([result["benchmark_matrix_id"], requiredProducers.length > 0 ? producerIdentity(result) : result["language"]]); const selected = grouped.get(key) ?? []; selected.push(result); grouped.set(key, selected); }
   const matrixIds = new Set(results.map((result) => String(result["benchmark_matrix_id"])));
-  const languages = requiredLanguages.length > 0 ? requiredLanguages : [...new Set(results.map((result) => String(result["language"])))];
-  for (const matrixId of matrixIds) for (const language of languages) {
-    const selected = grouped.get(JSON.stringify([matrixId, language])) ?? [];
+  const producers = requiredProducers.length > 0 ? requiredProducers : requiredLanguages.length > 0 ? requiredLanguages : [...new Set(results.map((result) => String(result["language"])))];
+  for (const matrixId of matrixIds) for (const producer of producers) {
+    const selected = grouped.get(JSON.stringify([matrixId, producer])) ?? [];
     const matrix = matrices.get(matrixId);
     if (matrix === undefined) throw new Error(`cannot verify completeness of unknown matrix ${matrixId}`);
     const expected = new Set<string>();
     for (const solver of matrix.solvers) for (const resolution of matrix.resolutions) for (let repetition = 1; repetition <= matrix.repetitions; repetition += 1) expected.add(JSON.stringify([solver, resolution, repetition]));
     const observedValues = selected.map((result) => JSON.stringify([result["solver"], result["resolution"], result["repetition"]]));
     const observed = new Set(observedValues);
-    if (observed.size !== observedValues.length) throw new Error(`duplicate ${language} artifacts for matrix ${matrixId}`);
+    if (observed.size !== observedValues.length) throw new Error(`duplicate ${producer} artifacts for matrix ${matrixId}`);
     const missing = [...expected].filter((key) => !observed.has(key)); const extra = [...observed].filter((key) => !expected.has(key));
     const failed = selected.filter((result) => result["success"] !== true).length;
-    if (missing.length > 0 || extra.length > 0 || failed > 0) throw new Error(`incomplete ${language} artifacts for matrix ${matrixId}: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)} failed=${String(failed)}`);
+    if (missing.length > 0 || extra.length > 0 || failed > 0) throw new Error(`incomplete ${producer} artifacts for matrix ${matrixId}: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)} failed=${String(failed)}`);
   }
 }
 
@@ -191,12 +200,23 @@ function assertRequiredLanguages(results: readonly Readonly<Record<string, unkno
   if (missing.length > 0 || extra.length > 0) throw new Error(`benchmark producer roster mismatch: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
 }
 
-export async function compareResults(directory: string, requireComplete = false, requiredLanguages: readonly string[] = []): Promise<string> {
+function assertRequiredProducers(results: readonly Readonly<Record<string, unknown>>[], requiredProducers: readonly string[]): void {
+  const expected = new Set(requiredProducers);
+  if (expected.size === 0 || expected.size !== requiredProducers.length) throw new Error("required producers must be a non-empty unique roster");
+  const observed = new Set(results.map(producerIdentity));
+  const missing = [...expected].filter((producer) => !observed.has(producer)).sort();
+  const extra = [...observed].filter((producer) => !expected.has(producer)).sort();
+  if (missing.length > 0 || extra.length > 0) throw new Error(`benchmark producer/target roster mismatch: missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}`);
+}
+
+export async function compareResults(directory: string, requireComplete = false, requiredLanguages: readonly string[] = [], requiredProducers: readonly string[] = []): Promise<string> {
   const root = repositoryRoot();
   const selected = isAbsolute(directory) ? directory : join(root, directory);
   const files = await import("node:fs/promises").then(({readdir}) => readdir(selected, {recursive: true}));
-  const schema = await json(join(root, "spec/schemas/result.schema.json")) as object;
-  const validator = new Ajv2020({strict: true, allErrors: true}).compile(schema);
+  const validators = new Map<number, ValidateFunction>([
+    [1, new Ajv2020({strict: true, allErrors: true}).compile(await json(join(root, "spec/schemas/result.schema.json")) as object)],
+    [2, new Ajv2020({strict: true, allErrors: true}).compile(await json(join(root, "spec/proposals/revision5/schemas/result-v2.schema.json")) as object)],
+  ]);
   const signatures = new Map<string, unknown>();
   const results: Readonly<Record<string, unknown>>[] = [];
   const lines = ["language    solver              median ms      p95 ms    sim/wall success"];
@@ -205,6 +225,8 @@ export async function compareResults(directory: string, requireComplete = false,
     const value = await json(join(selected, file)) as Record<string, unknown>;
     const solver = value["solver"];
     if (typeof solver !== "string" || typeof value["benchmark_matrix_id"] !== "string" || typeof value["success"] !== "boolean") continue;
+    const validator = validators.get(Number(value["schema_version"]));
+    if (validator === undefined) continue;
     if (!validator(value)) throw new TypeError(new Ajv2020().errorsText(validator.errors));
     validateResultSemantics(value);
     results.push(value);
@@ -219,8 +241,9 @@ export async function compareResults(directory: string, requireComplete = false,
     const throughput = Number(value["simulated_seconds_per_wall_second"]).toFixed(3);
     lines.push(`${language.padEnd(12)}${solver.padEnd(20)}${median.padStart(10)}${p95.padStart(12)}${throughput.padStart(12)} ${String(value["success"])}`);
   }
-  if (results.length === 0 && (requireComplete || requiredLanguages.length > 0)) throw new Error("strict benchmark comparison found no result artifacts");
+  if (results.length === 0 && (requireComplete || requiredLanguages.length > 0 || requiredProducers.length > 0)) throw new Error("strict benchmark comparison found no result artifacts");
   if (requiredLanguages.length > 0) assertRequiredLanguages(results, requiredLanguages);
-  if (requireComplete) await assertCompleteMatrices(results, requiredLanguages);
+  if (requiredProducers.length > 0) assertRequiredProducers(results, requiredProducers);
+  if (requireComplete) await assertCompleteMatrices(results, requiredLanguages, requiredProducers);
   return lines.join("\n");
 }
