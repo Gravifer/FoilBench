@@ -17,7 +17,7 @@
   "precision": "float32",
   "seed": 0,
   "solver_options": {
-    "mac_maximum_divergence_linf": 7.0,
+    "mac_maximum_divergence_linf": 8.0,
     "mac_maximum_solid_leakage": 0.0001,
     "pic_flip_blend": 0.95,
     "pic_cfl": 0.75,

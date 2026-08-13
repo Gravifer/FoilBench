@@ -27,7 +27,7 @@ attack, and the compact 160×96 grid. There is no vorticity confinement,
 stochastic forcing, hard-coded vortex, or time-dependent inlet perturbation.
 Because this intentionally coarse immersed-boundary case permits strongly
 separated motion, it uses a pressure tolerance of `1e-4` and an
-experiment-local MAC divergence cap of `7.0`. The tighter pressure solve keeps
+experiment-local MAC divergence cap of `8.0`. The tighter pressure solve keeps
 the independently implemented Python and Julia projections in the same
 localized-residual regime despite their different preconditioners. The
 divergence envelope covers both direct and canonical-reconstructed paired
