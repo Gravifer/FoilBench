@@ -6,15 +6,7 @@ fn main() {
         );
         std::process::exit(2);
     }
-    println!(
-        "{}",
-        serde_json::json!({
-            "implementation": "rust",
-            "execution_target": "native",
-            "phase": "3-foundation",
-            "solvers": [],
-            "canonical_read_versions": [1, 2],
-            "canonical_write_version": 2
-        })
-    );
+    let description =
+        foilbench_core::implementation_description(foilbench_core::ExecutionTarget::Native);
+    println!("{}", serde_json::to_string(&description).unwrap());
 }

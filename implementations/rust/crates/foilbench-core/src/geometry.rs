@@ -144,6 +144,7 @@ impl NacaFoil {
 #[cfg(test)]
 mod tests {
     use super::{FoilDescriptor, NacaFoil};
+    use serde::Deserialize;
 
     fn foil() -> NacaFoil {
         NacaFoil::new(FoilDescriptor {
@@ -165,5 +166,58 @@ mod tests {
     #[test]
     fn matches_shared_signed_distance_sample() {
         assert!((foil().signed_distance([0.1, -0.2], 0.0) + 0.042_22).abs() < 1.0e-12);
+    }
+
+    #[derive(Deserialize)]
+    struct Revision5GeometryFixture {
+        descriptor: FoilDescriptor,
+        surface_x: Vec<f64>,
+        surface_upper: Vec<f64>,
+        surface_lower: Vec<f64>,
+        angle_degrees: f64,
+        points: Vec<[f64; 2]>,
+        signed_distance: Vec<f64>,
+        normals: Vec<[f64; 2]>,
+        angular_velocity_degrees: f64,
+        wall_velocity: Vec<[f64; 2]>,
+        maximum_radius: f64,
+    }
+
+    #[test]
+    fn consumes_revision5_geometry_fixture() {
+        let fixture: Revision5GeometryFixture = serde_json::from_str(include_str!(
+            "../../../../../spec/proposals/revision5/fixtures/geometry-v1.json"
+        ))
+        .unwrap();
+        let foil = NacaFoil::new(fixture.descriptor).unwrap();
+        for ((x, expected_upper), expected_lower) in fixture
+            .surface_x
+            .iter()
+            .zip(&fixture.surface_upper)
+            .zip(&fixture.surface_lower)
+        {
+            let (upper, lower) = foil.surfaces(*x);
+            assert!((upper - expected_upper).abs() < 1.0e-12);
+            assert!((lower - expected_lower).abs() < 1.0e-12);
+        }
+        for (((point, expected_distance), expected_normal), expected_wall) in fixture
+            .points
+            .iter()
+            .zip(&fixture.signed_distance)
+            .zip(&fixture.normals)
+            .zip(&fixture.wall_velocity)
+        {
+            assert!(
+                (foil.signed_distance(*point, fixture.angle_degrees) - expected_distance).abs()
+                    < 1.0e-10
+            );
+            let normal = foil.normal(*point, fixture.angle_degrees);
+            assert!((normal[0] - expected_normal[0]).abs() < 2.0e-6);
+            assert!((normal[1] - expected_normal[1]).abs() < 2.0e-6);
+            let wall = foil.wall_velocity(*point, fixture.angular_velocity_degrees);
+            assert!((wall[0] - expected_wall[0]).abs() < 1.0e-12);
+            assert!((wall[1] - expected_wall[1]).abs() < 1.0e-12);
+        }
+        assert!((foil.maximum_radius() - fixture.maximum_radius).abs() < 1.0e-12);
     }
 }

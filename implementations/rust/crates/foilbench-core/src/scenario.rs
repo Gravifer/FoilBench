@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::geometry::FoilDescriptor;
+use crate::geometry::{FoilDescriptor, NacaFoil};
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Precision {
     Float32,
@@ -25,69 +25,111 @@ pub struct ControlState {
     pub angular_velocity_degrees: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Scenario {
-    pub schema_version: u32,
-    pub id: String,
-    pub dimension: u8,
-    pub bounds: Vec<[f64; 2]>,
-    pub resolution: Vec<usize>,
-    pub periodic_axes: Vec<String>,
-    pub reynolds: f64,
-    pub freestream: Vec<f64>,
-    pub foil: FoilDescriptor,
-    pub controls: Vec<ControlKeyframe>,
-    pub duration: f64,
-    pub output_dt: f64,
-    pub precision: Precision,
-    pub seed: u64,
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct RawScenario {
+    schema_version: u32,
+    id: String,
+    dimension: u8,
+    bounds: Vec<[f64; 2]>,
+    resolution: Vec<usize>,
+    periodic_axes: Vec<String>,
+    reynolds: f64,
+    freestream: Vec<f64>,
+    foil: FoilDescriptor,
+    controls: Vec<ControlKeyframe>,
+    duration: f64,
+    output_dt: f64,
+    precision: Precision,
+    seed: u32,
     #[serde(default)]
-    pub solver_options: BTreeMap<String, Value>,
+    solver_options: BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scenario {
+    id: String,
+    dimension: u8,
+    bounds: Vec<[f64; 2]>,
+    resolution: Vec<usize>,
+    periodic_axes: Vec<String>,
+    reynolds: f64,
+    freestream: Vec<f64>,
+    foil: FoilDescriptor,
+    controls: Vec<ControlKeyframe>,
+    duration: f64,
+    output_dt: f64,
+    precision: Precision,
+    seed: u32,
+    solver_options: BTreeMap<String, Value>,
 }
 
 impl Scenario {
-    /// Validate semantic constraints that are not expressible by field types alone.
+    /// Parse raw JSON into a validated, immutable numerical scenario.
     ///
     /// # Errors
     ///
-    /// Returns an error for inconsistent dimensions, controls, bounds, or physical values.
-    pub fn validate(&self) -> Result<(), &'static str> {
-        let dimension = usize::from(self.dimension);
-        if self.schema_version != 1 || !(self.dimension == 2 || self.dimension == 3) {
-            return Err("unsupported scenario schema or dimension");
-        }
-        if self.bounds.len() != dimension
-            || self.resolution.len() != dimension
-            || self.freestream.len() != dimension
-            || self.foil.pivot.len() != dimension
-        {
-            return Err("scenario dimensions disagree");
-        }
-        if self.controls.is_empty()
-            || self
-                .controls
-                .windows(2)
-                .any(|pair| pair[1].time < pair[0].time)
-        {
-            return Err("control history must be nonempty and sorted");
-        }
-        if !self.reynolds.is_finite()
-            || self.reynolds <= 0.0
-            || !self.duration.is_finite()
-            || self.duration <= 0.0
-            || !self.output_dt.is_finite()
-            || self.output_dt <= 0.0
-        {
-            return Err("scenario physical values must be finite and positive");
-        }
-        if self
-            .bounds
-            .iter()
-            .any(|bound| !bound[0].is_finite() || !bound[1].is_finite() || bound[1] <= bound[0])
-        {
-            return Err("domain bounds must be finite and increasing");
-        }
-        Ok(())
+    /// Returns a JSON or semantic validation error without publishing a
+    /// partially validated scenario.
+    pub fn from_json(document: &str) -> Result<Self, ScenarioError> {
+        let raw: RawScenario = serde_json::from_str(document).map_err(ScenarioError::Json)?;
+        Self::try_from(raw)
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    #[must_use]
+    pub fn dimension(&self) -> u8 {
+        self.dimension
+    }
+    #[must_use]
+    pub fn bounds(&self) -> &[[f64; 2]] {
+        &self.bounds
+    }
+    #[must_use]
+    pub fn resolution(&self) -> &[usize] {
+        &self.resolution
+    }
+    #[must_use]
+    pub fn periodic_axes(&self) -> &[String] {
+        &self.periodic_axes
+    }
+    #[must_use]
+    pub fn reynolds(&self) -> f64 {
+        self.reynolds
+    }
+    #[must_use]
+    pub fn freestream(&self) -> &[f64] {
+        &self.freestream
+    }
+    #[must_use]
+    pub fn foil(&self) -> &FoilDescriptor {
+        &self.foil
+    }
+    #[must_use]
+    pub fn controls(&self) -> &[ControlKeyframe] {
+        &self.controls
+    }
+    #[must_use]
+    pub fn duration(&self) -> f64 {
+        self.duration
+    }
+    #[must_use]
+    pub fn output_dt(&self) -> f64 {
+        self.output_dt
+    }
+    #[must_use]
+    pub fn precision(&self) -> Precision {
+        self.precision
+    }
+    #[must_use]
+    pub fn seed(&self) -> u32 {
+        self.seed
+    }
+    #[must_use]
+    pub fn solver_options(&self) -> &BTreeMap<String, Value> {
+        &self.solver_options
     }
 
     #[must_use]
@@ -111,27 +153,129 @@ impl Scenario {
         for pair in self.controls.windows(2) {
             let (left, right) = (&pair[0], &pair[1]);
             if time >= left.time && time <= right.time {
-                let duration = right.time - left.time;
-                if duration <= 0.0 {
+                let interval = right.time - left.time;
+                if interval <= 0.0 {
                     return ControlState {
                         time,
                         angle_degrees: right.angle_degrees,
                         angular_velocity_degrees: 0.0,
                     };
                 }
-                let linear = (time - left.time) / duration;
+                let linear = (time - left.time) / interval;
                 let smooth = linear * linear * (3.0 - 2.0 * linear);
                 let delta = right.angle_degrees - left.angle_degrees;
                 return ControlState {
                     time,
                     angle_degrees: left.angle_degrees + smooth * delta,
-                    angular_velocity_degrees: 6.0 * linear * (1.0 - linear) * delta / duration,
+                    angular_velocity_degrees: 6.0 * linear * (1.0 - linear) * delta / interval,
                 };
             }
         }
-        unreachable!("validated control history covers the selected time")
+        unreachable!("validated control history covers every finite selected time")
     }
 }
+
+impl TryFrom<RawScenario> for Scenario {
+    type Error = ScenarioError;
+
+    fn try_from(raw: RawScenario) -> Result<Self, Self::Error> {
+        let dimension = usize::from(raw.dimension);
+        if raw.schema_version != 1 || !(raw.dimension == 2 || raw.dimension == 3) {
+            return Err(ScenarioError::Semantic(
+                "unsupported scenario schema or dimension",
+            ));
+        }
+        if raw.id.is_empty()
+            || raw.bounds.len() != dimension
+            || raw.resolution.len() != dimension
+            || raw.freestream.len() != dimension
+            || raw.foil.pivot.len() != dimension
+        {
+            return Err(ScenarioError::Semantic(
+                "scenario dimensions or identifier disagree",
+            ));
+        }
+        if raw.resolution.iter().any(|&size| size < 4)
+            || raw
+                .bounds
+                .iter()
+                .any(|bound| !bound[0].is_finite() || !bound[1].is_finite() || bound[1] <= bound[0])
+            || raw.freestream.iter().any(|value| !value.is_finite())
+        {
+            return Err(ScenarioError::Semantic("domain values are invalid"));
+        }
+        let legal_axes: &[&str] = if raw.dimension == 2 {
+            &["x", "y"]
+        } else {
+            &["x", "y", "z"]
+        };
+        let unique_axes: BTreeSet<&str> = raw.periodic_axes.iter().map(String::as_str).collect();
+        if unique_axes.len() != raw.periodic_axes.len()
+            || unique_axes.iter().any(|axis| !legal_axes.contains(axis))
+        {
+            return Err(ScenarioError::Semantic("periodic axes are invalid"));
+        }
+        if raw.controls.is_empty()
+            || raw.controls.iter().any(|control| {
+                !control.time.is_finite()
+                    || control.time < 0.0
+                    || !control.angle_degrees.is_finite()
+                    || !(-90.0..=90.0).contains(&control.angle_degrees)
+            })
+            || raw
+                .controls
+                .windows(2)
+                .any(|pair| pair[1].time < pair[0].time)
+        {
+            return Err(ScenarioError::Semantic("control history is invalid"));
+        }
+        if !raw.reynolds.is_finite()
+            || raw.reynolds <= 0.0
+            || !raw.duration.is_finite()
+            || raw.duration <= 0.0
+            || !raw.output_dt.is_finite()
+            || raw.output_dt <= 0.0
+        {
+            return Err(ScenarioError::Semantic(
+                "scenario physical values are invalid",
+            ));
+        }
+        NacaFoil::new(raw.foil.clone()).map_err(ScenarioError::Semantic)?;
+        Ok(Self {
+            id: raw.id,
+            dimension: raw.dimension,
+            bounds: raw.bounds,
+            resolution: raw.resolution,
+            periodic_axes: raw.periodic_axes,
+            reynolds: raw.reynolds,
+            freestream: raw.freestream,
+            foil: raw.foil,
+            controls: raw.controls,
+            duration: raw.duration,
+            output_dt: raw.output_dt,
+            precision: raw.precision,
+            seed: raw.seed,
+            solver_options: raw.solver_options,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ScenarioError {
+    Json(serde_json::Error),
+    Semantic(&'static str),
+}
+
+impl std::fmt::Display for ScenarioError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json(error) => error.fmt(formatter),
+            Self::Semantic(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ScenarioError {}
 
 #[cfg(test)]
 mod tests {
@@ -140,9 +284,22 @@ mod tests {
     #[test]
     fn loads_repository_default_scenario() {
         let document = include_str!("../../../../../scenarios/airfoil/default.json");
-        let scenario: Scenario = serde_json::from_str(document).unwrap();
-        scenario.validate().unwrap();
-        assert_eq!(scenario.dimension, 2);
+        let scenario = Scenario::from_json(document).unwrap();
+        assert_eq!(scenario.dimension(), 2);
         assert!((scenario.control_at(4.0).angle_degrees - 9.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn rejects_nonfinite_controls_before_publication() {
+        let document = include_str!("../../../../../scenarios/airfoil/default.json");
+        let malformed = document.replacen("\"angle_degrees\": 4.0", "\"angle_degrees\": 1e999", 1);
+        assert!(Scenario::from_json(&malformed).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_periodic_axes() {
+        let document = include_str!("../../../../../scenarios/validation/uniform.json");
+        let malformed = document.replace("[\"x\", \"y\"]", "[\"x\", \"x\"]");
+        assert!(Scenario::from_json(&malformed).is_err());
     }
 }
