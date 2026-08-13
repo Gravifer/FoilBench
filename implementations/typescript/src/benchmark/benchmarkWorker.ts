@@ -5,20 +5,24 @@ import {dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {analyzeWakeProbe, recoveryWindow} from "../core/wake.js";
 import {createSolver} from "../solvers/factory.js";
+import {loadRustWasmSolverFactory} from "../wasm/rustWasmSolver.js";
 import type {BrowserRunRequest, BrowserRunResult} from "./types.js";
 
 postMessage({kind: "ready"});
 
-self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => {
-  const {scenario, solverId, duration} = event.data;
+self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => { void run(event.data); };
+
+async function run(request: BrowserRunRequest): Promise<void> {
+  const {scenario, solverId, duration} = request;
   const warnings: string[] = [];
   let initializationSeconds = 0; let coldStepSeconds = 0; const stepSeconds: number[] = [];
   let elapsed = 0; let substeps = 0; let diagnostics: Readonly<Record<string, number>> = {}; let success = true; let snapshot: BrowserRunResult["snapshot"] = null; let solver: FlowSolver | null = null; let lastStep: StepReport | null = null; let diagnosticStateRevision: number | null = null; let failure: BrowserRunResult["failure"] = null;
   try {
-    const cold = createSolver(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000;
+    const factory = request.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : createSolver;
+    const cold = factory(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000;
     const coldDt = Math.min(scenario.outputDt, duration); started = performance.now(); cold.advance(controlAt(scenario, coldDt), coldDt); coldStepSeconds = (performance.now() - started) / 1000;
     for (let step = 2; step <= 20; step += 1) cold.advance(controlAt(scenario, step * coldDt), coldDt);
-    solver = createSolver(solverId); solver.initialize(scenario, scenario.seed);
+    solver = factory(solverId); solver.initialize(scenario, scenario.seed);
     const wakeProbe: number[] = []; const recovery = recoveryWindow(scenario, duration); let recoveryBaseline: readonly [number, number] | null = null; let recoveryElapsed: number | null = null;
     const {dx, dy} = dimensions(scenario.domain); const xMaximum = scenario.domain.bounds[0]?.[1] ?? 0; const probe = (scenario.precision === "float32" ? new Float32Array(2) : new Float64Array(2)) as FloatArray;
     probe[0] = Math.min((scenario.foil.pivot[0] ?? 0) + 1.5 * scenario.foil.chord, xMaximum - 0.5 * dx); probe[1] = scenario.foil.pivot[1] ?? 0;
@@ -37,4 +41,4 @@ self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => {
     const state = solver.exportState(); snapshot = {precision: state.precision, bounds: state.bounds, resolution: state.resolution, periodicAxes: state.periodicAxes, time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: state.angularVelocityDegrees, velocity: [...state.velocity], density: state.density === null ? null : [...state.density]};
   } catch (error) { success = false; const message = error instanceof Error ? `${error.name}: ${error.message}` : "unknown benchmark failure"; warnings.push(message); failure = error instanceof NumericalFailure ? {kind: "numerical", reason: error.reason, stage: error.stage, message: error.message, evidence: error.evidence} : {kind: "unexpected", reason: null, stage: null, message, evidence: {}}; diagnostics = {}; diagnosticStateRevision = null; }
   const result: BrowserRunResult = {initializationSeconds, coldStepSeconds, stepSeconds, simulatedSeconds: elapsed, substeps, finalStateRevision: solver?.stateRevision ?? 0, diagnosticStateRevision, lastStep, diagnostics, warnings: [...new Set(warnings)].sort(), success, failure, snapshot}; postMessage({kind: "result", result});
-};
+}

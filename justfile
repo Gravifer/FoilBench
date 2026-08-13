@@ -91,6 +91,10 @@ ts-bench matrix="benchmark-matrices/smoke.json":
 ts-preview-gate:
     npm --prefix implementations/typescript run gate:preview
 
+# Run the development-machine Rust/WASM 160x96 preview gate.
+rs-wasm-preview-gate:
+    npm --prefix implementations/typescript run gate:rust-wasm-preview
+
 # Run the Python 160x96 double-digit warmed-step acceptance gate.
 py-preview-gate:
     uv run --project implementations/python python implementations/python/benchmark/preview_gate.py
