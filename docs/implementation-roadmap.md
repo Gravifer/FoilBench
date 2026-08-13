@@ -305,18 +305,15 @@ preflight first proved symmetric canonical reconstruction: the three realized
 initial wake RMS separations were all approximately `8.326e-6` for requested
 epsilon `1e-4`. See [Revision 4 acceptance](revision4-acceptance.md).
 
-### Deferred Phase 3 contract decisions
+### Resolved Phase 3 contract decisions
 
-Two design questions are deliberately recorded for Phase 3 kickoff rather
-than silently decided by an implementation:
+Revision 5 resolves the two questions carried forward from Phase 2:
 
-- canonical manifests currently identify domain and pose but not the NACA
-  geometry itself; decide whether cross-geometry import is supported or add a
-  geometry fingerprint before claiming rejection via `incompatible_geometry`;
-- all three LBM implementations provide an outlet/transverse sponge, but its
-  numerical widths and strengths remain implementation constants; decide
-  whether Rust parity needs shared scenario-level sponge parameters before
-  exposing those values as user controls.
+- canonical manifest version 2 carries the readable NACA geometry descriptor
+  and rejects cross-geometry imports before mutation;
+- the accepted LBM contract freezes a shared inlet, transverse, convective
+  outlet, and quadratic sponge mapping. Live scenario controls for those
+  constants require a later revision.
 
 Exact drag cap/smoothing constants and cross-renderer visual-closeness criteria
 remain the experiential open decisions already recorded in the
@@ -324,28 +321,31 @@ remain the experiential open decisions already recorded in the
 
 ## Phase 3: Rust and WASM
 
-**Status:** Kickoff in progress against accepted Revision 4 and the proposed
-Revision 5 Phase 3 contract.
+**Status:** Complete. Revision 5 is the accepted native and Rust/WASM Phase 3
+contract.
 
 The Phase 3 workspace separates `foilbench-core` (no filesystem/browser),
 `foilbench-native` (CLI, artifacts, benchmarks), and `foilbench-wasm`
-(`wasm-bindgen` host boundary). The foundation currently includes PCG32,
-typed scenario semantics, NACA geometry, canonical version 1/2 models, and the
-solver trait. It deliberately advertises no Rust solver yet.
+(`wasm-bindgen` host boundary). The shared core implements PCG32, typed
+scenarios, NACA geometry, canonical version 1/2 models, Stable Fluids, D2Q9
+TRT LBM, and blended PIC/FLIP for native and WASM targets. The native crate
+owns artifacts, comparison, benchmarks, and chaotic-wake evidence; the
+existing TypeScript worker hosts the WASM core through coarse calls.
 
-The prioritized kickoff sequence is:
+The completed implementation sequence was:
 
-1. stabilize proposed Revision 5 geometry, canonical identity, fidelity,
+1. stabilize Revision 5 geometry, canonical identity, fidelity,
    boundary, producer-target, and conformance-inventory semantics;
 2. implement native 2D Stable Fluids, then D2Q9 TRT LBM, then blended PIC/FLIP;
 3. establish native parity and artifacts before hosting the same core in the
    TypeScript simulation worker through coarse WASM calls;
-4. accept Revision 5 only after required native/WASM target evidence passes.
+4. accept Revision 5 after the complete native/WASM target evidence passed.
 
 CI is split accordingly: pull requests run language-native static/unit suites,
 Rust format/lint/native tests, a real WASM-target compilation, and a
 production-dist browser smoke. Scheduled or manual representative solver gates
-run as twelve independent language/gate cells. Aggregation preserves each
+run as eighteen independent implementation/target/gate cells. Aggregation
+preserves each
 language/gate path, requires the exact commit, configuration digest, execution
 target, and hashed gate log, and rejects any missing or duplicated cell.
 Intermediate cells expire after seven days and the aggregate after thirty
@@ -354,4 +354,4 @@ a separate, deliberately more expensive evidence tier rather than being
 misrepresented by the solver-gate workflow.
 
 Pixel-level renderer matching is a permanent won't-do. D3Q19 and shallow
-periodic 3D remain deferred until all three 2D Rust solvers pass parity.
+periodic 3D remain deferred; all three 2D Rust solvers now pass parity.

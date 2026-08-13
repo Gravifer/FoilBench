@@ -5,14 +5,18 @@ is complete and contains the robustly typed Python reference implementation,
 including an accepted opt-in deterministic 2D chaotic-wake extension. Phase
 2A is complete with an independent Julia implementation. Phase 2B and the
 three-language contract closure are complete and revalidated after extensive
-QA. Revision 4 is the accepted implemented baseline after full-size,
-interchange, fallback, and chaotic-extension acceptance. Phase 3 now provides
+QA. Revision 4 remains the completed three-language baseline after full-size,
+interchange, fallback, and chaotic-extension acceptance. Phase 3 is complete
+and provides
 the complete Rust 2D solver repertoire: native and WASM Stable Fluids, D2Q9
-TRT LBM, and blended PIC/FLIP built from one shared core while proposed
-Revision 5 remains under evaluation.
+TRT LBM, and blended PIC/FLIP built from one shared core. Revision 5 is the
+accepted native and Rust/WASM baseline.
 
-The implementations share scenarios, schemas, and result artifacts. They do
-not import or host one another's solvers.
+The native implementations share scenarios, schemas, and result artifacts
+without importing one another's solver code. The deliberate production
+exception is the Three.js simulation worker, which can host the shared Rust
+core through its WASM boundary as an alternative to the independent
+TypeScript solvers.
 
 ## Command shortcuts
 
@@ -89,7 +93,7 @@ for solvers, left-drag for foil pose, `Space` pause, `R` reset, `+/-/0`
 Reynolds control, `[/]` solver tuning, and `V/T/C` for vorticity, tracer mode,
 and diagnostic cropping.
 
-## Rust/WASM kickoff
+## Rust/WASM
 
 The platform-neutral core implements PCG32, validated typed scenarios, NACA
 geometry, MAC-grid numerics, canonical version 1/2 state handling, the solver
@@ -106,12 +110,12 @@ just ts-view scenarios/airfoil/default.json stable-fluids rust-wasm
 The Rust/WASM selector offers Stable Fluids, D2Q9 TRT LBM, and blended
 PIC/FLIP through keys `1`, `2`, and `3`.
 
-The accepted Revision 4 contract remains authoritative. Candidate Phase 3
-semantics live under `spec/proposals/revision5/` until cross-language evidence
-supports activation.
+The accepted Revision 5 contract is the current authority. Revision 4 remains
+documented as the completed three-language baseline from which Phase 3 began.
 
 Run every implemented language's native checks through the root convenience
-entry point (or pass `-Python`, `-Julia`, or `-TypeScript` to select one):
+entry point (or pass `-Python`, `-Julia`, `-TypeScript`, or `-Rust` to select
+one):
 
 ```powershell
 pwsh -NoProfile -File tools/verify.ps1
@@ -130,6 +134,7 @@ See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-accep
 [Phase 2A acceptance](docs/phase2a-acceptance.md),
 [Phase 2B acceptance](docs/phase2b-acceptance.md),
 [Revision 4 acceptance](docs/revision4-acceptance.md),
+[Revision 5 acceptance](docs/revision5-acceptance.md),
 [benchmarking guide](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 
