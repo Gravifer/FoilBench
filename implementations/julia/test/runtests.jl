@@ -1153,6 +1153,39 @@ end
     end
 end
 
+@testset "MAC postcondition rejection is transactional" begin
+    scenario = resized_scenario(
+        load_scenario(joinpath(REPOSITORY_ROOT, "scenarios", "airfoil", "fixed-stall.json")),
+        (32, 16),
+    )
+    scenario.solver_options["mac_maximum_divergence_linf"] = 0.0
+    scenario.solver_options["mac_maximum_solid_leakage"] = 0.0
+    geometry = NacaFoil(scenario.foil)
+    T = scalar_type(scenario)
+    for solver in (StableFluidsSolver(T), PicFlipSolver(T))
+        initialize!(solver, scenario, geometry, scenario.seed)
+        before = export_state(solver)
+        failure = try
+            advance!(
+                solver,
+                ControlState(T(scenario.output_dt), T(25), zero(T)),
+                scenario.output_dt,
+            )
+            nothing
+        catch error
+            error
+        end
+        @test failure isa NumericalFailure
+        @test failure.reason == :postcondition_failure
+        @test failure.stage == :postcondition
+        @test failure.evidence["divergence_linf"] > 0
+        @test state_revision(solver) == 0
+        after = export_state(solver)
+        @test after.time == before.time
+        @test after.velocity == before.velocity
+    end
+end
+
 @testset "Shared Revision 4 tracer fixture" begin
     fixture = JSON3.read(read(joinpath(FIXTURES, "tracer-lifecycle.json"), String))
     @test fixture.contract_id == "foilbench-phase2-v1"

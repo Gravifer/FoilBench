@@ -622,6 +622,8 @@ function _advance_pic_once!(
     viscosity_iterations = 0
     final_speed = transport_speed
     particle_speed = maximum_speed
+    native_divergence = T(NaN)
+    native_leakage = T(NaN)
     maximum_particle_cfl = timestep * transport_speed /
         min(dx(scenario.domain), dy(scenario.domain))
     particle_count = size(solver.positions, 2)
@@ -743,6 +745,33 @@ function _advance_pic_once!(
                     "substeps" => substeps,
                 ),
             ))
+        final_wall = wall_velocity_grid(geometry, scenario.domain, ControlState(
+            T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
+        ))
+        native_divergence = native_divergence_linf(
+            projected_u, projected_v, scenario.domain, solver.solid,
+        )
+        native_leakage = solid_face_leakage(
+            projected_u, projected_v, solver.solid, final_wall,
+        )
+        divergence_limit = mac_postcondition_limit(
+            scenario, "mac_maximum_divergence_linf",
+        )
+        leakage_limit = mac_postcondition_limit(
+            scenario, "mac_maximum_solid_leakage",
+        )
+        (native_divergence <= divergence_limit && native_leakage <= leakage_limit) ||
+            throw(NumericalFailure(
+                :postcondition_failure,
+                "PIC/FLIP exceeded a configured MAC postcondition limit",
+                :postcondition,
+                Dict{String,Any}(
+                    "divergence_linf" => native_divergence,
+                    "maximum_divergence_linf" => divergence_limit,
+                    "solid_leakage" => native_leakage,
+                    "maximum_solid_leakage" => leakage_limit,
+                ),
+            ))
     catch
         solver.positions, solver.particle_velocity, solver.grid_velocity, solver.solid,
             solver.control, solver.time, solver.settling_steps, rng_state, rng_increment,
@@ -764,13 +793,8 @@ function _advance_pic_once!(
     for j in axes(solver.solid, 2), i in axes(solver.solid, 1)
         solver.solid[i, j] || push!(fluid_counts, counts[(j - 1) * nx(scenario.domain) + i])
     end
-    final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
-    solver.native_divergence_linf = native_divergence_linf(
-        projected_u, projected_v, scenario.domain, solver.solid,
-    )
-    solver.native_solid_leakage = solid_face_leakage(
-        projected_u, projected_v, solver.solid, final_wall,
-    )
+    solver.native_divergence_linf = native_divergence
+    solver.native_solid_leakage = native_leakage
     return StepReport(
         target, target, substeps, final_speed, warnings, solver.revision,
         Dict{String,Any}(

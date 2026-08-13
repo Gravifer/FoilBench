@@ -433,6 +433,40 @@ function advance!(
         substeps = next_substeps
         timestep = target / T(substeps)
     end
+    final_control = ControlState(
+        T(control.time), T(control.angle_degrees), T(control.angular_velocity_degrees),
+    )
+    final_wall = wall_velocity_grid(geometry, scenario.domain, final_control)
+    native_divergence = native_divergence_linf(
+        solver.u, solver.v, scenario.domain, solver.solid,
+    )
+    native_leakage = solid_face_leakage(
+        solver.u, solver.v, solver.solid, final_wall,
+    )
+    divergence_limit = mac_postcondition_limit(
+        scenario, "mac_maximum_divergence_linf",
+    )
+    leakage_limit = mac_postcondition_limit(
+        scenario, "mac_maximum_solid_leakage",
+    )
+    if native_divergence > divergence_limit || native_leakage > leakage_limit
+        solver.u = copy(checkpoint[1])
+        solver.v = copy(checkpoint[2])
+        solver.solid = copy(checkpoint[3])
+        solver.control, solver.time, solver.projection_iterations,
+            solver.diffusion_iterations, solver.revision = checkpoint[4:end]
+        throw(NumericalFailure(
+            :postcondition_failure,
+            "Stable Fluids exceeded a configured MAC postcondition limit",
+            :postcondition,
+            Dict{String,Any}(
+                "divergence_linf" => native_divergence,
+                "maximum_divergence_linf" => divergence_limit,
+                "solid_leakage" => native_leakage,
+                "maximum_solid_leakage" => leakage_limit,
+            ),
+        ))
+    end
     solver.time = T(control.time)
     solver.control = ControlState(
         solver.time,
@@ -440,7 +474,6 @@ function advance!(
         T(control.angular_velocity_degrees),
     )
     solver.revision += 1
-    final_wall = wall_velocity_grid(geometry, scenario.domain, solver.control)
     return StepReport(
         target, target, substeps, final_speed, String[], solver.revision,
         Dict{String,Any}(
@@ -457,12 +490,8 @@ function advance!(
             "viscosity_converged" => true,
             "viscosity_iterations" => solver.diffusion_iterations,
             "viscosity_final_residual" => diffusion_residual,
-            "divergence_linf" => native_divergence_linf(
-                solver.u, solver.v, scenario.domain, solver.solid,
-            ),
-            "solid_leakage" => solid_face_leakage(
-                solver.u, solver.v, solver.solid, final_wall,
-            ),
+            "divergence_linf" => native_divergence,
+            "solid_leakage" => native_leakage,
             "requested_reynolds" => solver.reynolds_value,
             "effective_reynolds" => solver.reynolds_value,
             "degraded_motion" => wall_speed == zero(T) &&

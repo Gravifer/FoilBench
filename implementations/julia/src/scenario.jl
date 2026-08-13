@@ -69,6 +69,19 @@ function option(scenario::Scenario, name::AbstractString, default::AbstractStrin
     return String(value)
 end
 
+function mac_postcondition_limit(
+    scenario::Scenario{D,T}, name::AbstractString,
+) where {D,T<:AbstractFloat}
+    haskey(scenario.solver_options, name) || return T(Inf)
+    value = scenario.solver_options[String(name)]
+    value isa Real && !(value isa Bool) ||
+        throw(ArgumentError("solver option $name must be numeric"))
+    selected = T(value)
+    isfinite(selected) && selected >= zero(T) ||
+        throw(ArgumentError("solver option $name must be finite and non-negative"))
+    return selected
+end
+
 function reference_speed(scenario::Scenario{D,T}) where {D,T}
     speed = sqrt(sum(abs2, scenario.freestream))
     initial = option(scenario, "initial_condition", "freestream")

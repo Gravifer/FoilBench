@@ -13,6 +13,8 @@ _SOLVER_OPTION_DEFAULTS: dict[str, object] = {
     "stable_cfl": 0.7,
     "pressure_tolerance": 1.0e-5,
     "pressure_max_iterations": 640,
+    "mac_maximum_divergence_linf": None,
+    "mac_maximum_solid_leakage": None,
     "pic_flip_blend": 0.95,
     "pic_population_interval": 8,
     "pic_cfl": 0.75,
@@ -25,6 +27,7 @@ def solver_configuration(scenario: Scenario) -> dict[str, object]:
     return {
         name: scenario.solver_options.get(name, default)
         for name, default in _SOLVER_OPTION_DEFAULTS.items()
+        if default is not None or name in scenario.solver_options
     }
 
 

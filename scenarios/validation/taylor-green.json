@@ -15,4 +15,3 @@
   "seed": 0,
   "solver_options": {"initial_condition": "taylor-green"}
 }
-

@@ -179,6 +179,38 @@ def test_import_revalidates_mutated_canonical_arrays(
     _assert_same_canonical_state(destination.export_state(), before)
 
 
+@pytest.mark.parametrize("solver_type", [StableFluidsSolver, PicFlipSolver])
+def test_mac_postcondition_failure_rolls_back_atomically(
+    solver_type: type[StableFluidsSolver] | type[PicFlipSolver],
+) -> None:
+    loaded = load_scenario(_REPOSITORY_ROOT / "scenarios/airfoil/fixed-stall.json")
+    scenario = replace(
+        loaded,
+        domain=replace(loaded.domain, resolution=(32, 16)),
+        solver_options={
+            **loaded.solver_options,
+            "mac_maximum_divergence_linf": 0.0,
+            "mac_maximum_solid_leakage": 0.0,
+        },
+    )
+    geometry = NacaFoil(scenario.foil)
+    solver = solver_type()
+    solver.initialize(scenario, geometry, scenario.seed)
+    before = solver.export_state()
+
+    with pytest.raises(NumericalFailure) as captured:
+        solver.advance(
+            ControlState(scenario.output_dt, 25.0, 0.0),
+            scenario.output_dt,
+        )
+
+    assert captured.value.reason == "postcondition_failure"
+    assert captured.value.stage == "postcondition"
+    assert float(captured.value.evidence["divergence_linf"]) > 0.0
+    assert solver.state_revision == 0
+    _assert_same_canonical_state(solver.export_state(), before)
+
+
 def test_lbm_import_revalidates_mutated_optional_density(
     scenario_factory: ScenarioFactory,
 ) -> None:

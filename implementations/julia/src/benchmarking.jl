@@ -199,7 +199,7 @@ function _benchmark_evidence(evidence::Dict{String,Any})
 end
 
 function _benchmark_solver_configuration(scenario::Scenario)
-    return Dict{String,Any}(
+    configuration = Dict{String,Any}(
         "initial_condition" => option(scenario, "initial_condition", "freestream"),
         "stable_advection" => option(scenario, "stable_advection", "maccormack"),
         "stable_face_advection" => option(scenario, "stable_face_advection", false),
@@ -210,6 +210,11 @@ function _benchmark_solver_configuration(scenario::Scenario)
         "pic_population_interval" => option(scenario, "pic_population_interval", 8),
         "pic_cfl" => Float64(option(scenario, "pic_cfl", 0.75)),
     )
+    for name in ("mac_maximum_divergence_linf", "mac_maximum_solid_leakage")
+        haskey(scenario.solver_options, name) &&
+            (configuration[name] = Float64(scenario.solver_options[name]))
+    end
+    return configuration
 end
 
 function _require_finite_artifact(value, path::AbstractString = "result")

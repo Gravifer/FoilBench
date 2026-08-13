@@ -96,6 +96,18 @@ def _float_option(scenario: Scenario, name: str, default: float) -> float:
     return float(value)
 
 
+def _postcondition_limit(scenario: Scenario, name: str) -> float:
+    value = scenario.solver_options.get(name)
+    if value is None:
+        return float("inf")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric")
+    selected = float(value)
+    if not np.isfinite(selected) or selected < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative")
+    return selected
+
+
 def _int_option(scenario: Scenario, name: str, default: int) -> int:
     value = scenario.solver_options.get(name, default)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -877,6 +889,41 @@ class PicFlipSolver:
                         "substeps": substeps,
                     },
                 )
+            _, _, _, _, _, final_solid = self._require()
+            final_wall = geometry.wall_velocity(
+                centers.reshape(-1, 2),
+                control,
+            ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
+            native_divergence = native_divergence_linf(
+                projected_u,
+                projected_v,
+                scenario.domain,
+                final_solid,
+            )
+            native_leakage = solid_face_leakage(
+                projected_u,
+                projected_v,
+                final_solid,
+                final_wall,
+            )
+            divergence_limit = _postcondition_limit(
+                scenario, "mac_maximum_divergence_linf"
+            )
+            leakage_limit = _postcondition_limit(
+                scenario, "mac_maximum_solid_leakage"
+            )
+            if native_divergence > divergence_limit or native_leakage > leakage_limit:
+                raise NumericalFailure(
+                    "postcondition_failure",
+                    "PIC/FLIP exceeded a configured MAC postcondition limit",
+                    "postcondition",
+                    {
+                        "divergence_linf": native_divergence,
+                        "maximum_divergence_linf": divergence_limit,
+                        "solid_leakage": native_leakage,
+                        "maximum_solid_leakage": leakage_limit,
+                    },
+                )
         except Exception:
             (
                 self._positions,
@@ -908,22 +955,6 @@ class PicFlipSolver:
         self._revision += 1
         warnings = () if not self._projection_warning else (self._projection_warning,)
         _, _, _, _, _, final_solid = self._require()
-        final_wall = geometry.wall_velocity(
-            centers.reshape(-1, 2),
-            self._control,
-        ).reshape(scenario.domain.ny, scenario.domain.nx, 2)
-        native_divergence = native_divergence_linf(
-            projected_u,
-            projected_v,
-            scenario.domain,
-            final_solid,
-        )
-        native_leakage = solid_face_leakage(
-            projected_u,
-            projected_v,
-            final_solid,
-            final_wall,
-        )
         self._native_divergence_linf = native_divergence
         self._native_solid_leakage = native_leakage
         fluid_counts = counts[~final_solid.reshape(-1)]

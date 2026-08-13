@@ -54,6 +54,15 @@ describe("revision-2 solver validity evidence", () => {
     expect(solver.stateRevision).toBe(revision); expect([...solver.exportState().velocity]).toEqual([...before.velocity]); expect(solver.exportState().time).toBe(before.time);
   });
 
+  for (const solverId of ["stable-fluids", "pic-flip"] as const) it(`${solverId} rolls back a rejected MAC postcondition`, async () => {
+    const loaded = await loadScenario("../../scenarios/airfoil/fixed-stall.json");
+    const scenario: Scenario = {...loaded, solverOptions: {...loaded.solverOptions, macMaximumDivergenceLinf: 0, macMaximumSolidLeakage: 0}};
+    const solver = createSolver(solverId); solver.initialize(scenario, 0); const before = solver.exportState(); const revision = solver.stateRevision;
+    const failure = capturedFailure(() => solver.advance({time: scenario.outputDt, angleDegrees: 25, angularVelocityDegrees: 0}, scenario.outputDt));
+    expect(failure.reason).toBe("postcondition_failure"); expect(failure.stage).toBe("postcondition"); expect(Number(failure.evidence["divergence_linf"])).toBeGreaterThan(0);
+    expect(solver.stateRevision).toBe(revision); expect(solver.exportState().time).toBe(before.time); expect([...solver.exportState().velocity]).toEqual([...before.velocity]);
+  });
+
   it("reports family-specific accepted-step evidence", async () => {
     const fixture = JSON.parse(await readFile(resolve("../../spec/conformance/solver-validity.json"), "utf8")) as ValidityFixture;
     expect(fixture.contract_id).toBe("foilbench-phase2-v1"); expect(fixture.contract_revision).toBe(4);

@@ -13,6 +13,8 @@
   "output_dt": 0.02,
   "precision": "float64",
   "seed": 0,
-  "solver_options": {}
+  "solver_options": {
+    "mac_maximum_divergence_linf": 0.0001,
+    "mac_maximum_solid_leakage": 0.0001
+  }
 }
-

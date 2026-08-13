@@ -15,6 +15,7 @@ const optionNames: Record<string, keyof SolverOptions> = {
   initial_condition: "initialCondition", stable_advection: "stableAdvection",
   stable_face_advection: "stableFaceAdvection", stable_cfl: "stableCfl",
   pressure_tolerance: "pressureTolerance", pressure_max_iterations: "pressureMaxIterations",
+  mac_maximum_divergence_linf: "macMaximumDivergenceLinf", mac_maximum_solid_leakage: "macMaximumSolidLeakage",
   pic_flip_blend: "picFlipBlend", pic_population_interval: "picPopulationInterval",
   pic_cfl: "picCfl", viewer_crop_cells: "viewerCropCells", viewer_crop_default: "viewerCropDefault",
 };

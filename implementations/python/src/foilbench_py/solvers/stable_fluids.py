@@ -87,6 +87,18 @@ def _int_option(scenario: Scenario, name: str, default: int) -> int:
     return value
 
 
+def _postcondition_limit(scenario: Scenario, name: str) -> float:
+    value = scenario.solver_options.get(name)
+    if value is None:
+        return float("inf")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric")
+    selected = float(value)
+    if not np.isfinite(selected) or selected < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative")
+    return selected
+
+
 def _initial_velocity(scenario: Scenario) -> VelocityField:
     velocity = np.empty((scenario.domain.ny, scenario.domain.nx, 2), dtype=scenario.dtype)
     velocity[...] = np.asarray(scenario.freestream[:2], dtype=scenario.dtype)
@@ -514,16 +526,13 @@ class StableFluidsSolver:
             stability_retries += 1
             substeps = next_substeps
             dt = target_dt / substeps
-        self._time = start_time + target_dt
-        self._control = ControlState(
-            self._time,
+        final_control = ControlState(
+            start_time + target_dt,
             control.angle_degrees,
             control.angular_velocity_degrees,
         )
-        self._revision += 1
-        warnings = () if not self._projection_warning else (self._projection_warning,)
         _, _, final_u, final_v, final_solid = self._require()
-        final_wall = self._wall_grid(self._control)
+        final_wall = self._wall_grid(final_control)
         native_divergence = native_divergence_linf(
             final_u,
             final_v,
@@ -536,6 +545,33 @@ class StableFluidsSolver:
             final_solid,
             final_wall,
         )
+        divergence_limit = _postcondition_limit(
+            scenario, "mac_maximum_divergence_linf"
+        )
+        leakage_limit = _postcondition_limit(
+            scenario, "mac_maximum_solid_leakage"
+        )
+        if native_divergence > divergence_limit or native_leakage > leakage_limit:
+            restore_checkpoint()
+            raise NumericalFailure(
+                "postcondition_failure",
+                "Stable Fluids exceeded a configured MAC postcondition limit",
+                "postcondition",
+                {
+                    "divergence_linf": native_divergence,
+                    "maximum_divergence_linf": divergence_limit,
+                    "solid_leakage": native_leakage,
+                    "maximum_solid_leakage": leakage_limit,
+                },
+            )
+        self._time = start_time + target_dt
+        self._control = ControlState(
+            self._time,
+            control.angle_degrees,
+            control.angular_velocity_degrees,
+        )
+        self._revision += 1
+        warnings = () if not self._projection_warning else (self._projection_warning,)
         return StepReport(
             target_dt,
             target_dt,

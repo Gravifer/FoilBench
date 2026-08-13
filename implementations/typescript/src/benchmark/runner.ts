@@ -50,7 +50,7 @@ function physicalIdentitiesMatch(left: unknown, right: unknown, precision: unkno
 }
 
 function solverConfiguration(scenario: Scenario): Record<string, unknown> {
-  return {
+  const configuration: Record<string, unknown> = {
     initial_condition: scenario.solverOptions.initialCondition ?? "freestream",
     stable_advection: scenario.solverOptions.stableAdvection ?? "maccormack",
     stable_face_advection: scenario.solverOptions.stableFaceAdvection ?? false,
@@ -61,6 +61,9 @@ function solverConfiguration(scenario: Scenario): Record<string, unknown> {
     pic_population_interval: scenario.solverOptions.picPopulationInterval ?? 8,
     pic_cfl: scenario.solverOptions.picCfl ?? 0.75,
   };
+  if (scenario.solverOptions.macMaximumDivergenceLinf !== undefined) configuration["mac_maximum_divergence_linf"] = scenario.solverOptions.macMaximumDivergenceLinf;
+  if (scenario.solverOptions.macMaximumSolidLeakage !== undefined) configuration["mac_maximum_solid_leakage"] = scenario.solverOptions.macMaximumSolidLeakage;
+  return configuration;
 }
 
 function requireFinite(value: unknown, path = "result"): void {

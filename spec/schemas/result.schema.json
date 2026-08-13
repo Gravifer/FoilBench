@@ -119,6 +119,8 @@
         "stable_cfl": {"type": "number", "exclusiveMinimum": 0},
         "pressure_tolerance": {"type": "number", "exclusiveMinimum": 0},
         "pressure_max_iterations": {"type": "integer", "minimum": 1},
+        "mac_maximum_divergence_linf": {"type": "number", "minimum": 0},
+        "mac_maximum_solid_leakage": {"type": "number", "minimum": 0},
         "pic_flip_blend": {"type": "number", "minimum": 0, "maximum": 1},
         "pic_population_interval": {"type": "integer", "minimum": 1},
         "pic_cfl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}

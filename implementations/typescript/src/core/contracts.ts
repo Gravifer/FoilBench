@@ -31,6 +31,8 @@ export interface SolverOptions {
   readonly stableCfl?: number;
   readonly pressureTolerance?: number;
   readonly pressureMaxIterations?: number;
+  readonly macMaximumDivergenceLinf?: number;
+  readonly macMaximumSolidLeakage?: number;
   readonly picFlipBlend?: number;
   readonly picPopulationInterval?: number;
   readonly picCfl?: number;

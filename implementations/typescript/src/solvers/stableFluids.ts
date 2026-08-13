@@ -193,6 +193,17 @@ export class StableFluidsSolver implements FlowSolver {
 
   private refreshFinalDivergence(): void { const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const field = divergence(this.u, this.v, nx, ny, dx, dy, scenario.precision); let maximum = 0; for (let index = 0; index < field.length; index += 1) if (this.solid[index] === 0) maximum = Math.max(maximum, Math.abs(field[index] ?? 0)); this.lastProjection = {...this.lastProjection, divergenceLinf: maximum}; }
 
+  private requireMacPostconditions(control: ControlState): Readonly<Record<string, number>> {
+    const scenario = this.requireScenario();
+    const divergenceLimit = scenario.solverOptions.macMaximumDivergenceLinf ?? Number.POSITIVE_INFINITY;
+    const leakageLimit = scenario.solverOptions.macMaximumSolidLeakage ?? Number.POSITIVE_INFINITY;
+    if (!(divergenceLimit >= 0) || !(leakageLimit >= 0) || Number.isNaN(divergenceLimit) || Number.isNaN(leakageLimit)) throw new RangeError("MAC postcondition limits must be non-negative numbers");
+    const divergenceLinf = this.lastProjection.divergenceLinf;
+    const solidLeakage = this.solidFaceLeakage(control);
+    if (divergenceLinf > divergenceLimit || solidLeakage > leakageLimit) throw new NumericalFailure("postcondition_failure", "Stable Fluids exceeded a configured MAC postcondition limit", "postcondition", {divergence_linf: divergenceLinf, maximum_divergence_linf: divergenceLimit, solid_leakage: solidLeakage, maximum_solid_leakage: leakageLimit});
+    return {divergence_linf: divergenceLinf, solid_leakage: solidLeakage};
+  }
+
   private substep(control: ControlState, dt: number): void {
     const scenario = this.requireScenario(); const {nx, ny, dx, dy} = dimensions(scenario.domain); const periodicX = scenario.domain.periodicAxes.includes("x"); const periodicY = scenario.domain.periodicAxes.includes("y"); if (this.transportMode === "skew-rk2") { ({u: this.u, v: this.v} = this.skewRk2Faces(control, dt)); ({u: this.u, v: this.v} = this.diffuseFaces(this.u, this.v, dt)); } else { const before = cellVelocity(this.u, this.v, nx, ny, scenario.precision); const advected = this.transportMode === "semi-lagrangian" ? this.semiLagrangian(before, dt) : this.maccormack(before, dt); const diffused = this.diffuse(advected, dt); ({u: this.u, v: this.v} = cellToFaces(diffused, nx, ny, scenario.precision, periodicX, periodicY)); } this.updateSolid(control); this.applyDomainBoundaries(this.u, this.v); this.enforceSolidFaces(control); this.lastProjection = project(this.u, this.v, this.solid, nx, ny, dx, dy, scenario.precision, scenario.solverOptions.pressureMaxIterations ?? 640, scenario.solverOptions.pressureTolerance ?? 1e-5, periodicX, periodicY); this.requireProjection(this.lastProjection); this.applyDomainBoundaries(this.u, this.v); this.enforceSolidFaces(control); this.refreshFinalDivergence();
   }
@@ -243,9 +254,10 @@ export class StableFluidsSolver implements FlowSolver {
 
   public advanceProjected(control: ControlState, targetDt: number): StepReport {
     if (!(targetDt > 0) || !Number.isFinite(targetDt)) throw new RangeError("target dt must be finite and positive"); this.requireCompletionTime(control, targetDt); const saved = this.transactionCheckpoint();
-    try { this.projectedSubstep(control, targetDt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "projected grid step produced non-finite velocity"); }
+    let postconditions: Readonly<Record<string, number>>;
+    try { this.projectedSubstep(control, targetDt); if (!this.u.every(Number.isFinite) || !this.v.every(Number.isFinite)) throw new NumericalFailure("nonfinite_state", "projected grid step produced non-finite velocity"); postconditions = this.requireMacPostconditions(control); }
     catch (error) { this.restore(saved); throw error; }
-    const velocity = cellVelocity(this.u, this.v, dimensions(this.requireScenario().domain).nx, dimensions(this.requireScenario().domain).ny, this.requireScenario().precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const evidence = this.motionEvidence(maxSpeed, targetDt, control, control.angleDegrees - saved.control.angleDegrees);
+    const velocity = cellVelocity(this.u, this.v, dimensions(this.requireScenario().domain).nx, dimensions(this.requireScenario().domain).ny, this.requireScenario().precision); let maxSpeed = 0; for (let index = 0; index < velocity.length; index += 2) maxSpeed = Math.max(maxSpeed, Math.hypot(velocity[index] ?? 0, velocity[index + 1] ?? 0)); const evidence = {...this.motionEvidence(maxSpeed, targetDt, control, control.angleDegrees - saved.control.angleDegrees), ...postconditions};
     this.time += targetDt; this.control = {...control, time: this.time}; this.revision += 1;
     return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed, stateRevision: this.revision, evidence, warnings: []};
   }
@@ -307,7 +319,10 @@ export class StableFluidsSolver implements FlowSolver {
       substeps = nextSubsteps;
       dt = targetDt / substeps;
     }
-      const evidence = {...this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps), maximum_advective_rate: fluidRate, stability_retries: stabilityRetries};
+    let postconditions: Readonly<Record<string, number>>;
+    try { postconditions = this.requireMacPostconditions(control); }
+    catch (error) { this.restore(saved); throw error; }
+    const evidence = {...this.motionEvidence(maxSpeed, dt, control, angleDelta / substeps), ...postconditions, maximum_advective_rate: fluidRate, stability_retries: stabilityRetries};
     this.time += targetDt;
     this.control = {...control, time: this.time};
     this.revision += 1;
