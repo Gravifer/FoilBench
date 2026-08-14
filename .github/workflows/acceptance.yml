@@ -71,7 +71,7 @@ jobs:
       - name: Run acceptance cell
         shell: pwsh
         run: ./tools/ci/run_acceptance_cell.ps1 -Implementation '${{ matrix.implementation }}' -ExecutionTarget '${{ matrix.target }}' -Gate '${{ matrix.gate }}'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cell-${{ github.sha }}-${{ matrix.implementation }}-${{ matrix.target }}-${{ matrix.gate }}
           path: results/ci-cells/${{ github.sha }}
@@ -83,12 +83,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {path: results/downloaded, pattern: 'cell-*', merge-multiple: true}
       - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --project implementations/python --all-groups --locked
       - run: uv run --project implementations/python python tools/ci/validate_acceptance_cells.py --root results/downloaded --commit ${{ github.sha }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: revision5-representative-${{ github.sha }}
           path: results/downloaded
