@@ -355,3 +355,18 @@ misrepresented by the solver-gate workflow.
 
 Pixel-level renderer matching is a permanent won't-do. D3Q19 and shallow
 periodic 3D remain deferred; all three 2D Rust solvers now pass parity.
+
+### Revision 5 quality and errata closure
+
+**Status:** Complete. This closure does not create a new contract revision.
+
+The PR #2 follow-up corrected transactional and indexing edge cases, tightened
+canonical and fidelity validation, and added a separate scheduled/manual
+32×20 full-history recovery case while preserving the cheap dynamic smoke.
+All twelve implementation/solver cells emitted finite nonnegative mixing and
+observed or right-censored recovery evidence. See the
+[Revision 5 quality addendum](revision5-quality-addendum.md).
+
+The accepted PCG32 Float32 conversion is retained even though it can rarely
+round to `1.0`. Correcting that behavior changes deterministic streams and is
+therefore explicitly deferred to Revision 6 with new conformance vectors.

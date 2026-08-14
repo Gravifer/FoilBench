@@ -178,6 +178,7 @@ mod tests {
         points: Vec<[f64; 2]>,
         signed_distance: Vec<f64>,
         normals: Vec<[f64; 2]>,
+        contains: Vec<bool>,
         angular_velocity_degrees: f64,
         wall_velocity: Vec<[f64; 2]>,
         maximum_radius: f64,
@@ -190,6 +191,12 @@ mod tests {
         ))
         .unwrap();
         let foil = NacaFoil::new(fixture.descriptor).unwrap();
+        assert_eq!(fixture.surface_x.len(), fixture.surface_upper.len());
+        assert_eq!(fixture.surface_x.len(), fixture.surface_lower.len());
+        assert_eq!(fixture.points.len(), fixture.signed_distance.len());
+        assert_eq!(fixture.points.len(), fixture.normals.len());
+        assert_eq!(fixture.points.len(), fixture.contains.len());
+        assert_eq!(fixture.points.len(), fixture.wall_velocity.len());
         for ((x, expected_upper), expected_lower) in fixture
             .surface_x
             .iter()
@@ -200,17 +207,18 @@ mod tests {
             assert!((upper - expected_upper).abs() < 1.0e-12);
             assert!((lower - expected_lower).abs() < 1.0e-12);
         }
-        for (((point, expected_distance), expected_normal), expected_wall) in fixture
-            .points
-            .iter()
-            .zip(&fixture.signed_distance)
-            .zip(&fixture.normals)
-            .zip(&fixture.wall_velocity)
+        for ((((point, expected_distance), expected_normal), expected_contains), expected_wall) in
+            fixture
+                .points
+                .iter()
+                .zip(&fixture.signed_distance)
+                .zip(&fixture.normals)
+                .zip(&fixture.contains)
+                .zip(&fixture.wall_velocity)
         {
-            assert!(
-                (foil.signed_distance(*point, fixture.angle_degrees) - expected_distance).abs()
-                    < 1.0e-10
-            );
+            let distance = foil.signed_distance(*point, fixture.angle_degrees);
+            assert!((distance - expected_distance).abs() < 1.0e-10);
+            assert_eq!(distance <= 0.0, *expected_contains);
             let normal = foil.normal(*point, fixture.angle_degrees);
             assert!((normal[0] - expected_normal[0]).abs() < 2.0e-6);
             assert!((normal[1] - expected_normal[1]).abs() < 2.0e-6);

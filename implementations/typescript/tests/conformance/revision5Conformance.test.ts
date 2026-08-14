@@ -51,6 +51,7 @@ describe("Revision 5 conformance fixtures", () => {
     const surfaceX = fixture["surface_x"] as number[];
     const expectedUpper = fixture["surface_upper"] as number[];
     const expectedLower = fixture["surface_lower"] as number[];
+    expect(new Set([surfaceX.length, expectedUpper.length, expectedLower.length]).size).toBe(1);
     for (let index = 0; index < surfaceX.length; index += 1) {
       const [upper, lower] = foil.surface(surfaceX[index] ?? 0);
       expect(Math.abs(upper - (expectedUpper[index] ?? 0))).toBeLessThanOrEqual(tolerances["surface"] ?? 0);
@@ -61,6 +62,7 @@ describe("Revision 5 conformance fixtures", () => {
     const normals = fixture["normals"] as number[][];
     const contains = fixture["contains"] as boolean[];
     const velocities = fixture["wall_velocity"] as number[][];
+    expect(new Set([points.length, distances.length, normals.length, contains.length, velocities.length]).size).toBe(1);
     const angle = fixture["angle_degrees"] as number;
     const angularVelocity = fixture["angular_velocity_degrees"] as number;
     for (let index = 0; index < points.length; index += 1) {

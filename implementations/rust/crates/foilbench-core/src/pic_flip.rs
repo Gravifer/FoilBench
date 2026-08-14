@@ -851,7 +851,7 @@ impl<T: FlowScalar> PicFlip<T> {
         }
         state.advance_count += 1;
         let interval = Self::option_usize(&state.scenario, "pic_population_interval", 8)?.max(1);
-        if state.advance_count % interval == 0 {
+        if state.advance_count.is_multiple_of(interval) {
             Self::maintain_population(state, control, &final_snapshot.velocity);
         }
         state.settling_steps = state.settling_steps.saturating_sub(1);

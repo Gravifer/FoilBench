@@ -9,8 +9,11 @@ identity that version 1 cannot express.
   geometry contract. Import into a different descriptor must reject with
   `incompatible_geometry` before mutation.
 - `producer` separates `implementation` (`python`, `julia`, `typescript`, or
-  `rust`) from `execution_target` (`native` or `wasm-browser`). Optional build
-  metadata is informative and is not comparison identity.
+  `rust`) from execution target (`native`, `node`, `browser-worker`, or
+  `wasm-browser`). Optional build metadata is informative and is not
+  comparison identity. Revision 5 numerical acceptance uses the exact roster
+  in `acceptance-and-targets.md`; schema-valid targets outside a gate's roster
+  do not substitute for it.
 - velocity component order is `[x, y]` in 2D and `[x, y, z]` in 3D.
 - spatial index zero is the cell center nearest the corresponding lower
   bound. Indices increase toward the upper bound. Canonical array axes remain

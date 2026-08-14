@@ -59,3 +59,31 @@ export function recoveryWindow(scenario: Pick<Scenario, "controls" | "duration">
   if (baselineEnd === undefined || recoveryStart === undefined || baselineEnd >= recoveryStart || recoveryStart >= duration) return null;
   return [baselineEnd, recoveryStart];
 }
+
+export function recoveryDiagnostics(
+  values: Readonly<Record<string, number>>,
+): readonly [wakeWidth: number, recirculationArea: number] {
+  const wakeWidth = values["wake_width"];
+  const recirculationArea = values["recirculation_area"];
+  if (wakeWidth === undefined || !Number.isFinite(wakeWidth) || wakeWidth < 0) {
+    throw new TypeError("benchmark diagnostics omit valid wake_width");
+  }
+  if (recirculationArea === undefined || !Number.isFinite(recirculationArea) || recirculationArea < 0) {
+    throw new TypeError("benchmark diagnostics omit valid recirculation_area");
+  }
+  return [wakeWidth, recirculationArea];
+}
+
+export function alignedRecoveryTimestep(
+  elapsed: number,
+  requestedDt: number,
+  events: readonly [number, number] | null,
+  tolerance = 1e-12,
+): number {
+  let selected = requestedDt;
+  if (events !== null) for (const eventTime of events) {
+    const untilEvent = eventTime - elapsed;
+    if (untilEvent > tolerance && untilEvent < selected) selected = untilEvent;
+  }
+  return selected;
+}

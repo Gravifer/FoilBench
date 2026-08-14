@@ -180,6 +180,14 @@ end
     x = Float64.(geometry_document.surface_x)
     upper, lower = surfaces(foil, x)
     tolerances = geometry_document.absolute_tolerances
+    @test length(geometry_document.surface_x) ==
+          length(geometry_document.surface_upper) ==
+          length(geometry_document.surface_lower)
+    @test length(geometry_document.points) ==
+          length(geometry_document.signed_distance) ==
+          length(geometry_document.normals) ==
+          length(geometry_document.contains) ==
+          length(geometry_document.wall_velocity)
     @test upper ≈ Float64.(geometry_document.surface_upper) atol = tolerances.surface
     @test lower ≈ Float64.(geometry_document.surface_lower) atol = tolerances.surface
     points = rows_to_matrix(geometry_document.points)
@@ -1119,7 +1127,7 @@ end
     )
     for index in CartesianIndices(excessive_solid)
         excessive_solid[index] || continue
-        excessive_velocity[1, index[1], index[2], :] .= 0
+        excessive_velocity[1, index[2], index[1], :] .= 0
     end
     stable_import = CanonicalFlowState(
         1, stable_before.bounds, stable_before.resolution, stable_before.periodic_axes,
@@ -1480,18 +1488,20 @@ end
     chaotic_solver = StableFluidsSolver(Float32)
     initialize!(chaotic_solver, chaotic, NacaFoil(chaotic.foil), 0)
     total_retries = 0
-    chaotic_report = nothing
-    control = ControlState(
-        chaotic.output_dt,
-        typeof(chaotic.output_dt)(retry_case.angle_degrees),
-        typeof(chaotic.output_dt)(retry_case.angular_velocity_degrees),
-    )
-    chaotic_report = advance!(chaotic_solver, control, chaotic.output_dt)
-    @test chaotic_report.state_revision == 1
-    total_retries += Int(chaotic_report.evidence["stability_retries"])
-    @test chaotic_report !== nothing
-    @test chaotic_report.advanced_dt == chaotic.output_dt
-    @test export_state(chaotic_solver).time == chaotic.output_dt
+    @test retry_case.expected_steps >= 1
+    for step in 1:Int(retry_case.expected_steps)
+        control = ControlState(
+            step * chaotic.output_dt,
+            typeof(chaotic.output_dt)(retry_case.angle_degrees),
+            typeof(chaotic.output_dt)(retry_case.angular_velocity_degrees),
+        )
+        chaotic_report = advance!(chaotic_solver, control, chaotic.output_dt)
+        @test chaotic_report.state_revision == step
+        @test chaotic_report.advanced_dt == chaotic.output_dt
+        total_retries += Int(chaotic_report.evidence["stability_retries"])
+    end
+    @test state_revision(chaotic_solver) == retry_case.expected_steps
+    @test export_state(chaotic_solver).time == retry_case.expected_steps * chaotic.output_dt
     @test total_retries >= retry_case.minimum_total_stability_retries
     @test all(isfinite, export_state(chaotic_solver).velocity)
 
@@ -1499,19 +1509,28 @@ end
     pic_scenario = retry_scenario(pic_case)
     pic_solver = PicFlipSolver(Float32)
     initialize!(pic_solver, pic_scenario, NacaFoil(pic_scenario.foil), pic_scenario.seed)
-    pic_report = advance!(
-        pic_solver,
-        ControlState(
+    pic_report = nothing
+    pic_total_retries = 0
+    @test pic_case.expected_steps >= 1
+    for step in 1:Int(pic_case.expected_steps)
+        pic_report = advance!(
+            pic_solver,
+            ControlState(
+                step * pic_scenario.output_dt,
+                typeof(pic_scenario.output_dt)(pic_case.angle_degrees),
+                typeof(pic_scenario.output_dt)(pic_case.angular_velocity_degrees),
+            ),
             pic_scenario.output_dt,
-            typeof(pic_scenario.output_dt)(pic_case.angle_degrees),
-            typeof(pic_scenario.output_dt)(pic_case.angular_velocity_degrees),
-        ),
-        pic_scenario.output_dt,
-    )
-    @test pic_report.substeps >= 1
-    @test pic_report.evidence["stability_retries"] >=
+        )
+        pic_total_retries += Int(pic_report.evidence["stability_retries"])
+    end
+    @test state_revision(pic_solver) == pic_case.expected_steps
+    @test pic_report !== nothing
+    final_pic_report = something(pic_report)
+    @test final_pic_report.substeps >= 1
+    @test pic_total_retries >=
         pic_case.minimum_total_stability_retries
-    @test pic_report.evidence["maximum_particle_cfl"] <=
+    @test final_pic_report.evidence["maximum_particle_cfl"] <=
         option(pic_scenario, "pic_cfl", 0.75) * (1 + 1.0e-6)
     @test all(isfinite, export_state(pic_solver).velocity)
 
@@ -1525,14 +1544,27 @@ end
         lbm_scenario.seed,
         RestartState(0.0f0, Float32(lbm_case.angle_degrees), lbm_scenario.reynolds),
     )
-    lbm_report = advance!(
-        lbm_solver,
-        ControlState(lbm_scenario.output_dt, Float32(lbm_case.angle_degrees), 0.0f0),
-        lbm_scenario.output_dt,
-    )
-    @test lbm_report.evidence["stability_retries"] >=
+    lbm_report = nothing
+    lbm_total_retries = 0
+    @test lbm_case.expected_steps >= 1
+    for step in 1:Int(lbm_case.expected_steps)
+        lbm_report = advance!(
+            lbm_solver,
+            ControlState(
+                step * lbm_scenario.output_dt,
+                Float32(lbm_case.angle_degrees),
+                0.0f0,
+            ),
+            lbm_scenario.output_dt,
+        )
+        lbm_total_retries += Int(lbm_report.evidence["stability_retries"])
+    end
+    @test state_revision(lbm_solver) == lbm_case.expected_steps
+    @test lbm_report !== nothing
+    final_lbm_report = something(lbm_report)
+    @test lbm_total_retries >=
         lbm_case.minimum_total_stability_retries
-    @test lbm_report.evidence["maximum_lattice_mach"] <= 0.08 * (1 + 1.0e-6)
+    @test final_lbm_report.evidence["maximum_lattice_mach"] <= 0.08 * (1 + 1.0e-6)
 end
 
 @testset "Headless viewer model and worker" begin
@@ -1995,7 +2027,13 @@ end
         @test solver_info(model.solver).id == destination
         @test model.manual_angle == angle
         @test model.simulation_time == scenario.output_dt
-        @test all(isfinite, export_state(model.solver).velocity)
+        switched_state = export_state(model.solver)
+        @test all(isfinite, switched_state.velocity)
+        switched_solid = solid_mask(model.geometry, scenario.domain, angle)
+        for j in axes(switched_solid, 2), i in axes(switched_solid, 1)
+            switched_solid[i, j] || continue
+            @test all(iszero, switched_state.velocity[1, j, i, :])
+        end
         release_angle!(model)
         updated = update!(model)
         @test updated.time == 2 * scenario.output_dt
@@ -2069,6 +2107,12 @@ end
 end
 
 @testset "Julia benchmark contracts" begin
+    @test FoilBenchJulia.aligned_recovery_timestep(2.9, 0.2, (3.0, 18.0)) ≈ 0.1
+    @test FoilBenchJulia.aligned_recovery_timestep(
+        Float32(3.0) - eps(Float32),
+        Float32(0.2),
+        (3.0, 18.0),
+    ) == Float32(0.2)
     matrix = load_benchmark_matrix(joinpath(REPOSITORY_ROOT, "benchmark-matrices", "test.json"))
     @test matrix.id == "test"
     @test matrix.solvers == collect(solver_ids())

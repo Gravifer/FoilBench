@@ -135,6 +135,18 @@ impl Scenario {
     #[must_use]
     pub fn control_at(&self, time: f64) -> ControlState {
         let first = &self.controls[0];
+        if !time.is_finite() {
+            let selected = if time.is_sign_positive() && !time.is_nan() {
+                &self.controls[self.controls.len() - 1]
+            } else {
+                first
+            };
+            return ControlState {
+                time: selected.time,
+                angle_degrees: selected.angle_degrees,
+                angular_velocity_degrees: 0.0,
+            };
+        }
         if self.controls.len() == 1 || time <= first.time {
             return ControlState {
                 time,
@@ -335,6 +347,24 @@ mod tests {
         let document = include_str!("../../../../../scenarios/airfoil/default.json");
         let malformed = document.replacen("\"angle_degrees\": 4.0", "\"angle_degrees\": 1e999", 1);
         assert!(Scenario::from_json(&malformed).is_err());
+    }
+
+    #[test]
+    fn clamps_nonfinite_control_queries_to_finite_endpoint_poses() {
+        let scenario = Scenario::from_json(include_str!(
+            "../../../../../scenarios/airfoil/default.json"
+        ))
+        .unwrap();
+        let first = scenario.control_at(f64::NAN);
+        assert!(first.time.abs() < f64::EPSILON);
+        assert!((first.angle_degrees - 4.0).abs() < f64::EPSILON);
+        assert!(first.angular_velocity_degrees.abs() < f64::EPSILON);
+        assert_eq!(scenario.control_at(f64::NEG_INFINITY), first);
+
+        let last = scenario.control_at(f64::INFINITY);
+        assert!((last.time - 22.0).abs() < f64::EPSILON);
+        assert!((last.angle_degrees - 4.0).abs() < f64::EPSILON);
+        assert!(last.angular_velocity_degrees.abs() < f64::EPSILON);
     }
 
     #[test]

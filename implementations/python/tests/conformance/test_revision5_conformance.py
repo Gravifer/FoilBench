@@ -75,6 +75,14 @@ def test_revision5_geometry_fixture_matches_python() -> None:
         )
     )
     tolerances = cast(dict[str, float], fixture["absolute_tolerances"])
+    assert len(cast(list[object], fixture["surface_x"])) == len(
+        cast(list[object], fixture["surface_upper"])
+    ) == len(cast(list[object], fixture["surface_lower"]))
+    assert len(cast(list[object], fixture["points"])) == len(
+        cast(list[object], fixture["signed_distance"])
+    ) == len(cast(list[object], fixture["normals"])) == len(
+        cast(list[object], fixture["contains"])
+    ) == len(cast(list[object], fixture["wall_velocity"]))
     surface_x = np.asarray(cast(list[float], fixture["surface_x"]), dtype=np.float64)
     upper, lower = foil.surfaces(surface_x)
     np.testing.assert_allclose(
@@ -132,6 +140,30 @@ def test_revision5_manifest_and_fidelity_inventory_are_consumable() -> None:
         assert len(cast(list[int], case["resolution"])) == scenario.domain.dimension
         assert float(cast(float, case["duration"])) > 0.0
         assert cast(dict[str, object], case["metrics"])
+
+
+def test_revision5_fidelity_schema_rejects_wrong_metric_rosters_and_thresholds() -> None:
+    fidelity = _fixture("fidelity-cases.json")
+    schema = _object(SCHEMAS / "fidelity-cases.schema.json")
+
+    wrong_roster = copy.deepcopy(fidelity)
+    uniform = cast(list[dict[str, object]], wrong_roster["cases"])[0]
+    cast(dict[str, object], uniform["metrics"])["unexpected"] = {
+        "comparison": "finite",
+        "threshold": None,
+    }
+    with pytest.raises(ValidationError):
+        validate_json(wrong_roster, schema)
+
+    wrong_threshold = copy.deepcopy(fidelity)
+    uniform = cast(list[dict[str, object]], wrong_threshold["cases"])[0]
+    metric = cast(
+        dict[str, object],
+        cast(dict[str, object], uniform["metrics"])["velocity_rms_drift"],
+    )
+    metric["threshold"] = None
+    with pytest.raises(ValidationError):
+        validate_json(wrong_threshold, schema)
 
 
 def test_revision5_mac_and_lbm_boundary_fixtures_match_python() -> None:

@@ -24,6 +24,10 @@ use serde_json::{Value, json};
 
 use crate::{canonical_io::write_canonical, resources::ResourceResolver};
 
+const RECOVERY_OBSERVATION_LIMIT: f64 = 4.0;
+const RECOVERY_TIME_TOLERANCE: f64 = 1.0e-9;
+const RECOVERY_EVENT_TOLERANCE: f64 = 1.0e-12;
+
 #[derive(Clone, Debug, Deserialize)]
 struct BenchmarkMatrix {
     schema_version: u32,
@@ -109,6 +113,127 @@ fn evidence_number(report: &StepReport, key: &str, fallback: f64) -> f64 {
     }
 }
 
+fn recovery_window(scenario: &Scenario, duration: f64) -> Option<(f64, f64)> {
+    let controls = scenario.controls();
+    let initial = controls.first()?.angle_degrees;
+    if (controls.last()?.angle_degrees - initial).abs() > 1.0e-9 {
+        return None;
+    }
+    let changed = controls
+        .iter()
+        .enumerate()
+        .filter_map(|(index, control)| {
+            ((control.angle_degrees - initial).abs() > 1.0e-9).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let first = *changed.first()?;
+    let last = *changed.last()?;
+    if first == 0 || last + 1 >= controls.len() {
+        return None;
+    }
+    let baseline_end = controls[first - 1].time;
+    let recovery_start = controls[last + 1].time;
+    (baseline_end < recovery_start && recovery_start < duration)
+        .then_some((baseline_end, recovery_start))
+}
+
+fn recovery_measurement(elapsed: Option<f64>, duration: f64, recovery_start: f64) -> (bool, f64) {
+    let limit = RECOVERY_OBSERVATION_LIMIT.min((duration - recovery_start).max(0.0));
+    let observed = elapsed.is_some_and(|value| value <= limit + RECOVERY_TIME_TOLERANCE);
+    let reported = if observed {
+        elapsed.map_or(limit, |value| value.min(limit))
+    } else {
+        limit
+    };
+    (observed, reported)
+}
+
+fn aligned_recovery_timestep(elapsed: f64, requested_dt: f64, events: Option<(f64, f64)>) -> f64 {
+    let mut selected = requested_dt;
+    if let Some(events) = events {
+        for event_time in [events.0, events.1] {
+            let until_event = event_time - elapsed;
+            if until_event > RECOVERY_EVENT_TOLERANCE && until_event < selected {
+                selected = until_event;
+            }
+        }
+    }
+    selected
+}
+
+fn wake_probe_metrics(
+    samples: &[f64],
+    sample_dt: f64,
+    chord: f64,
+    freestream_speed: f64,
+) -> Result<BTreeMap<String, f64>, String> {
+    if samples.len() < 8
+        || !(sample_dt > 0.0 && chord > 0.0 && freestream_speed > 0.0)
+        || !samples.iter().all(|value| value.is_finite())
+    {
+        return Err("wake probe requires finite samples and positive scales".into());
+    }
+    let count = samples.len();
+    let mean = samples.iter().sum::<f64>() / count as f64;
+    let centered = samples
+        .iter()
+        .enumerate()
+        .map(|(index, sample)| {
+            let window = 0.5
+                * (1.0 - (2.0 * std::f64::consts::PI * index as f64 / (count - 1) as f64).cos());
+            ((*sample - mean), (*sample - mean) * window)
+        })
+        .collect::<Vec<_>>();
+    let transverse_rms =
+        (centered.iter().map(|(value, _)| value * value).sum::<f64>() / count as f64).sqrt();
+    let mut total_power = 0.0;
+    let mut dominant_power = 0.0;
+    let mut dominant_index = 0_usize;
+    for frequency in 1..=count / 2 {
+        let mut real = 0.0;
+        let mut imaginary = 0.0;
+        for (index, (_, value)) in centered.iter().enumerate() {
+            let phase = 2.0 * std::f64::consts::PI * frequency as f64 * index as f64 / count as f64;
+            real += value * phase.cos();
+            imaginary -= value * phase.sin();
+        }
+        let power = real.mul_add(real, imaginary * imaginary);
+        total_power += power;
+        if power > dominant_power {
+            dominant_power = power;
+            dominant_index = frequency;
+        }
+    }
+    let frequency_resolution = 1.0 / (count as f64 * sample_dt);
+    let dominant_frequency = if total_power <= f64::MIN_POSITIVE {
+        0.0
+    } else {
+        dominant_index as f64 * frequency_resolution
+    };
+    Ok(BTreeMap::from([
+        ("wake_probe_samples".into(), count as f64),
+        ("wake_frequency_resolution".into(), frequency_resolution),
+        ("wake_transverse_rms".into(), transverse_rms),
+        (
+            "wake_mixing_index".into(),
+            transverse_rms / freestream_speed,
+        ),
+        ("wake_dominant_frequency".into(), dominant_frequency),
+        (
+            "wake_strouhal_number".into(),
+            dominant_frequency * chord / freestream_speed,
+        ),
+        (
+            "wake_dominant_power_fraction".into(),
+            if total_power <= f64::MIN_POSITIVE {
+                0.0
+            } else {
+                dominant_power / total_power
+            },
+        ),
+    ]))
+}
+
 fn finite_json(value: &Value) -> bool {
     match value {
         Value::Number(number) => number.as_f64().is_some_and(f64::is_finite),
@@ -177,19 +302,115 @@ fn run_typed<T: FlowScalar>(
     let mut step_seconds = Vec::new();
     let mut total_substeps = 0_usize;
     let mut last_step = None;
+    let mut wake_probe = Vec::new();
+    let recovery = recovery_window(scenario, matrix.duration);
+    let mut recovery_baseline = None;
+    let mut recovery_elapsed = None;
+    let probe = [[
+        T::from_f64(
+            (scenario.foil().pivot[0] + 1.5 * scenario.foil().chord).min(
+                scenario.bounds()[0][1]
+                    - 0.5 * (scenario.bounds()[0][1] - scenario.bounds()[0][0])
+                        / scenario.resolution()[0] as f64,
+            ),
+        ),
+        T::from_f64(scenario.foil().pivot[1]),
+    ]];
+    let mut probe_velocity = [[T::from_f64(0.0); 2]];
     while simulated + 1.0e-12 < matrix.duration {
-        let dt = scenario.output_dt().min(matrix.duration - simulated);
-        simulated += dt;
+        if let Some((baseline_end, _)) = recovery
+            && recovery_baseline.is_none()
+            && simulated >= baseline_end - RECOVERY_EVENT_TOLERANCE
+        {
+            let baseline = solver.diagnostics().map_err(|error| error.to_string())?;
+            let wake = *baseline
+                .values
+                .get("wake_width")
+                .ok_or("diagnostics omit wake_width")?;
+            let recirculation = *baseline
+                .values
+                .get("recirculation_area")
+                .ok_or("diagnostics omit recirculation_area")?;
+            recovery_baseline = Some((wake, recirculation));
+        }
+        let mut dt = scenario.output_dt().min(matrix.duration - simulated);
+        dt = aligned_recovery_timestep(simulated, dt, recovery);
+        let target_time = simulated + dt;
         let started = Instant::now();
         let report = solver
-            .advance(scenario.control_at(simulated), dt)
+            .advance(scenario.control_at(target_time), dt)
             .map_err(|error| error.to_string())?;
+        simulated += report.advanced_dt;
         step_seconds.push(started.elapsed().as_secs_f64());
         total_substeps += report.substeps;
         last_step = Some(report);
+        if simulated >= 0.5 * matrix.duration {
+            solver
+                .sample_velocity(&probe, &mut probe_velocity)
+                .map_err(|error| error.to_string())?;
+            wake_probe.push(probe_velocity[0][1].to_f64());
+        }
+        if let Some((baseline_end, recovery_start)) = recovery {
+            let crossed_baseline =
+                recovery_baseline.is_none() && simulated >= baseline_end - RECOVERY_EVENT_TOLERANCE;
+            let observing_recovery = recovery_baseline.is_some()
+                && recovery_elapsed.is_none()
+                && simulated >= recovery_start - RECOVERY_EVENT_TOLERANCE;
+            if crossed_baseline || observing_recovery {
+                let transient = solver.diagnostics().map_err(|error| error.to_string())?;
+                let wake = *transient
+                    .values
+                    .get("wake_width")
+                    .ok_or("diagnostics omit wake_width")?;
+                let recirculation = *transient
+                    .values
+                    .get("recirculation_area")
+                    .ok_or("diagnostics omit recirculation_area")?;
+                if crossed_baseline {
+                    recovery_baseline = Some((wake, recirculation));
+                } else if let Some((baseline_wake, baseline_recirculation)) = recovery_baseline {
+                    let dx = (scenario.bounds()[0][1] - scenario.bounds()[0][0])
+                        / scenario.resolution()[0] as f64;
+                    let dy = (scenario.bounds()[1][1] - scenario.bounds()[1][0])
+                        / scenario.resolution()[1] as f64;
+                    if wake <= (1.25 * baseline_wake).max(2.0 * dy)
+                        && recirculation <= (1.25 * baseline_recirculation).max(2.0 * dx * dy)
+                    {
+                        recovery_elapsed = Some(simulated - recovery_start);
+                    }
+                }
+            }
+        }
     }
     let report = last_step.ok_or("benchmark duration produced no completed steps")?;
     let diagnostics = solver.diagnostics().map_err(|error| error.to_string())?;
+    let mut diagnostic_values = diagnostics.values.clone();
+    if wake_probe.len() >= 8 {
+        diagnostic_values.extend(wake_probe_metrics(
+            &wake_probe,
+            scenario.output_dt(),
+            scenario.foil().chord,
+            scenario.freestream()[0]
+                .hypot(scenario.freestream()[1])
+                .max(1.0e-12),
+        )?);
+    }
+    let mut warnings = report.warnings.clone();
+    warnings.extend(diagnostics.warnings.clone());
+    if let (Some((baseline_end, recovery_start)), Some(_)) = (recovery, recovery_baseline) {
+        let (observed, reported_elapsed) =
+            recovery_measurement(recovery_elapsed, matrix.duration, recovery_start);
+        diagnostic_values.extend(BTreeMap::from([
+            ("recovery_baseline_time".into(), baseline_end),
+            ("recovery_start_time".into(), recovery_start),
+            ("recovery_observed".into(), if observed { 1.0 } else { 0.0 }),
+            ("recovery_elapsed".into(), reported_elapsed),
+        ]));
+        if !observed {
+            warnings
+                .push("wake recovery was not observed; recovery_elapsed is right-censored".into());
+        }
+    }
     let total_wall = step_seconds.iter().sum::<f64>();
     let cells = scenario.resolution().iter().product::<usize>();
     let particle_count = diagnostics
@@ -249,10 +470,10 @@ fn run_typed<T: FlowScalar>(
         "final_state_revision": solver.state_revision(),
         "diagnostic_state_revision": diagnostics.state_revision,
         "last_step": step_json(&report),
-        "diagnostics": diagnostics.values,
+        "diagnostics": diagnostic_values,
         "success": true,
         "failure": null,
-        "warnings": report.warnings,
+        "warnings": warnings,
     });
     validate_result_semantics(&artifact)?;
     if matrix.save_snapshots {
@@ -551,10 +772,53 @@ pub fn compare_results(
 
 #[cfg(test)]
 mod tests {
-    use super::percentile;
+    use foilbench_core::Scenario;
+
+    use super::{
+        aligned_recovery_timestep, percentile, recovery_measurement, recovery_window,
+        wake_probe_metrics,
+    };
 
     #[test]
     fn percentile_interpolates_sorted_steps() {
         assert!((percentile(&[4.0, 1.0, 3.0, 2.0], 0.5) - 2.5).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn scheduled_recovery_uses_the_declared_control_landmarks() {
+        let scenario = Scenario::from_json(include_str!(
+            "../../../../../scenarios/airfoil/default.json"
+        ))
+        .unwrap();
+        assert_eq!(recovery_window(&scenario, 22.0), Some((3.0, 18.0)));
+        assert_eq!(recovery_window(&scenario, 18.0), None);
+    }
+
+    #[test]
+    fn scheduled_recovery_is_censored_at_the_explicit_observation_limit() {
+        assert_eq!(recovery_measurement(Some(3.5), 30.0, 18.0), (true, 3.5));
+        assert_eq!(recovery_measurement(Some(4.5), 30.0, 18.0), (false, 4.0));
+        assert_eq!(recovery_measurement(None, 30.0, 18.0), (false, 4.0));
+        assert_eq!(recovery_measurement(None, 20.0, 18.0), (false, 2.0));
+    }
+
+    #[test]
+    fn scheduled_recovery_steps_stop_at_diagnostic_landmarks() {
+        assert!((aligned_recovery_timestep(2.9, 0.2, Some((3.0, 18.0))) - 0.1).abs() < 1.0e-12);
+        assert!(
+            (aligned_recovery_timestep(3.0 - 5.0e-13, 0.2, Some((3.0, 18.0))) - 0.2).abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn wake_probe_metrics_are_finite_and_nonnegative() {
+        let samples = (0..32)
+            .map(|index| (2.0 * std::f64::consts::PI * f64::from(index) / 8.0).sin())
+            .collect::<Vec<_>>();
+        let metrics = wake_probe_metrics(&samples, 0.1, 1.0, 1.0).unwrap();
+        assert!(metrics.values().all(|value| value.is_finite()));
+        assert!(metrics["wake_mixing_index"] >= 0.0);
+        assert!(metrics["wake_dominant_frequency"] > 0.0);
     }
 }

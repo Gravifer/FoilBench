@@ -107,6 +107,11 @@ cargo run --quiet --manifest-path implementations/rust/Cargo.toml --locked -p fo
 just ts-view scenarios/airfoil/default.json stable-fluids rust-wasm
 ```
 
+Ordinary host `cargo build`, `cargo check`, and `cargo test` commands do not
+replace the mandatory `wasm32-unknown-unknown` compilation. Use `just
+verify-rust` (or the complete `just verify`) to exercise both the native
+workspace and the installed WASM target.
+
 The Rust/WASM selector offers Stable Fluids, D2Q9 TRT LBM, and blended
 PIC/FLIP through keys `1`, `2`, and `3`.
 
@@ -135,6 +140,7 @@ See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-accep
 [Phase 2B acceptance](docs/phase2b-acceptance.md),
 [Revision 4 acceptance](docs/revision4-acceptance.md),
 [Revision 5 acceptance](docs/revision5-acceptance.md),
+[Revision 5 quality addendum](docs/revision5-quality-addendum.md),
 [benchmarking guide](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 

@@ -1,11 +1,12 @@
 use std::{collections::BTreeSet, fmt};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::scenario::Precision;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArrayMetadata {
     pub file: String,
     pub axes: Vec<String>,
@@ -13,14 +14,16 @@ pub struct ArrayMetadata {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Producer {
     pub implementation: String,
     pub execution_target: String,
     #[serde(default)]
-    pub build: Option<Value>,
+    pub build: Option<Map<String, Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CanonicalGeometryDescriptor {
     pub family: String,
     pub naca: String,
@@ -29,6 +32,7 @@ pub struct CanonicalGeometryDescriptor {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CanonicalManifestV1 {
     pub schema_version: u32,
     pub dimension: u8,
@@ -46,6 +50,7 @@ pub struct CanonicalManifestV1 {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CanonicalManifestV2 {
     pub schema_version: u32,
     pub dimension: u8,
@@ -130,15 +135,26 @@ impl CanonicalManifest {
                     manifest.density.as_ref(),
                 )?;
                 let geometry = &manifest.geometry;
-                if geometry.family != "naca-four-digit-v1"
+                if manifest.dimension != 2
+                    || geometry.family != "naca-four-digit-v1"
                     || geometry.naca.len() != 4
                     || !geometry.naca.bytes().all(|digit| digit.is_ascii_digit())
                     || !geometry.chord.is_finite()
                     || geometry.chord <= 0.0
                     || geometry.pivot.len() != usize::from(manifest.dimension)
                     || geometry.pivot.iter().any(|value| !value.is_finite())
-                    || manifest.producer.implementation.is_empty()
-                    || manifest.producer.execution_target.is_empty()
+                    || !matches!(
+                        manifest.producer.implementation.as_str(),
+                        "python" | "julia" | "typescript" | "rust"
+                    )
+                    || !matches!(
+                        manifest.producer.execution_target.as_str(),
+                        "native" | "node" | "browser-worker" | "wasm-browser"
+                    )
+                    || !matches!(
+                        manifest.source_solver.as_str(),
+                        "stable-fluids" | "lbm-d2q9" | "pic-flip"
+                    )
                 {
                     return Err(CanonicalManifestError::Semantic(
                         "invalid canonical v2 identity",
@@ -191,15 +207,19 @@ fn validate_common(
             "invalid canonical metadata",
         ));
     }
-    validate_array(velocity, &["z", "y", "x", "component"])?;
+    validate_array(velocity, "velocity.npy", &["z", "y", "x", "component"])?;
     if let Some(metadata) = density {
-        validate_array(metadata, &["z", "y", "x"])?;
+        validate_array(metadata, "density.npy", &["z", "y", "x"])?;
     }
     Ok(())
 }
 
-fn validate_array(metadata: &ArrayMetadata, axes: &[&str]) -> Result<(), CanonicalManifestError> {
-    if metadata.file.is_empty()
+fn validate_array(
+    metadata: &ArrayMetadata,
+    expected_file: &str,
+    axes: &[&str],
+) -> Result<(), CanonicalManifestError> {
+    if metadata.file != expected_file
         || metadata
             .axes
             .iter()
@@ -240,6 +260,14 @@ impl std::error::Error for CanonicalManifestError {}
 #[cfg(test)]
 mod tests {
     use super::CanonicalManifest;
+    use serde_json::{Value, json};
+
+    fn revision5_fixture() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../../../spec/conformance/canonical-manifest-v2.json"
+        ))
+        .unwrap()
+    }
 
     #[test]
     fn reads_revision_four_manifest() {
@@ -283,12 +311,57 @@ mod tests {
 
     #[test]
     fn consumes_revision5_manifest_fixture() {
-        let document = include_str!(
-            "../../../../../spec/conformance/canonical-manifest-v2.json"
-        );
+        let document = include_str!("../../../../../spec/conformance/canonical-manifest-v2.json");
         assert!(matches!(
             CanonicalManifest::from_json(document).unwrap(),
             CanonicalManifest::V2(_)
         ));
+    }
+
+    #[test]
+    fn rejects_v2_values_outside_the_accepted_schema() {
+        let mutations: &[(&str, Value)] = &[
+            ("/dimension", json!(3)),
+            ("/producer/implementation", json!("other")),
+            ("/producer/execution_target", json!("other")),
+            ("/source_solver", json!("other")),
+            ("/producer/build", json!([])),
+            ("/velocity/file", json!("other.npy")),
+        ];
+        for (pointer, replacement) in mutations {
+            let mut document = revision5_fixture();
+            *document.pointer_mut(pointer).unwrap() = replacement.clone();
+            assert!(
+                CanonicalManifest::from_json(&serde_json::to_string(&document).unwrap()).is_err(),
+                "accepted invalid canonical value at {pointer}"
+            );
+        }
+
+        let mut density_document = revision5_fixture();
+        density_document["density"] = json!({
+            "file": "other.npy",
+            "axes": ["z", "y", "x"],
+            "order": "C"
+        });
+        assert!(
+            CanonicalManifest::from_json(&serde_json::to_string(&density_document).unwrap())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_v2_root_and_nested_fields() {
+        for pointer in ["", "/producer", "/geometry", "/velocity"] {
+            let mut document = revision5_fixture();
+            document
+                .pointer_mut(pointer)
+                .and_then(Value::as_object_mut)
+                .unwrap()
+                .insert("unexpected".into(), json!(true));
+            assert!(
+                CanonicalManifest::from_json(&serde_json::to_string(&document).unwrap()).is_err(),
+                "accepted unknown canonical field under {pointer}"
+            );
+        }
     }
 }

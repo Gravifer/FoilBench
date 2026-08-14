@@ -378,6 +378,12 @@ class StableFluidsSolver:
             )
         dt = target_dt / substeps
         viscosity = scenario.reference_speed * scenario.foil.chord / self._reynolds
+        divergence_limit = _postcondition_limit(
+            scenario, "mac_maximum_divergence_linf"
+        )
+        leakage_limit = _postcondition_limit(
+            scenario, "mac_maximum_solid_leakage"
+        )
         checkpoint: StableCheckpoint = (
             current_u.copy(),
             current_v.copy(),
@@ -545,12 +551,6 @@ class StableFluidsSolver:
             final_v,
             final_solid,
             final_wall,
-        )
-        divergence_limit = _postcondition_limit(
-            scenario, "mac_maximum_divergence_linf"
-        )
-        leakage_limit = _postcondition_limit(
-            scenario, "mac_maximum_solid_leakage"
         )
         if native_divergence > divergence_limit or native_leakage > leakage_limit:
             restore_checkpoint()

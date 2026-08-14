@@ -135,6 +135,24 @@ function benchmark_recovery_window(scenario::Scenario, duration::Real = scenario
     return (Float64(baseline_end), Float64(recovery_start))
 end
 
+function aligned_recovery_timestep(
+    elapsed::T,
+    requested_dt::T,
+    events,
+) where {T<:AbstractFloat}
+    events === nothing && return requested_dt
+    tolerance = max(
+        T(1.0e-12),
+        T(RECOVERY_EVENT_EPSILON_MULTIPLIER) * eps(T) * max(one(T), abs(elapsed)),
+    )
+    selected = requested_dt
+    for event_time in events
+        until_event = T(event_time) - elapsed
+        tolerance < until_event < selected && (selected = until_event)
+    end
+    return selected
+end
+
 function analyze_benchmark_wake(
     samples::Vector{Float64},
     sample_dt::Real,
@@ -217,6 +235,10 @@ function _benchmark_solver_configuration(scenario::Scenario)
     end
     return configuration
 end
+
+const RECOVERY_OBSERVATION_LIMIT = 4.0
+const RECOVERY_TIME_TOLERANCE = 1.0e-9
+const RECOVERY_EVENT_EPSILON_MULTIPLIER = 32
 
 function _require_finite_artifact(value, path::AbstractString = "result")
     value isa Real && !(value isa Bool) && !isfinite(value) &&
@@ -394,7 +416,27 @@ function run_benchmark_matrix(
                 solver = create_solver(solver_id, T)
                 initialize!(solver, scenario, geometry, scenario.seed)
                 while elapsed_simulated < scenario.duration - T(1.0e-12)
+                    event_tolerance = max(
+                        T(1.0e-12),
+                        T(RECOVERY_EVENT_EPSILON_MULTIPLIER) * eps(T) *
+                            max(one(T), abs(elapsed_simulated)),
+                    )
+                    if recovery_times !== nothing && recovery_baseline === nothing
+                        baseline_end, _ = recovery_times
+                        if elapsed_simulated >= T(baseline_end) - event_tolerance
+                            baseline_values = diagnostics(solver).values
+                            recovery_baseline = (
+                                baseline_values["wake_width"],
+                                baseline_values["recirculation_area"],
+                            )
+                        end
+                    end
                     timestep = min(scenario.output_dt, scenario.duration - elapsed_simulated)
+                    timestep = aligned_recovery_timestep(
+                        elapsed_simulated,
+                        timestep,
+                        recovery_times,
+                    )
                     control = control_at(scenario, elapsed_simulated + timestep)
                     started = time_ns()
                     report = advance!(solver, control, timestep)
@@ -408,14 +450,14 @@ function run_benchmark_matrix(
                     if recovery_times !== nothing
                         baseline_end, recovery_start = recovery_times
                         crossed_baseline = recovery_baseline === nothing &&
-                            elapsed_simulated >= baseline_end
+                            elapsed_simulated >= T(baseline_end) - event_tolerance
                         observing_recovery = recovery_baseline !== nothing &&
                             recovery_elapsed === nothing &&
-                            elapsed_simulated >= recovery_start
+                            elapsed_simulated >= T(recovery_start) - event_tolerance
                         if crossed_baseline || observing_recovery
                             transient = diagnostics(solver).values
-                            wake = get(transient, "wake_width", 0.0)
-                            recirculation = get(transient, "recirculation_area", 0.0)
+                            wake = transient["wake_width"]
+                            recirculation = transient["recirculation_area"]
                             if crossed_baseline
                                 recovery_baseline = (wake, recirculation)
                             else
@@ -451,14 +493,19 @@ function run_benchmark_matrix(
                 end
                 if recovery_times !== nothing && recovery_baseline !== nothing
                     baseline_end, recovery_start = recovery_times
-                    observed = recovery_elapsed !== nothing
+                    observation_limit = min(
+                        RECOVERY_OBSERVATION_LIMIT,
+                        max(0.0, matrix.duration - recovery_start),
+                    )
+                    observed = recovery_elapsed !== nothing &&
+                        recovery_elapsed <= observation_limit + RECOVERY_TIME_TOLERANCE
+                    reported_elapsed = observed ?
+                        min(something(recovery_elapsed), observation_limit) :
+                        observation_limit
                     diagnostic_values["recovery_baseline_time"] = baseline_end
                     diagnostic_values["recovery_start_time"] = recovery_start
                     diagnostic_values["recovery_observed"] = Float64(observed)
-                    diagnostic_values["recovery_elapsed"] = something(
-                        recovery_elapsed,
-                        matrix.duration - recovery_start,
-                    )
+                    diagnostic_values["recovery_elapsed"] = reported_elapsed
                     observed || push!(
                         warnings,
                         "wake recovery was not observed; recovery_elapsed is right-censored",

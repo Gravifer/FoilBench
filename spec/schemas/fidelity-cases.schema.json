@@ -8,13 +8,22 @@
     "schema_version": {"const": 1},
     "cases": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 6,
+      "maxItems": 6,
+      "allOf": [
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "uniform"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "taylor-green"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "poiseuille"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "naca0012-zero"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "naca2412-dynamic"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "naca2412-recovery"}}}, "minContains": 1, "maxContains": 1}
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "scenario", "resolution", "duration", "metrics"],
         "properties": {
-          "id": {"enum": ["uniform", "taylor-green", "poiseuille", "naca0012-zero", "naca2412-dynamic"]},
+          "id": {"enum": ["uniform", "taylor-green", "poiseuille", "naca0012-zero", "naca2412-dynamic", "naca2412-recovery"]},
           "scenario": {"type": "string", "minLength": 1},
           "resolution": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 4}},
           "duration": {"type": "number", "exclusiveMinimum": 0},
@@ -28,10 +37,43 @@
               "properties": {
                 "comparison": {"enum": ["maximum", "minimum", "finite"]},
                 "threshold": {"type": ["number", "null"]}
-              }
+              },
+              "allOf": [
+                {
+                  "if": {"properties": {"comparison": {"const": "finite"}}, "required": ["comparison"]},
+                  "then": {"properties": {"threshold": {"type": "null"}}},
+                  "else": {"properties": {"threshold": {"type": "number"}}}
+                }
+              ]
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"id": {"const": "uniform"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["velocity_rms_drift", "spurious_vorticity_rms", "density_linf_drift"], "minProperties": 3, "maxProperties": 3}}}
+          },
+          {
+            "if": {"properties": {"id": {"const": "taylor-green"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["velocity_l2_error", "kinetic_energy_ratio"], "minProperties": 2, "maxProperties": 2}}}
+          },
+          {
+            "if": {"properties": {"id": {"const": "poiseuille"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["profile_l2_error", "normal_wall_leakage"], "minProperties": 2, "maxProperties": 2}}}
+          },
+          {
+            "if": {"properties": {"id": {"const": "naca0012-zero"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["symmetry_l2_error", "solid_leakage"], "minProperties": 2, "maxProperties": 2}}}
+          },
+          {
+            "if": {"properties": {"id": {"const": "naca2412-dynamic"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["wake_width", "recirculation_area", "enstrophy", "solid_leakage"], "minProperties": 4, "maxProperties": 4}}}
+          },
+          {
+            "if": {"properties": {"id": {"const": "naca2412-recovery"}}, "required": ["id"]},
+            "then": {"properties": {"metrics": {"required": ["wake_mixing_index", "recovery_observed", "recovery_elapsed"], "minProperties": 3, "maxProperties": 3}}}
+          }
+        ]
       }
     }
   }

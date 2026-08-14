@@ -7,7 +7,11 @@ import pytest
 
 from foilbench_py.benchmark.artifact import validate_result_semantics
 from foilbench_py.benchmark.compare import _assert_complete_matrices, format_comparison
-from foilbench_py.benchmark.runner import recovery_window, run_matrix
+from foilbench_py.benchmark.runner import (
+    aligned_recovery_timestep,
+    recovery_window,
+    run_matrix,
+)
 from foilbench_py.cli import main
 from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.solvers.factory import solver_ids
@@ -178,3 +182,8 @@ def test_default_scenario_declares_a_recovery_window() -> None:
     root = find_repo_root(Path(__file__))
     scenario = load_scenario(root / "scenarios" / "airfoil" / "default.json")
     assert recovery_window(scenario) == (3.0, 18.0)
+
+
+def test_recovery_timestep_stops_at_diagnostic_landmarks() -> None:
+    assert aligned_recovery_timestep(2.9, 0.2, (3.0, 18.0)) == pytest.approx(0.1)
+    assert aligned_recovery_timestep(3.0 - 5.0e-13, 0.2, (3.0, 18.0)) == 0.2

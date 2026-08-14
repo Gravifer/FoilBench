@@ -24,6 +24,23 @@ from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
 
+_RECOVERY_OBSERVATION_LIMIT = 4.0
+_RECOVERY_TIME_TOLERANCE = 1.0e-9
+_RECOVERY_EVENT_TOLERANCE = 1.0e-12
+
+
+def aligned_recovery_timestep(
+    elapsed: float, requested_dt: float, events: tuple[float, float] | None
+) -> float:
+    """Clip a benchmark step so scheduled diagnostic landmarks are accepted states."""
+    selected = requested_dt
+    if events is not None:
+        for event_time in events:
+            until_event = event_time - elapsed
+            if _RECOVERY_EVENT_TOLERANCE < until_event < selected:
+                selected = until_event
+    return selected
+
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkMatrix:
@@ -236,7 +253,21 @@ def run_matrix(
                     solver = create_solver(solver_id)
                     solver.initialize(scenario, geometry, scenario.seed)
                     while elapsed_simulated < scenario.duration - 1.0e-12:
+                        if recovery_times is not None and recovery_baseline is None:
+                            baseline_end, _ = recovery_times
+                            if (
+                                elapsed_simulated
+                                >= baseline_end - _RECOVERY_EVENT_TOLERANCE
+                            ):
+                                baseline_values = solver.diagnostics().values
+                                recovery_baseline = (
+                                    baseline_values["wake_width"],
+                                    baseline_values["recirculation_area"],
+                                )
                         dt = min(scenario.output_dt, scenario.duration - elapsed_simulated)
+                        dt = aligned_recovery_timestep(
+                            elapsed_simulated, dt, recovery_times
+                        )
                         control = scenario.control_at(elapsed_simulated + dt)
                         started = time.perf_counter()
                         report = solver.advance(control, dt)
@@ -252,12 +283,14 @@ def run_matrix(
                             baseline_end, recovery_start = recovery_times
                             crossed_baseline = (
                                 recovery_baseline is None
-                                and elapsed_simulated >= baseline_end
+                                and elapsed_simulated
+                                >= baseline_end - _RECOVERY_EVENT_TOLERANCE
                             )
                             observing_recovery = (
                                 recovery_baseline is not None
                                 and recovery_elapsed is None
-                                and elapsed_simulated >= recovery_start
+                                and elapsed_simulated
+                                >= recovery_start - _RECOVERY_EVENT_TOLERANCE
                             )
                             if crossed_baseline or observing_recovery:
                                 transient = solver.diagnostics().values
@@ -309,17 +342,26 @@ def run_matrix(
                         )
                     if recovery_times is not None and recovery_baseline is not None:
                         baseline_end, recovery_start = recovery_times
-                        observed = recovery_elapsed is not None
+                        observation_limit = min(
+                            _RECOVERY_OBSERVATION_LIMIT,
+                            max(0.0, scenario.duration - recovery_start),
+                        )
+                        observed = (
+                            recovery_elapsed is not None
+                            and recovery_elapsed
+                            <= observation_limit + _RECOVERY_TIME_TOLERANCE
+                        )
+                        reported_elapsed = (
+                            min(recovery_elapsed, observation_limit)
+                            if observed and recovery_elapsed is not None
+                            else observation_limit
+                        )
                         diagnostic_values.update(
                             {
                                 "recovery_baseline_time": baseline_end,
                                 "recovery_start_time": recovery_start,
                                 "recovery_observed": float(observed),
-                                "recovery_elapsed": (
-                                    recovery_elapsed
-                                    if recovery_elapsed is not None
-                                    else scenario.duration - recovery_start
-                                ),
+                                "recovery_elapsed": reported_elapsed,
                             }
                         )
                         if not observed:

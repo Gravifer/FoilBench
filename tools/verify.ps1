@@ -53,7 +53,8 @@ try {
             'ruff', 'check', 'implementations/python',
             'tools/generate_conformance.py',
             'tools/validate_spec.py',
-            'tools/validate_acceptance_fixtures.py'
+            'tools/validate_acceptance_fixtures.py',
+            'tools/validate_scheduled_fidelity.py'
         )
         if ($Representative) {
             Write-Host '==> Python: 160x96 startup gate'

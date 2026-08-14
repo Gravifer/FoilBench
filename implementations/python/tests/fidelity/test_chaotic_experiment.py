@@ -40,17 +40,21 @@ def test_stable_fluids_retries_a_stale_motion_plan() -> None:
 
     total_retries = 0
     target_dt = float(cast(float, retry_case["target_dt"]))
-    control = ControlState(
-        target_dt,
-        float(cast(float, retry_case["angle_degrees"])),
-        float(cast(float, retry_case["angular_velocity_degrees"])),
-    )
-    report = solver.advance(control, target_dt)
-    assert report.state_revision == 1
-    total_retries += int(report.evidence["stability_retries"])
+    expected_steps = int(cast(int, retry_case["expected_steps"]))
+    assert expected_steps >= 1
+    for step in range(expected_steps):
+        control = ControlState(
+            (step + 1) * target_dt,
+            float(cast(float, retry_case["angle_degrees"])),
+            float(cast(float, retry_case["angular_velocity_degrees"])),
+        )
+        report = solver.advance(control, target_dt)
+        assert report.state_revision == step + 1
+        total_retries += int(report.evidence["stability_retries"])
 
     state = solver.export_state()
-    assert np.isclose(state.time, target_dt)
+    assert solver.state_revision == expected_steps
+    assert np.isclose(state.time, expected_steps * target_dt)
     assert total_retries >= int(cast(int, retry_case["minimum_total_stability_retries"]))
     assert np.isfinite(state.velocity).all()
     assert solver.diagnostics().values["solid_leakage"] < 1.0e-6
@@ -73,17 +77,25 @@ def test_full_size_pic_startup_respects_the_configured_particle_cfl() -> None:
     solver.initialize(scenario, NacaFoil(scenario.foil), scenario.seed)
 
     target_dt = float(cast(float, retry_case["target_dt"]))
-    report = solver.advance(
-        ControlState(
+    expected_steps = int(cast(int, retry_case["expected_steps"]))
+    assert expected_steps >= 1
+    total_retries = 0
+    report = None
+    for step in range(expected_steps):
+        report = solver.advance(
+            ControlState(
+                (step + 1) * target_dt,
+                float(cast(float, retry_case["angle_degrees"])),
+                float(cast(float, retry_case["angular_velocity_degrees"])),
+            ),
             target_dt,
-            float(cast(float, retry_case["angle_degrees"])),
-            float(cast(float, retry_case["angular_velocity_degrees"])),
-        ),
-        target_dt,
-    )
+        )
+        total_retries += int(report.evidence["stability_retries"])
 
+    assert report is not None
     assert report.substeps >= 1
-    assert int(report.evidence["stability_retries"]) >= int(
+    assert solver.state_revision == expected_steps
+    assert total_retries >= int(
         cast(int, retry_case["minimum_total_stability_retries"])
     )
     maximum_particle_cfl = cast(float, report.evidence["maximum_particle_cfl"])
@@ -115,8 +127,19 @@ def test_full_size_lbm_startup_retries_a_stale_mach_plan() -> None:
         scenario.seed,
         RestartState(0.0, angle, scenario.reynolds),
     )
-    report = solver.advance(ControlState(scenario.output_dt, angle, 0.0), scenario.output_dt)
-    assert int(report.evidence["stability_retries"]) >= int(
+    expected_steps = int(cast(int, retry_case["expected_steps"]))
+    assert expected_steps >= 1
+    total_retries = 0
+    report = None
+    for step in range(expected_steps):
+        report = solver.advance(
+            ControlState((step + 1) * scenario.output_dt, angle, 0.0),
+            scenario.output_dt,
+        )
+        total_retries += int(report.evidence["stability_retries"])
+    assert report is not None
+    assert solver.state_revision == expected_steps
+    assert total_retries >= int(
         cast(int, retry_case["minimum_total_stability_retries"])
     )
     assert float(report.evidence["maximum_lattice_mach"]) <= 0.08 * (1.0 + 1.0e-6)

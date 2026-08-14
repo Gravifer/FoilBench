@@ -47,6 +47,10 @@ verify-representative:
 revision5-acceptance:
     pwsh -NoProfile -File tools/revision5_acceptance.ps1
 
+# Generate the one-shot Revision 5 scheduled mixing/recovery evidence roster.
+scheduled-fidelity:
+    pwsh -NoProfile -File tools/run_scheduled_fidelity.ps1
+
 # Run only the Python checks.
 verify-python:
     pwsh -NoProfile -File tools/verify.ps1 -Python

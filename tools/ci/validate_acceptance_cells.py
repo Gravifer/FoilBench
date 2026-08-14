@@ -57,7 +57,15 @@ def validate_cells(root: Path, commit: str, repository: Path) -> None:
         observed.add(key)
         if cell["commit"] != commit or cell["configuration_digest"] != digest:
             raise ValueError(f"stale acceptance cell: {path}")
-        log_path = path.parent / cell["log_file"]
+        log_file = cell["log_file"]
+        if not isinstance(log_file, str) or not log_file or Path(log_file).is_absolute():
+            raise ValueError(f"invalid acceptance log path: {path}")
+        cell_directory = path.parent.resolve()
+        try:
+            log_path = (cell_directory / log_file).resolve(strict=True)
+            log_path.relative_to(cell_directory)
+        except (OSError, ValueError):
+            raise ValueError(f"acceptance log escapes cell directory: {path}") from None
         if not log_path.is_file():
             raise ValueError(f"missing acceptance log: {log_path}")
         if hashlib.sha256(log_path.read_bytes()).hexdigest() != cell["log_sha256"]:
