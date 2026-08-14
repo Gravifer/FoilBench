@@ -22,7 +22,7 @@
     "bench": "tsx src/cli.ts bench",
     "gate:startup": "tsx src/benchmark/startupGate.ts",
     "gate:preview": "tsx src/benchmark/previewGate.ts",
-    "gate:rust-wasm-preview": "tsx src/benchmark/rustWasmPreviewGate.ts",
+    "gate:rust-wasm-preview": "npm run build:wasm && tsx src/benchmark/rustWasmPreviewGate.ts",
     "gate:rust-wasm-production": "npm run build && playwright test --config playwright.dist.config.ts --grep Rust.WASM",
     "gate:warm-switch": "tsx src/benchmark/warmSwitchGate.ts",
     "gate:scheduled": "tsx src/benchmark/scheduledGate.ts",
