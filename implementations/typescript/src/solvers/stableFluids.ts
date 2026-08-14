@@ -301,7 +301,7 @@ export class StableFluidsSolver implements FlowSolver {
     if (substeps > 512) throw new NumericalFailure("stability_limit", "stable-fluids motion requires too many internal substeps", this.transportMode === "skew-rk2" ? "advection" : "boundary", {required_substeps: substeps, maximum_substeps: 512, maximum_fluid_speed: maxSpeed, maximum_wall_speed: wallSpeed, boundary_sweep_cells: sweepCells});
     let dt = targetDt / substeps;
     const saved = this.transactionCheckpoint();
-    let acceptedMeasure = Number.POSITIVE_INFINITY;
+    let acceptedMeasure: number;
     let stabilityRetries = 0;
     for (;;) {
       try {

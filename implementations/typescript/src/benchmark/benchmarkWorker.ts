@@ -20,7 +20,7 @@ async function run(request: BrowserRunRequest): Promise<void> {
   const {scenario, solverId, duration} = request;
   const warnings: string[] = [];
   let initializationSeconds = 0; let coldStepSeconds = 0; const stepSeconds: number[] = [];
-  let elapsed = 0; let substeps = 0; let diagnostics: Readonly<Record<string, number>> = {}; let success = true; let snapshot: BrowserRunResult["snapshot"] = null; let solver: FlowSolver | null = null; let lastStep: StepReport | null = null; let diagnosticStateRevision: number | null = null; let failure: BrowserRunResult["failure"] = null;
+  let elapsed = 0; let substeps = 0; let diagnostics: Readonly<Record<string, number>>; let success = true; let snapshot: BrowserRunResult["snapshot"] = null; let solver: FlowSolver | null = null; let lastStep: StepReport | null = null; let diagnosticStateRevision: number | null; let failure: BrowserRunResult["failure"] = null;
   try {
     const factory = request.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : createSolver;
     const cold = factory(solverId); let started = performance.now(); cold.initialize(scenario, scenario.seed); initializationSeconds = (performance.now() - started) / 1000;
