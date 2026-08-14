@@ -93,7 +93,9 @@ also records recovery against the last pre-excursion baseline. Recovery means
 both wake width and recirculation area have returned within 25% of that
 baseline, with a two-cell floor so grid quantization cannot make the criterion
 impossible. If this does not occur before the run ends, `recovery_elapsed` is
-explicitly right-censored and `recovery_observed` is zero. The normalized
+explicitly right-censored at the case's declared observation limit and
+`recovery_observed` is zero. The Revision 5 `naca2412-recovery` case uses a
+four-second observation limit after the schedule returns to 4°. The normalized
 transverse RMS is additionally reported as `wake_mixing_index`.
 
 The validation repertoire consists of uniform flow, Taylor-Green decay,

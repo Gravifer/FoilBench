@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {analyzeWakeProbe, recoveryWindow} from "../../src/core/wake.js";
+import {alignedRecoveryTimestep, analyzeWakeProbe, recoveryDiagnostics, recoveryWindow} from "../../src/core/wake.js";
 
 describe("wake analysis", () => {
   it("locates a resolved sinusoidal shedding frequency", () => {
@@ -9,6 +9,18 @@ describe("wake analysis", () => {
     expect(result.dominantFrequency).toBeCloseTo(5 / 6.4, 10);
     expect(result.strouhalNumber).toBeCloseTo(5 / 12.8, 10);
     expect(result.dominantPowerFraction).toBeGreaterThan(0.6);
+  });
+
+  it("requires finite nonnegative recovery diagnostics", () => {
+    expect(recoveryDiagnostics({wake_width: 1, recirculation_area: 2})).toEqual([1, 2]);
+    expect(() => recoveryDiagnostics({recirculation_area: 2})).toThrow(/wake_width/);
+    expect(() => recoveryDiagnostics({wake_width: 1})).toThrow(/recirculation_area/);
+    expect(() => recoveryDiagnostics({wake_width: Number.NaN, recirculation_area: 2})).toThrow(/wake_width/);
+  });
+
+  it("stops benchmark steps at recovery landmarks", () => {
+    expect(alignedRecoveryTimestep(2.9, 0.2, [3, 18])).toBeCloseTo(0.1);
+    expect(alignedRecoveryTimestep(3 - 5e-13, 0.2, [3, 18])).toBe(0.2);
   });
 
   it("recognizes a completed angle excursion inside the measured duration", () => {

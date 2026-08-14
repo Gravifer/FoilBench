@@ -26,6 +26,7 @@ use crate::{canonical_io::write_canonical, resources::ResourceResolver};
 
 const RECOVERY_OBSERVATION_LIMIT: f64 = 4.0;
 const RECOVERY_TIME_TOLERANCE: f64 = 1.0e-9;
+const RECOVERY_EVENT_TOLERANCE: f64 = 1.0e-12;
 
 #[derive(Clone, Debug, Deserialize)]
 struct BenchmarkMatrix {
@@ -145,6 +146,19 @@ fn recovery_measurement(elapsed: Option<f64>, duration: f64, recovery_start: f64
         limit
     };
     (observed, reported)
+}
+
+fn aligned_recovery_timestep(elapsed: f64, requested_dt: f64, events: Option<(f64, f64)>) -> f64 {
+    let mut selected = requested_dt;
+    if let Some(events) = events {
+        for event_time in [events.0, events.1] {
+            let until_event = event_time - elapsed;
+            if until_event > RECOVERY_EVENT_TOLERANCE && until_event < selected {
+                selected = until_event;
+            }
+        }
+    }
+    selected
 }
 
 fn wake_probe_metrics(
@@ -304,12 +318,29 @@ fn run_typed<T: FlowScalar>(
     ]];
     let mut probe_velocity = [[T::from_f64(0.0); 2]];
     while simulated + 1.0e-12 < matrix.duration {
-        let dt = scenario.output_dt().min(matrix.duration - simulated);
-        simulated += dt;
+        if let Some((baseline_end, _)) = recovery
+            && recovery_baseline.is_none()
+            && simulated >= baseline_end - RECOVERY_EVENT_TOLERANCE
+        {
+            let baseline = solver.diagnostics().map_err(|error| error.to_string())?;
+            let wake = *baseline
+                .values
+                .get("wake_width")
+                .ok_or("diagnostics omit wake_width")?;
+            let recirculation = *baseline
+                .values
+                .get("recirculation_area")
+                .ok_or("diagnostics omit recirculation_area")?;
+            recovery_baseline = Some((wake, recirculation));
+        }
+        let mut dt = scenario.output_dt().min(matrix.duration - simulated);
+        dt = aligned_recovery_timestep(simulated, dt, recovery);
+        let target_time = simulated + dt;
         let started = Instant::now();
         let report = solver
-            .advance(scenario.control_at(simulated), dt)
+            .advance(scenario.control_at(target_time), dt)
             .map_err(|error| error.to_string())?;
+        simulated += report.advanced_dt;
         step_seconds.push(started.elapsed().as_secs_f64());
         total_substeps += report.substeps;
         last_step = Some(report);
@@ -320,10 +351,11 @@ fn run_typed<T: FlowScalar>(
             wake_probe.push(probe_velocity[0][1].to_f64());
         }
         if let Some((baseline_end, recovery_start)) = recovery {
-            let crossed_baseline = recovery_baseline.is_none() && simulated >= baseline_end;
+            let crossed_baseline =
+                recovery_baseline.is_none() && simulated >= baseline_end - RECOVERY_EVENT_TOLERANCE;
             let observing_recovery = recovery_baseline.is_some()
                 && recovery_elapsed.is_none()
-                && simulated >= recovery_start;
+                && simulated >= recovery_start - RECOVERY_EVENT_TOLERANCE;
             if crossed_baseline || observing_recovery {
                 let transient = solver.diagnostics().map_err(|error| error.to_string())?;
                 let wake = *transient
@@ -742,7 +774,10 @@ pub fn compare_results(
 mod tests {
     use foilbench_core::Scenario;
 
-    use super::{percentile, recovery_measurement, recovery_window, wake_probe_metrics};
+    use super::{
+        aligned_recovery_timestep, percentile, recovery_measurement, recovery_window,
+        wake_probe_metrics,
+    };
 
     #[test]
     fn percentile_interpolates_sorted_steps() {
@@ -765,6 +800,15 @@ mod tests {
         assert_eq!(recovery_measurement(Some(4.5), 30.0, 18.0), (false, 4.0));
         assert_eq!(recovery_measurement(None, 30.0, 18.0), (false, 4.0));
         assert_eq!(recovery_measurement(None, 20.0, 18.0), (false, 2.0));
+    }
+
+    #[test]
+    fn scheduled_recovery_steps_stop_at_diagnostic_landmarks() {
+        assert!((aligned_recovery_timestep(2.9, 0.2, Some((3.0, 18.0))) - 0.1).abs() < 1.0e-12);
+        assert!(
+            (aligned_recovery_timestep(3.0 - 5.0e-13, 0.2, Some((3.0, 18.0))) - 0.2).abs()
+                < f64::EPSILON
+        );
     }
 
     #[test]

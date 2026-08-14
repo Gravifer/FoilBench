@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -20,6 +21,52 @@ EXPECTED_PRODUCERS = {
 EXPECTED_SOLVERS = {"stable-fluids", "lbm-d2q9", "pic-flip"}
 
 
+def _expected_configuration(repository: Path) -> tuple[dict[str, object], str]:
+    matrix = cast(
+        dict[str, object],
+        json.loads(
+            (repository / "benchmark-matrices/fidelity-recovery.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    scenario_path = matrix.get("scenario")
+    if not isinstance(scenario_path, str):
+        raise TypeError("scheduled-fidelity matrix omits its scenario")
+    scenario = cast(
+        dict[str, object],
+        json.loads((repository / scenario_path).read_text(encoding="utf-8")),
+    )
+    controls = scenario.get("controls")
+    if not isinstance(controls, list):
+        raise TypeError("scheduled-fidelity scenario omits its control history")
+    expected = {
+        "schema_version": 2,
+        "contract_id": "foilbench-phase3-v1",
+        "contract_revision": 5,
+        "benchmark_matrix_id": matrix.get("id"),
+        "scenario_id": scenario.get("id"),
+        "repetition": 1,
+        "precision": scenario.get("precision"),
+        "resolution": cast(list[object], matrix.get("resolutions"))[0],
+        "bounds": scenario.get("bounds"),
+        "periodic_axes": scenario.get("periodic_axes"),
+        "reynolds": scenario.get("reynolds"),
+        "freestream": scenario.get("freestream"),
+        "foil": scenario.get("foil"),
+        "control_history": controls,
+        "requested_duration": matrix.get("duration"),
+        "output_dt": scenario.get("output_dt"),
+        "seed": scenario.get("seed"),
+    }
+    digest_payload = json.dumps(
+        {"matrix": matrix, "scenario": scenario},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return expected, hashlib.sha256(digest_payload).hexdigest()
+
+
 def _finite_number(value: object, name: str) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise TypeError(f"{name} must be numeric")
@@ -30,8 +77,14 @@ def _finite_number(value: object, name: str) -> float:
 
 
 def validate_documents(
-    documents: list[dict[str, object]], expected_commit: str
+    documents: list[dict[str, object]],
+    expected_commit: str,
+    repository: Path | None = None,
 ) -> dict[str, object]:
+    selected_repository = repository or Path(__file__).resolve().parents[1]
+    expected_identity, configuration_digest = _expected_configuration(
+        selected_repository
+    )
     cells: dict[tuple[str, str, str], dict[str, object]] = {}
     for document in documents:
         if document.get("benchmark_matrix_id") != MATRIX_ID:
@@ -44,12 +97,22 @@ def validate_documents(
             raise ValueError(f"unexpected scheduled-fidelity cell: {producer}/{solver}")
         if document.get("git_commit") != expected_commit:
             raise ValueError(f"stale scheduled-fidelity cell: {producer}/{solver}")
+        if document.get("language") != implementation:
+            raise ValueError(f"inconsistent language identity: {producer}/{solver}")
+        for field, expected_value in expected_identity.items():
+            if document.get(field) != expected_value:
+                raise ValueError(
+                    f"wrong scheduled-fidelity {field}: {producer}/{solver}"
+                )
         if document.get("success") is not True:
             raise ValueError(f"failed scheduled-fidelity cell: {producer}/{solver}")
-        if document.get("resolution") != [32, 20]:
-            raise ValueError(f"wrong scheduled-fidelity resolution: {producer}/{solver}")
-        if _finite_number(document.get("requested_duration"), "requested_duration") != 22.0:
-            raise ValueError(f"wrong scheduled-fidelity duration: {producer}/{solver}")
+        simulated_duration = _finite_number(
+            document.get("simulated_duration"), "simulated_duration"
+        )
+        if abs(simulated_duration - 22.0) > 1.0e-6:
+            raise ValueError(
+                f"incomplete scheduled-fidelity duration: {producer}/{solver}"
+            )
         diagnostics = document.get("diagnostics")
         if not isinstance(diagnostics, dict):
             raise TypeError(f"missing scheduled diagnostics: {producer}/{solver}")
@@ -96,6 +159,7 @@ def validate_documents(
         "schema_version": 1,
         "matrix": MATRIX_ID,
         "commit": expected_commit,
+        "configuration_digest": configuration_digest,
         "cells": [cells[key] for key in sorted(cells)],
     }
 

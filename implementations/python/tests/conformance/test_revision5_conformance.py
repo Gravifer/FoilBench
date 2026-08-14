@@ -142,6 +142,30 @@ def test_revision5_manifest_and_fidelity_inventory_are_consumable() -> None:
         assert cast(dict[str, object], case["metrics"])
 
 
+def test_revision5_fidelity_schema_rejects_wrong_metric_rosters_and_thresholds() -> None:
+    fidelity = _fixture("fidelity-cases.json")
+    schema = _object(SCHEMAS / "fidelity-cases.schema.json")
+
+    wrong_roster = copy.deepcopy(fidelity)
+    uniform = cast(list[dict[str, object]], wrong_roster["cases"])[0]
+    cast(dict[str, object], uniform["metrics"])["unexpected"] = {
+        "comparison": "finite",
+        "threshold": None,
+    }
+    with pytest.raises(ValidationError):
+        validate_json(wrong_roster, schema)
+
+    wrong_threshold = copy.deepcopy(fidelity)
+    uniform = cast(list[dict[str, object]], wrong_threshold["cases"])[0]
+    metric = cast(
+        dict[str, object],
+        cast(dict[str, object], uniform["metrics"])["velocity_rms_drift"],
+    )
+    metric["threshold"] = None
+    with pytest.raises(ValidationError):
+        validate_json(wrong_threshold, schema)
+
+
 def test_revision5_mac_and_lbm_boundary_fixtures_match_python() -> None:
     mac = _fixture("mac-boundary.json")
     assert mac["periodic_duplicate"] == "endpoint-average"

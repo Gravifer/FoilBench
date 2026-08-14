@@ -3,13 +3,14 @@ import type {FloatArray, FlowSolver, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
-import {analyzeWakeProbe, recoveryWindow} from "../core/wake.js";
+import {alignedRecoveryTimestep, analyzeWakeProbe, recoveryDiagnostics, recoveryWindow} from "../core/wake.js";
 import {createSolver} from "../solvers/factory.js";
 import {loadRustWasmSolverFactory} from "../wasm/rustWasmSolver.js";
 import type {BrowserRunRequest, BrowserRunResult} from "./types.js";
 
 const RECOVERY_OBSERVATION_LIMIT = 4;
 const RECOVERY_TIME_TOLERANCE = 1e-9;
+const RECOVERY_EVENT_TOLERANCE = 1e-12;
 
 postMessage({kind: "ready"});
 
@@ -30,11 +31,17 @@ async function run(request: BrowserRunRequest): Promise<void> {
     const {dx, dy} = dimensions(scenario.domain); const xMaximum = scenario.domain.bounds[0]?.[1] ?? 0; const probe = (scenario.precision === "float32" ? new Float32Array(2) : new Float64Array(2)) as FloatArray;
     probe[0] = Math.min((scenario.foil.pivot[0] ?? 0) + 1.5 * scenario.foil.chord, xMaximum - 0.5 * dx); probe[1] = scenario.foil.pivot[1] ?? 0;
     while (elapsed < duration - 1e-12) {
-      const dt = Math.min(scenario.outputDt, duration - elapsed); started = performance.now(); const report = solver.advance(controlAt(scenario, elapsed + dt), dt); lastStep = report; stepSeconds.push((performance.now() - started) / 1000); elapsed += report.advancedDt; substeps += report.substeps; warnings.push(...report.warnings);
+      if (recovery !== null && recoveryBaseline === null && elapsed >= recovery[0] - RECOVERY_EVENT_TOLERANCE) {
+        const baseline = solver.diagnostics().values;
+        recoveryBaseline = recoveryDiagnostics(baseline);
+      }
+      let dt = Math.min(scenario.outputDt, duration - elapsed);
+      dt = alignedRecoveryTimestep(elapsed, dt, recovery, RECOVERY_EVENT_TOLERANCE);
+      started = performance.now(); const report = solver.advance(controlAt(scenario, elapsed + dt), dt); lastStep = report; stepSeconds.push((performance.now() - started) / 1000); elapsed += report.advancedDt; substeps += report.substeps; warnings.push(...report.warnings);
       if (elapsed >= 0.5 * duration) wakeProbe.push(solver.sampleVelocity(probe)[1] ?? 0);
       if (recovery !== null) {
-        const [baselineEnd, recoveryStart] = recovery; const crossedBaseline = recoveryBaseline === null && elapsed >= baselineEnd; const observingRecovery = recoveryBaseline !== null && recoveryElapsed === null && elapsed >= recoveryStart;
-        if (crossedBaseline || observingRecovery) { const transient = solver.diagnostics().values; const wake = transient["wake_width"] ?? 0; const recirculation = transient["recirculation_area"] ?? 0; if (crossedBaseline) recoveryBaseline = [wake, recirculation]; else if (recoveryBaseline !== null && wake <= Math.max(1.25 * recoveryBaseline[0], 2 * dy) && recirculation <= Math.max(1.25 * recoveryBaseline[1], 2 * dx * dy)) recoveryElapsed = elapsed - recoveryStart; }
+        const [baselineEnd, recoveryStart] = recovery; const crossedBaseline = recoveryBaseline === null && elapsed >= baselineEnd - RECOVERY_EVENT_TOLERANCE; const observingRecovery = recoveryBaseline !== null && recoveryElapsed === null && elapsed >= recoveryStart - RECOVERY_EVENT_TOLERANCE;
+        if (crossedBaseline || observingRecovery) { const transient = solver.diagnostics().values; const [wake, recirculation] = recoveryDiagnostics(transient); if (crossedBaseline) recoveryBaseline = [wake, recirculation]; else if (recoveryBaseline !== null && wake <= Math.max(1.25 * recoveryBaseline[0], 2 * dy) && recirculation <= Math.max(1.25 * recoveryBaseline[1], 2 * dx * dy)) recoveryElapsed = elapsed - recoveryStart; }
       }
     }
     const selected = solver.diagnostics(); if (selected.stateRevision !== solver.stateRevision) throw new Error("benchmark diagnostics describe a stale state revision"); diagnosticStateRevision = selected.stateRevision; const measured: Record<string, number> = {...selected.values}; warnings.push(...selected.warnings);

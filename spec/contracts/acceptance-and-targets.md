@@ -9,18 +9,22 @@ other. The accepted identities are:
 
 - `python/native`;
 - `julia/native`;
-- `typescript/node` for headless numerical evidence;
-- `typescript/browser-worker` for browser protocol and preview evidence;
+- `typescript/node` for headless solver, conformance, and chaotic-wake
+  evidence;
+- `typescript/browser-worker` for ordinary benchmark artifacts, scheduled
+  fidelity, browser protocol, and preview evidence;
 - `rust/native` for the complete numerical repertoire;
 - `rust/wasm-browser` for the browser-facing Rust repertoire.
 
-The native numerical roster is Python/native, Julia/native, TypeScript/node,
-and Rust/native. Each independently emits ordinary benchmark, fidelity,
-interchange, and chaotic-wake evidence. Rust/WASM additionally participates in
+Revision 5 deliberately assigns TypeScript targets per evidence family. The
+ordinary-artifact and scheduled-fidelity roster is Python/native,
+Julia/native, TypeScript/browser-worker, and Rust/native. Headless startup,
+scheduled-control, warm-switch, and chaotic-wake gates instead require
+TypeScript/node, as fixed by `fullsize-acceptance-v2.json`. Rust/WASM additionally participates in
 protocol, scheduled-control, deterministic-state, recovery, canonical,
 all-directed warm-switch, sensitivity-preflight, preview, and production-dist
-browser gates. A TypeScript browser-worker result never substitutes for a
-TypeScript/node numerical cell, and Rust/native never substitutes for
+browser gates. One TypeScript target does not substitute for the other where a
+gate names an exact target, and Rust/native never substitutes for
 Rust/wasm-browser.
 
 Each reusable acceptance cell records the exact Git commit, a digest covering

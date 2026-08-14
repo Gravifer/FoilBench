@@ -6,6 +6,11 @@ $ErrorActionPreference = 'Stop'
 $Repository = Split-Path -Parent $PSScriptRoot
 $Commit = (& git -C $Repository rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve the tested commit.' }
+$TrackedChanges = @(& git -C $Repository status --porcelain --untracked-files=no)
+if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the working tree.' }
+if ($TrackedChanges.Count -ne 0) {
+    throw 'Scheduled fidelity requires a clean tracked working tree.'
+}
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $Repository "results/revision5-quality/$Commit/scheduled-fidelity"
 }

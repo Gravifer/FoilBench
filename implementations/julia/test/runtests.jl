@@ -2107,6 +2107,12 @@ end
 end
 
 @testset "Julia benchmark contracts" begin
+    @test FoilBenchJulia.aligned_recovery_timestep(2.9, 0.2, (3.0, 18.0)) ≈ 0.1
+    @test FoilBenchJulia.aligned_recovery_timestep(
+        Float32(3.0) - eps(Float32),
+        Float32(0.2),
+        (3.0, 18.0),
+    ) == Float32(0.2)
     matrix = load_benchmark_matrix(joinpath(REPOSITORY_ROOT, "benchmark-matrices", "test.json"))
     @test matrix.id == "test"
     @test matrix.solvers == collect(solver_ids())
