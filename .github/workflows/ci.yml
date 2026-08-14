@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with: {version: '1.12'}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
   typescript:
