@@ -431,7 +431,7 @@ impl WasmSolver {
     }
 
     pub fn sample_velocity_f32(&self, points_xy: &[f32]) -> Result<Vec<f32>, JsValue> {
-        if points_xy.len() % 2 != 0 {
+        if !points_xy.len().is_multiple_of(2) {
             return Err(text_error("point payload length must be even"));
         }
         let Some(SolverStorage::Float32(solver)) = &self.storage else {
@@ -449,7 +449,7 @@ impl WasmSolver {
     }
 
     pub fn sample_velocity_f64(&self, points_xy: &[f64]) -> Result<Vec<f64>, JsValue> {
-        if points_xy.len() % 2 != 0 {
+        if !points_xy.len().is_multiple_of(2) {
             return Err(text_error("point payload length must be even"));
         }
         let Some(SolverStorage::Float64(solver)) = &self.storage else {
