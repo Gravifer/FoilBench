@@ -103,7 +103,7 @@ The rebased branch received a second blind integration review. Its actionable
 findings were closed by exact scenario/control-history binding for scheduled
 evidence, precision-aware semantic identity comparison, exact accepted target
 rosters, event-aligned baseline sampling, strict recovery diagnostics, fixed
-canonical payload names, a truthful Rust 1.86 MSRV with a dedicated CI job,
+canonical payload names, a truthful Rust 1.88 MSRV with a dedicated CI job,
 Rust 1.96 pinning in representative CI, and locked Cargo resolution in the
 TypeScript WASM builder. Generated evidence is accepted only for its recorded
 implementation commit and configuration digest.

@@ -71,9 +71,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.86.0'
+          toolchain: '1.88.0'
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-        with: {workspaces: implementations/rust, shared-key: msrv-1.86}
+        with: {workspaces: implementations/rust, shared-key: msrv-1.88}
       - run: cargo check --manifest-path implementations/rust/Cargo.toml --workspace --all-targets --locked
       - run: cargo check --manifest-path implementations/rust/Cargo.toml --locked --target wasm32-unknown-unknown -p foilbench-wasm

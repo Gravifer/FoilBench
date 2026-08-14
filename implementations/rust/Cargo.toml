@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "UNLICENSED"
-rust-version = "1.86"
+rust-version = "1.88"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
