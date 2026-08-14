@@ -35,13 +35,13 @@
   },
   "dependencies": {
     "ajv": "^8.17.1",
-    "three": "^0.180.0"
+    "three": "^0.185.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@playwright/test": "^1.55.1",
     "@types/node": "^24.5.2",
-    "@types/three": "^0.180.0",
+    "@types/three": "^0.185.0",
     "eslint": "^9.36.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
