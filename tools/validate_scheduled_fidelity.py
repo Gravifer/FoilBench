@@ -60,6 +60,10 @@ def validate_documents(
         recovery_start = _finite_number(diagnostics.get("recovery_start_time"), "recovery_start_time")
         if mixing < 0.0 or observed not in (0.0, 1.0) or not 0.0 <= elapsed <= 4.0 + 1.0e-9:
             raise ValueError(f"invalid scheduled measurements: {producer}/{solver}")
+        if observed == 0.0 and abs(elapsed - 4.0) > 1.0e-9:
+            raise ValueError(
+                f"censored recovery must report the observation limit: {producer}/{solver}"
+            )
         if abs(baseline - 3.0) > 1.0e-9 or abs(recovery_start - 18.0) > 1.0e-9:
             raise ValueError(f"wrong recovery window: {producer}/{solver}")
         warnings = document.get("warnings")

@@ -83,7 +83,7 @@ def test_acceptance_aggregator_rejects_log_tampering(tmp_path: Path) -> None:
         module.validate_cells(tmp_path, commit, repository)
 
 
-@pytest.mark.parametrize("log_file", ["../../../../outside.log", "C:/outside.log", ""])
+@pytest.mark.parametrize("log_file", ["../../../outside.log", "C:/outside.log", ""])
 def test_acceptance_aggregator_rejects_escaping_log_paths(
     tmp_path: Path, log_file: str
 ) -> None:

@@ -8,6 +8,9 @@ import {createSolver} from "../solvers/factory.js";
 import {loadRustWasmSolverFactory} from "../wasm/rustWasmSolver.js";
 import type {BrowserRunRequest, BrowserRunResult} from "./types.js";
 
+const RECOVERY_OBSERVATION_LIMIT = 4;
+const RECOVERY_TIME_TOLERANCE = 1e-9;
+
 postMessage({kind: "ready"});
 
 self.onmessage = (event: MessageEvent<BrowserRunRequest>): void => { void run(event.data); };
@@ -36,7 +39,7 @@ async function run(request: BrowserRunRequest): Promise<void> {
     }
     const selected = solver.diagnostics(); if (selected.stateRevision !== solver.stateRevision) throw new Error("benchmark diagnostics describe a stale state revision"); diagnosticStateRevision = selected.stateRevision; const measured: Record<string, number> = {...selected.values}; warnings.push(...selected.warnings);
     if (wakeProbe.length >= 8) { const freestreamSpeed = Math.max(Math.hypot(...scenario.freestream), 1e-12); const wake = analyzeWakeProbe(wakeProbe, scenario.outputDt, scenario.foil.chord, freestreamSpeed); Object.assign(measured, {wake_probe_samples: wake.sampleCount, wake_frequency_resolution: wake.frequencyResolution, wake_transverse_rms: wake.transverseRms, wake_mixing_index: wake.transverseRms / freestreamSpeed, wake_dominant_frequency: wake.dominantFrequency, wake_strouhal_number: wake.strouhalNumber, wake_dominant_power_fraction: wake.dominantPowerFraction}); }
-    if (recovery !== null && recoveryBaseline !== null) { const observed = recoveryElapsed !== null; Object.assign(measured, {recovery_baseline_time: recovery[0], recovery_start_time: recovery[1], recovery_observed: Number(observed), recovery_elapsed: recoveryElapsed ?? duration - recovery[1]}); if (!observed) warnings.push("wake recovery was not observed; recovery_elapsed is right-censored"); }
+    if (recovery !== null && recoveryBaseline !== null) { const observationLimit = Math.min(RECOVERY_OBSERVATION_LIMIT, Math.max(0, duration - recovery[1])); const observed = recoveryElapsed !== null && recoveryElapsed <= observationLimit + RECOVERY_TIME_TOLERANCE; const reportedElapsed = observed && recoveryElapsed !== null ? Math.min(recoveryElapsed, observationLimit) : observationLimit; Object.assign(measured, {recovery_baseline_time: recovery[0], recovery_start_time: recovery[1], recovery_observed: Number(observed), recovery_elapsed: reportedElapsed}); if (!observed) warnings.push("wake recovery was not observed; recovery_elapsed is right-censored"); }
     diagnostics = measured;
     const state = solver.exportState(); snapshot = {precision: state.precision, bounds: state.bounds, resolution: state.resolution, periodicAxes: state.periodicAxes, time: state.time, angleDegrees: state.angleDegrees, angularVelocityDegrees: state.angularVelocityDegrees, velocity: [...state.velocity], density: state.density === null ? null : [...state.density]};
   } catch (error) { success = false; const message = error instanceof Error ? `${error.name}: ${error.message}` : "unknown benchmark failure"; warnings.push(message); failure = error instanceof NumericalFailure ? {kind: "numerical", reason: error.reason, stage: error.stage, message: error.message, evidence: error.evidence} : {kind: "unexpected", reason: null, stage: null, message, evidence: {}}; diagnostics = {}; diagnosticStateRevision = null; }

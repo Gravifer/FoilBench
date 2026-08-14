@@ -24,6 +24,9 @@ use serde_json::{Value, json};
 
 use crate::{canonical_io::write_canonical, resources::ResourceResolver};
 
+const RECOVERY_OBSERVATION_LIMIT: f64 = 4.0;
+const RECOVERY_TIME_TOLERANCE: f64 = 1.0e-9;
+
 #[derive(Clone, Debug, Deserialize)]
 struct BenchmarkMatrix {
     schema_version: u32,
@@ -131,6 +134,17 @@ fn recovery_window(scenario: &Scenario, duration: f64) -> Option<(f64, f64)> {
     let recovery_start = controls[last + 1].time;
     (baseline_end < recovery_start && recovery_start < duration)
         .then_some((baseline_end, recovery_start))
+}
+
+fn recovery_measurement(elapsed: Option<f64>, duration: f64, recovery_start: f64) -> (bool, f64) {
+    let limit = RECOVERY_OBSERVATION_LIMIT.min((duration - recovery_start).max(0.0));
+    let observed = elapsed.is_some_and(|value| value <= limit + RECOVERY_TIME_TOLERANCE);
+    let reported = if observed {
+        elapsed.map_or(limit, |value| value.min(limit))
+    } else {
+        limit
+    };
+    (observed, reported)
 }
 
 fn wake_probe_metrics(
@@ -352,15 +366,13 @@ fn run_typed<T: FlowScalar>(
     let mut warnings = report.warnings.clone();
     warnings.extend(diagnostics.warnings.clone());
     if let (Some((baseline_end, recovery_start)), Some(_)) = (recovery, recovery_baseline) {
-        let observed = recovery_elapsed.is_some();
+        let (observed, reported_elapsed) =
+            recovery_measurement(recovery_elapsed, matrix.duration, recovery_start);
         diagnostic_values.extend(BTreeMap::from([
             ("recovery_baseline_time".into(), baseline_end),
             ("recovery_start_time".into(), recovery_start),
             ("recovery_observed".into(), if observed { 1.0 } else { 0.0 }),
-            (
-                "recovery_elapsed".into(),
-                recovery_elapsed.unwrap_or(matrix.duration - recovery_start),
-            ),
+            ("recovery_elapsed".into(), reported_elapsed),
         ]));
         if !observed {
             warnings
@@ -730,7 +742,7 @@ pub fn compare_results(
 mod tests {
     use foilbench_core::Scenario;
 
-    use super::{percentile, recovery_window, wake_probe_metrics};
+    use super::{percentile, recovery_measurement, recovery_window, wake_probe_metrics};
 
     #[test]
     fn percentile_interpolates_sorted_steps() {
@@ -745,6 +757,14 @@ mod tests {
         .unwrap();
         assert_eq!(recovery_window(&scenario, 22.0), Some((3.0, 18.0)));
         assert_eq!(recovery_window(&scenario, 18.0), None);
+    }
+
+    #[test]
+    fn scheduled_recovery_is_censored_at_the_explicit_observation_limit() {
+        assert_eq!(recovery_measurement(Some(3.5), 30.0, 18.0), (true, 3.5));
+        assert_eq!(recovery_measurement(Some(4.5), 30.0, 18.0), (false, 4.0));
+        assert_eq!(recovery_measurement(None, 30.0, 18.0), (false, 4.0));
+        assert_eq!(recovery_measurement(None, 20.0, 18.0), (false, 2.0));
     }
 
     #[test]

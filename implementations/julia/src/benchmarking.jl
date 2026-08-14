@@ -218,6 +218,9 @@ function _benchmark_solver_configuration(scenario::Scenario)
     return configuration
 end
 
+const RECOVERY_OBSERVATION_LIMIT = 4.0
+const RECOVERY_TIME_TOLERANCE = 1.0e-9
+
 function _require_finite_artifact(value, path::AbstractString = "result")
     value isa Real && !(value isa Bool) && !isfinite(value) &&
         throw(ArgumentError("$path contains a non-finite number"))
@@ -451,14 +454,19 @@ function run_benchmark_matrix(
                 end
                 if recovery_times !== nothing && recovery_baseline !== nothing
                     baseline_end, recovery_start = recovery_times
-                    observed = recovery_elapsed !== nothing
+                    observation_limit = min(
+                        RECOVERY_OBSERVATION_LIMIT,
+                        max(0.0, matrix.duration - recovery_start),
+                    )
+                    observed = recovery_elapsed !== nothing &&
+                        recovery_elapsed <= observation_limit + RECOVERY_TIME_TOLERANCE
+                    reported_elapsed = observed ?
+                        min(something(recovery_elapsed), observation_limit) :
+                        observation_limit
                     diagnostic_values["recovery_baseline_time"] = baseline_end
                     diagnostic_values["recovery_start_time"] = recovery_start
                     diagnostic_values["recovery_observed"] = Float64(observed)
-                    diagnostic_values["recovery_elapsed"] = something(
-                        recovery_elapsed,
-                        matrix.duration - recovery_start,
-                    )
+                    diagnostic_values["recovery_elapsed"] = reported_elapsed
                     observed || push!(
                         warnings,
                         "wake recovery was not observed; recovery_elapsed is right-censored",

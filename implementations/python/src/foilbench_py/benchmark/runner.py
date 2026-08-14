@@ -24,6 +24,9 @@ from foilbench_py.core.scenario import find_repo_root, load_scenario
 from foilbench_py.core.state_io import save_canonical_state
 from foilbench_py.solvers.factory import create_solver
 
+_RECOVERY_OBSERVATION_LIMIT = 4.0
+_RECOVERY_TIME_TOLERANCE = 1.0e-9
+
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkMatrix:
@@ -309,17 +312,26 @@ def run_matrix(
                         )
                     if recovery_times is not None and recovery_baseline is not None:
                         baseline_end, recovery_start = recovery_times
-                        observed = recovery_elapsed is not None
+                        observation_limit = min(
+                            _RECOVERY_OBSERVATION_LIMIT,
+                            max(0.0, scenario.duration - recovery_start),
+                        )
+                        observed = (
+                            recovery_elapsed is not None
+                            and recovery_elapsed
+                            <= observation_limit + _RECOVERY_TIME_TOLERANCE
+                        )
+                        reported_elapsed = (
+                            min(recovery_elapsed, observation_limit)
+                            if observed and recovery_elapsed is not None
+                            else observation_limit
+                        )
                         diagnostic_values.update(
                             {
                                 "recovery_baseline_time": baseline_end,
                                 "recovery_start_time": recovery_start,
                                 "recovery_observed": float(observed),
-                                "recovery_elapsed": (
-                                    recovery_elapsed
-                                    if recovery_elapsed is not None
-                                    else scenario.duration - recovery_start
-                                ),
+                                "recovery_elapsed": reported_elapsed,
                             }
                         )
                         if not observed:

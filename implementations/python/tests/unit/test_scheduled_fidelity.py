@@ -67,3 +67,12 @@ def test_scheduled_fidelity_validator_rejects_untruthful_recovery() -> None:
     diagnostics["recovery_observed"] = 2.0
     with pytest.raises(ValueError, match="invalid scheduled measurements"):
         module.validate_documents(documents, "abc123")
+
+
+def test_scheduled_fidelity_validator_requires_the_censoring_limit() -> None:
+    module = _module()
+    documents = _documents("abc123")
+    diagnostics = cast(dict[str, object], documents[0]["diagnostics"])
+    diagnostics["recovery_elapsed"] = 0.0
+    with pytest.raises(ValueError, match="censored recovery must report"):
+        module.validate_documents(documents, "abc123")
