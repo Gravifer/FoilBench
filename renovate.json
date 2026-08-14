@@ -6,6 +6,23 @@
   ],
   "packageRules": [
     {
+      "description": "Preserve Rust 1.88 as the deliberate MSRV floor",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDatasources": [
+        "rust-version"
+      ],
+      "matchPackageNames": [
+        "rust"
+      ],
+      "matchFileNames": [
+        ".github/workflows/ci.yml"
+      ],
+      "matchCurrentValue": "/^1\\.88\\.0$/",
+      "enabled": false
+    },
+    {
       "description": "Defer TypeScript major upgrades for one year",
       "matchPackageNames": [
         "typescript"
