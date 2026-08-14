@@ -21,6 +21,20 @@ EXPECTED_PRODUCERS = {
 }
 EXPECTED_SOLVERS = {"stable-fluids", "lbm-d2q9", "pic-flip"}
 
+_SOLVER_OPTION_DEFAULTS: dict[str, object] = {
+    "initial_condition": "freestream",
+    "stable_advection": "maccormack",
+    "stable_face_advection": False,
+    "stable_cfl": 0.7,
+    "pressure_tolerance": 1.0e-5,
+    "pressure_max_iterations": 640,
+    "mac_maximum_divergence_linf": None,
+    "mac_maximum_solid_leakage": None,
+    "pic_flip_blend": 0.95,
+    "pic_population_interval": 8,
+    "pic_cfl": 0.75,
+}
+
 
 def _semantically_equal(actual: object, expected: object, precision: str) -> bool:
     if (
@@ -42,6 +56,17 @@ def _semantically_equal(actual: object, expected: object, precision: str) -> boo
             for key in actual
         )
     return actual == expected
+
+
+def _expected_solver_configuration(scenario: dict[str, object]) -> dict[str, object]:
+    options = scenario.get("solver_options", {})
+    if not isinstance(options, dict):
+        raise TypeError("scheduled-fidelity scenario has invalid solver options")
+    return {
+        name: options.get(name, default)
+        for name, default in _SOLVER_OPTION_DEFAULTS.items()
+        if default is not None or name in options
+    }
 
 
 def _expected_configuration(repository: Path) -> tuple[dict[str, object], str]:
@@ -78,6 +103,7 @@ def _expected_configuration(repository: Path) -> tuple[dict[str, object], str]:
         "freestream": scenario.get("freestream"),
         "foil": scenario.get("foil"),
         "control_history": controls,
+        "solver_configuration": _expected_solver_configuration(scenario),
         "requested_duration": matrix.get("duration"),
         "output_dt": scenario.get("output_dt"),
         "seed": scenario.get("seed"),
@@ -109,6 +135,7 @@ def validate_documents(
         selected_repository
     )
     cells: dict[tuple[str, str, str], dict[str, object]] = {}
+    effective_reynolds_by_solver: dict[str, float] = {}
     for document in documents:
         if document.get("benchmark_matrix_id") != MATRIX_ID:
             continue
@@ -128,6 +155,36 @@ def validate_documents(
                 raise ValueError(
                     f"wrong scheduled-fidelity {field}: {producer}/{solver}"
                 )
+        requested_reynolds = _finite_number(
+            expected_identity["reynolds"], "requested reynolds"
+        )
+        effective_reynolds = _finite_number(
+            document.get("effective_reynolds"), "effective_reynolds"
+        )
+        if effective_reynolds <= 0.0:
+            raise ValueError(
+                f"invalid scheduled-fidelity effective_reynolds: {producer}/{solver}"
+            )
+        if solver in {"stable-fluids", "pic-flip"} and not _semantically_equal(
+            effective_reynolds, requested_reynolds, precision
+        ):
+            raise ValueError(
+                f"wrong scheduled-fidelity effective_reynolds: {producer}/{solver}"
+            )
+        if solver == "lbm-d2q9" and effective_reynolds > requested_reynolds and not (
+            _semantically_equal(effective_reynolds, requested_reynolds, precision)
+        ):
+            raise ValueError(
+                f"invalid scheduled-fidelity effective_reynolds: {producer}/{solver}"
+            )
+        reference_reynolds = effective_reynolds_by_solver.setdefault(
+            solver, effective_reynolds
+        )
+        if not _semantically_equal(effective_reynolds, reference_reynolds, precision):
+            raise ValueError(
+                "inconsistent scheduled-fidelity effective_reynolds: "
+                f"{producer}/{solver}"
+            )
         if document.get("success") is not True:
             raise ValueError(f"failed scheduled-fidelity cell: {producer}/{solver}")
         simulated_duration = _finite_number(

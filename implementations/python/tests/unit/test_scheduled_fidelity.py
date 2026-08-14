@@ -61,6 +61,20 @@ def _documents(commit: str) -> list[dict[str, object]]:
             "bounds": scenario["bounds"],
             "periodic_axes": scenario["periodic_axes"],
             "reynolds": scenario["reynolds"],
+            "effective_reynolds": scenario["reynolds"],
+            "solver_configuration": {
+                "initial_condition": "freestream",
+                "stable_advection": "maccormack",
+                "stable_face_advection": False,
+                "stable_cfl": 1.25,
+                "pressure_tolerance": 0.001,
+                "pressure_max_iterations": 640,
+                "mac_maximum_divergence_linf": 2.25,
+                "mac_maximum_solid_leakage": 0.0001,
+                "pic_flip_blend": 0.95,
+                "pic_population_interval": 8,
+                "pic_cfl": 1.0,
+            },
             "freestream": scenario["freestream"],
             "foil": scenario["foil"],
             "control_history": scenario["controls"],
@@ -129,6 +143,8 @@ def test_scheduled_fidelity_validator_accepts_float32_identity_roundoff() -> Non
         ("output_dt", 99.0),
         ("control_history", [{"time": 0.0, "angle_degrees": 4.0}]),
         ("reynolds", 42.0),
+        ("effective_reynolds", 999.0),
+        ("solver_configuration", {"initial_condition": "freestream"}),
         ("seed", 7),
     ],
 )
@@ -139,4 +155,25 @@ def test_scheduled_fidelity_validator_binds_the_declared_run(
     documents = _documents("abc123")
     documents[0][field] = value
     with pytest.raises(ValueError, match="scheduled-fidelity"):
+        module.validate_documents(documents, "abc123")
+
+
+def test_scheduled_fidelity_validator_accepts_a_matched_lbm_clamp() -> None:
+    module = _module()
+    documents = _documents("abc123")
+    for document in documents:
+        if document["solver"] == "lbm-d2q9":
+            document["effective_reynolds"] = 750.0
+    summary = module.validate_documents(documents, "abc123")
+    assert len(cast(list[object], summary["cells"])) == 12
+
+
+def test_scheduled_fidelity_validator_rejects_a_mismatched_lbm_clamp() -> None:
+    module = _module()
+    documents = _documents("abc123")
+    for document in documents:
+        if document["solver"] == "lbm-d2q9":
+            document["effective_reynolds"] = 750.0
+    documents[1]["effective_reynolds"] = 749.0
+    with pytest.raises(ValueError, match=r"inconsistent.*effective_reynolds"):
         module.validate_documents(documents, "abc123")
