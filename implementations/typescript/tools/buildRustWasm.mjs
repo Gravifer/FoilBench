@@ -17,5 +17,5 @@ function cargo(commandArguments) {
 
 rmSync(output, {recursive: true, force: true});
 mkdirSync(output, {recursive: true});
-cargo(["build", "-p", "foilbench-wasm", "--target", "wasm32-unknown-unknown", "--release"]);
-cargo(["run", "-p", "foilbench-wasm-bindgen", "--", wasm, output]);
+cargo(["build", "--locked", "-p", "foilbench-wasm", "--target", "wasm32-unknown-unknown", "--release"]);
+cargo(["run", "--locked", "-p", "foilbench-wasm-bindgen", "--", wasm, output]);

@@ -50,6 +50,8 @@ jobs:
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
       - uses: dtolnay/rust-toolchain@stable
         if: matrix.implementation == 'rust'
+        with:
+          toolchain: '1.96.0'
       - name: Add Rust WASM target
         if: matrix.target == 'wasm-browser'
         run: rustup target add wasm32-unknown-unknown
