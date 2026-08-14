@@ -1119,7 +1119,7 @@ end
     )
     for index in CartesianIndices(excessive_solid)
         excessive_solid[index] || continue
-        excessive_velocity[1, index[1], index[2], :] .= 0
+        excessive_velocity[1, index[2], index[1], :] .= 0
     end
     stable_import = CanonicalFlowState(
         1, stable_before.bounds, stable_before.resolution, stable_before.periodic_axes,
@@ -1995,7 +1995,13 @@ end
         @test solver_info(model.solver).id == destination
         @test model.manual_angle == angle
         @test model.simulation_time == scenario.output_dt
-        @test all(isfinite, export_state(model.solver).velocity)
+        switched_state = export_state(model.solver)
+        @test all(isfinite, switched_state.velocity)
+        switched_solid = solid_mask(model.geometry, scenario.domain, angle)
+        for j in axes(switched_solid, 2), i in axes(switched_solid, 1)
+            switched_solid[i, j] || continue
+            @test all(iszero, switched_state.velocity[1, j, i, :])
+        end
         release_angle!(model)
         updated = update!(model)
         @test updated.time == 2 * scenario.output_dt

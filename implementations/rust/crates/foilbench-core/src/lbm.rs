@@ -969,7 +969,11 @@ impl<T: FlowScalar> FlowSolver<T> for LbmD2q9<T> {
                         && error.reason == FailureReason::ExcessiveVelocity
                         && error.stage == FailureStage::Postcondition =>
                 {
-                    minimum_substeps = (minimum_substeps * 2).max(2);
+                    let configured_substeps = (target_dt * candidate.reference_speed
+                        / (candidate.lattice_speed * candidate.domain.dx()))
+                    .round()
+                    .max(1.0) as usize;
+                    minimum_substeps = configured_substeps.saturating_mul(2).max(2);
                 }
                 Err(error) => return Err(error),
             }

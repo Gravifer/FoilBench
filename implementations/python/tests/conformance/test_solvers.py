@@ -243,6 +243,28 @@ def test_mac_postcondition_failure_rolls_back_atomically(
     _assert_same_canonical_state(solver.export_state(), before)
 
 
+def test_invalid_mac_limit_is_rejected_before_stable_state_mutation(
+    scenario_factory: ScenarioFactory,
+) -> None:
+    scenario = scenario_factory(resolution=(32, 16))
+    geometry = NacaFoil(scenario.foil)
+    solver = StableFluidsSolver()
+    solver.initialize(scenario, geometry, scenario.seed)
+    before = solver.export_state()
+    before_diagnostics = solver.diagnostics()
+    scenario.solver_options["mac_maximum_divergence_linf"] = "invalid"
+
+    with pytest.raises(TypeError, match="mac_maximum_divergence_linf"):
+        solver.advance(
+            ControlState(scenario.output_dt, before.angle_degrees, 0.0),
+            scenario.output_dt,
+        )
+
+    assert solver.state_revision == 0
+    _assert_same_canonical_state(solver.export_state(), before)
+    assert solver.diagnostics() == before_diagnostics
+
+
 def test_lbm_import_revalidates_mutated_optional_density(
     scenario_factory: ScenarioFactory,
 ) -> None:

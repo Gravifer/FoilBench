@@ -894,7 +894,7 @@ function _state_at_control(
     solid = solid_mask(model.geometry, model.scenario.domain, T(control.angle_degrees))
     for index in CartesianIndices(solid)
         solid[index] || continue
-        velocity[1, index[1], index[2], :] .= 0
+        velocity[1, index[2], index[1], :] .= 0
     end
     return CanonicalFlowState(
         state.schema_version,
