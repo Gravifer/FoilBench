@@ -45,7 +45,7 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         if: matrix.implementation == 'julia'
         with: {version: '1.12'}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: matrix.implementation == 'typescript' || matrix.target == 'wasm-browser'
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
       - uses: dtolnay/rust-toolchain@stable
