@@ -207,15 +207,19 @@ fn validate_common(
             "invalid canonical metadata",
         ));
     }
-    validate_array(velocity, &["z", "y", "x", "component"])?;
+    validate_array(velocity, "velocity.npy", &["z", "y", "x", "component"])?;
     if let Some(metadata) = density {
-        validate_array(metadata, &["z", "y", "x"])?;
+        validate_array(metadata, "density.npy", &["z", "y", "x"])?;
     }
     Ok(())
 }
 
-fn validate_array(metadata: &ArrayMetadata, axes: &[&str]) -> Result<(), CanonicalManifestError> {
-    if metadata.file.is_empty()
+fn validate_array(
+    metadata: &ArrayMetadata,
+    expected_file: &str,
+    axes: &[&str],
+) -> Result<(), CanonicalManifestError> {
+    if metadata.file != expected_file
         || metadata
             .axes
             .iter()
@@ -322,6 +326,7 @@ mod tests {
             ("/producer/execution_target", json!("other")),
             ("/source_solver", json!("other")),
             ("/producer/build", json!([])),
+            ("/velocity/file", json!("other.npy")),
         ];
         for (pointer, replacement) in mutations {
             let mut document = revision5_fixture();
@@ -331,6 +336,17 @@ mod tests {
                 "accepted invalid canonical value at {pointer}"
             );
         }
+
+        let mut density_document = revision5_fixture();
+        density_document["density"] = json!({
+            "file": "other.npy",
+            "axes": ["z", "y", "x"],
+            "order": "C"
+        });
+        assert!(
+            CanonicalManifest::from_json(&serde_json::to_string(&density_document).unwrap())
+                .is_err()
+        );
     }
 
     #[test]
