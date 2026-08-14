@@ -110,6 +110,16 @@ def test_scheduled_fidelity_validator_requires_the_censoring_limit() -> None:
         module.validate_documents(documents, "abc123")
 
 
+def test_scheduled_fidelity_validator_accepts_float32_identity_roundoff() -> None:
+    module = _module()
+    documents = _documents("abc123")
+    for document in documents:
+        if document["implementation"] == "julia":
+            document["output_dt"] = 0.01666666753590107
+    summary = module.validate_documents(documents, "abc123")
+    assert len(cast(list[object], summary["cells"])) == 12
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

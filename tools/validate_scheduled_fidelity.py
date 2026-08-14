@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -19,6 +20,28 @@ EXPECTED_PRODUCERS = {
     ("rust", "native"),
 }
 EXPECTED_SOLVERS = {"stable-fluids", "lbm-d2q9", "pic-flip"}
+
+
+def _semantically_equal(actual: object, expected: object, precision: str) -> bool:
+    if (
+        isinstance(actual, (int, float))
+        and not isinstance(actual, bool)
+        and isinstance(expected, (int, float))
+        and not isinstance(expected, bool)
+    ):
+        tolerance = 1.0e-6 if precision == "float32" else 1.0e-12
+        return math.isclose(float(actual), float(expected), rel_tol=tolerance, abs_tol=tolerance)
+    if isinstance(actual, list) and isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _semantically_equal(left, right, precision)
+            for left, right in zip(actual, expected, strict=True)
+        )
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            _semantically_equal(actual[key], expected[key], precision)
+            for key in actual
+        )
+    return actual == expected
 
 
 def _expected_configuration(repository: Path) -> tuple[dict[str, object], str]:
@@ -99,8 +122,9 @@ def validate_documents(
             raise ValueError(f"stale scheduled-fidelity cell: {producer}/{solver}")
         if document.get("language") != implementation:
             raise ValueError(f"inconsistent language identity: {producer}/{solver}")
+        precision = str(expected_identity["precision"])
         for field, expected_value in expected_identity.items():
-            if document.get(field) != expected_value:
+            if not _semantically_equal(document.get(field), expected_value, precision):
                 raise ValueError(
                     f"wrong scheduled-fidelity {field}: {producer}/{solver}"
                 )
