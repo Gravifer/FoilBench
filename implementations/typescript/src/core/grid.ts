@@ -119,7 +119,7 @@ export function project(u: FloatArray, v: FloatArray, solid: Uint8Array, nx: num
   // Float32.  Leave the same deliberate margin as the Python reference so an
   // apparently converged iteration does not fail solely at final validation.
   const convergenceTarget = tolerance * 0.9;
-  const rightNorm = Math.sqrt(rightNormSquared); let performed = 0; let relativeResidual = rightNorm <= epsilon ? 0 : 1; let converged = rightNorm <= epsilon;
+  const rightNorm = Math.sqrt(rightNormSquared); let performed = 0; let relativeResidual: number; let converged = rightNorm <= epsilon;
   for (let iteration = 0; iteration < iterations && !converged; iteration += 1) {
     applyOperator(direction, operatorDirection); let denominator = 0; for (let index = 0; index < direction.length; index += 1) denominator += (direction[index] ?? 0) * (operatorDirection[index] ?? 0);
     if (!(Number.isFinite(denominator) && denominator > 0 && Number.isFinite(residualDot))) break;

@@ -184,7 +184,7 @@ export class LbmSolver implements FlowSolver {
     if (this.rollbackPreviousSolid.length !== this.previousSolid.length) this.rollbackPreviousSolid = new Uint8Array(this.previousSolid.length);
     this.rollbackPopulations.set(this.populations); this.rollbackScratch.set(this.scratch); this.rollbackOutlet.set(this.outlet); this.rollbackSolid.set(this.solid); this.rollbackPreviousSolid.set(this.previousSolid);
     const savedSpeed = this.latticeSpeed; const savedOmegaPlus = this.omegaPlus; const savedOmegaMinus = this.omegaMinus; const savedEffectiveReynolds = this.effectiveReynolds; const savedSolidAngle = this.solidAngleDegrees;
-    let substeps = 0; let maxSpeed = 0;
+    let substeps: number; let maxSpeed = 0;
     try {
       const radius = this.requireFoil().maximumRadius; const current = this.physicalVelocity(); let maximumPhysicalSpeed = this.referenceSpeed; for (let index = 0; index < current.length; index += 2) maximumPhysicalSpeed = Math.max(maximumPhysicalSpeed, Math.hypot(current[index] ?? 0, current[index + 1] ?? 0)); const wallSpeed = Math.abs(control.angularVelocityDegrees) * Math.PI / 180 * radius; const sweepSpeed = radius * Math.abs(control.angleDegrees - this.control.angleDegrees) * Math.PI / (180 * targetDt); maximumPhysicalSpeed = Math.max(maximumPhysicalSpeed, wallSpeed, sweepSpeed);
       substeps = this.configureTemporalScaling(targetDt, 1.25 * maximumPhysicalSpeed, minimumSubsteps);
