@@ -103,3 +103,8 @@ Rust/WASM protocol, deterministic-state, recovery, switching, preview, and
 production-browser roster. Phase 3's three 2D Rust solvers are therefore the
 accepted production core for both native and WASM targets. D3Q19 and shallow
 periodic 3D remain deferred.
+
+A later non-semantic errata pass closed the remaining PR #2 quality findings
+and added truthful full-control-history mixing/recovery evidence without
+changing this acceptance decision. See the
+[Revision 5 quality addendum](revision5-quality-addendum.md).
