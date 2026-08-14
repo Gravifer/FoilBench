@@ -39,7 +39,7 @@ jobs:
           - {implementation: rust, target: wasm-browser, gate: production-browser, os: ubuntu-latest}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         if: matrix.implementation == 'python'
       - uses: julia-actions/setup-julia@v2
@@ -82,7 +82,7 @@ jobs:
     needs: cell
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with: {path: results/downloaded, pattern: 'cell-*', merge-multiple: true}
       - uses: astral-sh/setup-uv@v6
