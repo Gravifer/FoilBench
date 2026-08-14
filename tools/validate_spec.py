@@ -154,6 +154,17 @@ def _validate_conformance_inventory(
             if not isinstance(schema_path, str) or schema_path not in schemas:
                 raise ValueError(f"unknown fixture schema for {path_value}: {schema_path!r}")
             Draft202012Validator(schemas[schema_path]).validate(document)
+        if path_value == "geometry-v1.json":
+            surface_lengths = {
+                len(cast(list[object], document[name]))
+                for name in ("surface_x", "surface_upper", "surface_lower")
+            }
+            point_lengths = {
+                len(cast(list[object], document[name]))
+                for name in ("points", "signed_distance", "normals", "contains", "wall_velocity")
+            }
+            if len(surface_lengths) != 1 or len(point_lengths) != 1:
+                raise ValueError("geometry-v1 parallel sample arrays must have equal lengths")
         if not isinstance(raw.get("owner"), str) or not isinstance(raw.get("required"), bool):
             raise TypeError(f"fixture owner/required metadata is invalid: {path_value}")
     expected = {

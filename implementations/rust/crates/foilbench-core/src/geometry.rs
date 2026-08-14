@@ -178,6 +178,7 @@ mod tests {
         points: Vec<[f64; 2]>,
         signed_distance: Vec<f64>,
         normals: Vec<[f64; 2]>,
+        contains: Vec<bool>,
         angular_velocity_degrees: f64,
         wall_velocity: Vec<[f64; 2]>,
         maximum_radius: f64,
@@ -190,6 +191,12 @@ mod tests {
         ))
         .unwrap();
         let foil = NacaFoil::new(fixture.descriptor).unwrap();
+        assert_eq!(fixture.surface_x.len(), fixture.surface_upper.len());
+        assert_eq!(fixture.surface_x.len(), fixture.surface_lower.len());
+        assert_eq!(fixture.points.len(), fixture.signed_distance.len());
+        assert_eq!(fixture.points.len(), fixture.normals.len());
+        assert_eq!(fixture.points.len(), fixture.contains.len());
+        assert_eq!(fixture.points.len(), fixture.wall_velocity.len());
         for ((x, expected_upper), expected_lower) in fixture
             .surface_x
             .iter()

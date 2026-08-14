@@ -6,6 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from jsonschema.exceptions import ValidationError
 
 
 def _module(root: Path) -> ModuleType:
@@ -79,4 +80,31 @@ def test_acceptance_aggregator_rejects_log_tampering(tmp_path: Path) -> None:
         "changed", encoding="utf-8"
     )
     with pytest.raises(ValueError, match="log digest mismatch"):
+        module.validate_cells(tmp_path, commit, repository)
+
+
+@pytest.mark.parametrize("log_file", ["../../../../outside.log", "C:/outside.log", ""])
+def test_acceptance_aggregator_rejects_escaping_log_paths(
+    tmp_path: Path, log_file: str
+) -> None:
+    repository = Path(__file__).resolve().parents[4]
+    module = _module(repository)
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _roster(tmp_path, repository, commit, module)
+    outside = tmp_path / "outside.log"
+    outside.write_text("outside", encoding="utf-8")
+    cell_path = tmp_path / "python" / "native" / "startup" / "cell.json"
+    cell = json.loads(cell_path.read_text(encoding="utf-8"))
+    cell["log_file"] = log_file
+    cell["log_sha256"] = hashlib.sha256(outside.read_bytes()).hexdigest()
+    cell_path.write_text(json.dumps(cell), encoding="utf-8")
+
+    with pytest.raises(
+        (ValueError, ValidationError), match=r"(invalid|escapes|schema|non-empty)"
+    ):
         module.validate_cells(tmp_path, commit, repository)

@@ -75,6 +75,14 @@ def test_revision5_geometry_fixture_matches_python() -> None:
         )
     )
     tolerances = cast(dict[str, float], fixture["absolute_tolerances"])
+    assert len(cast(list[object], fixture["surface_x"])) == len(
+        cast(list[object], fixture["surface_upper"])
+    ) == len(cast(list[object], fixture["surface_lower"]))
+    assert len(cast(list[object], fixture["points"])) == len(
+        cast(list[object], fixture["signed_distance"])
+    ) == len(cast(list[object], fixture["normals"])) == len(
+        cast(list[object], fixture["contains"])
+    ) == len(cast(list[object], fixture["wall_velocity"]))
     surface_x = np.asarray(cast(list[float], fixture["surface_x"]), dtype=np.float64)
     upper, lower = foil.surfaces(surface_x)
     np.testing.assert_allclose(

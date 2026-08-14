@@ -9,6 +9,14 @@
     "cases": {
       "type": "array",
       "minItems": 5,
+      "maxItems": 5,
+      "allOf": [
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "uniform"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "taylor-green"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "poiseuille"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "naca0012-zero"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["id"], "properties": {"id": {"const": "naca2412-dynamic"}}}, "minContains": 1, "maxContains": 1}
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -28,7 +36,14 @@
               "properties": {
                 "comparison": {"enum": ["maximum", "minimum", "finite"]},
                 "threshold": {"type": ["number", "null"]}
-              }
+              },
+              "allOf": [
+                {
+                  "if": {"properties": {"comparison": {"const": "finite"}}, "required": ["comparison"]},
+                  "then": {"properties": {"threshold": {"type": "null"}}},
+                  "else": {"properties": {"threshold": {"type": "number"}}}
+                }
+              ]
             }
           }
         }
