@@ -12,7 +12,7 @@ jobs:
   spec-python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --project implementations/python --all-groups --locked
       - run: uv run --project implementations/python python tools/validate_spec.py
@@ -24,7 +24,7 @@ jobs:
   julia:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with: {version: '1.12'}
       - uses: julia-actions/cache@v2
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: implementations/typescript}}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
       - uses: dtolnay/rust-toolchain@stable
@@ -52,7 +52,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.96.0'
@@ -68,7 +68,7 @@ jobs:
   rust-msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.88.0'
