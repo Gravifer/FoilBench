@@ -39,7 +39,7 @@ jobs:
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.97.1'
+          toolchain: '1.98.0'
           targets: wasm32-unknown-unknown
       - run: npm ci
       - run: npm run check
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.97.1'
+          toolchain: '1.98.0'
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
