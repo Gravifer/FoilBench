@@ -12,6 +12,7 @@
   "references": [{"path": "./tsconfig.core.json"}],
   "include": [
     "src/viewer/main.ts",
+    "src/viewer/resourceFetch.ts",
     "src/viewer/sceneController.ts",
     "src/viewer/workerClient.ts",
     "src/worker/**/*.ts",

@@ -1,6 +1,7 @@
 import {isSolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
 import type {SolverBackend, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
+import {fetchJsonResource} from "./resourceFetch.js";
 import {FoilSceneController} from "./sceneController.js";
 import {fuseViewerStatus} from "./statusFusion.js";
 import {ViewerWorkerClient} from "./workerClient.js";
@@ -23,10 +24,18 @@ app.append(help);
 const query = new URLSearchParams(location.search);
 const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href;
 const schemaUrl = new URL("../../../../spec/schemas/scenario.schema.json", import.meta.url).href;
-const [scenarioDocument, schemaDocument] = await Promise.all([
-  fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>),
-  fetch(schemaUrl).then(async (response) => response.json() as Promise<object>),
-]);
+let scenarioDocument: unknown;
+let schemaDocument: object;
+try {
+  [scenarioDocument, schemaDocument] = await Promise.all([
+    fetchJsonResource<unknown>(scenarioUrl, "scenario"),
+    fetchJsonResource<object>(schemaUrl, "scenario schema"),
+  ]);
+} catch (reason) {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  overlay.textContent = `viewer startup failed: ${message}`;
+  throw reason;
+}
 const scenario = parseScenario(scenarioDocument, schemaDocument);
 const requestedSolver = query.get("solver") ?? "stable-fluids";
 if (!isSolverId(requestedSolver)) throw new Error(`unsupported solver id: ${requestedSolver}`);
