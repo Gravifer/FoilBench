@@ -201,7 +201,7 @@ test("header regions do not overlap across supported widths", async ({page}) => 
   await page.setViewportSize({width: 1280, height: 720});
   await page.goto("./?backend=typescript");
   await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
-  for (const width of [1280, 980, 768, 560, 390, 320]) {
+  for (const width of [1280, 1024, 980, 768, 560, 390, 320]) {
     await page.setViewportSize({width, height: 720});
     const regions = await page.locator("header").evaluate((header) => {
       const box = (selector: string): {left: number; right: number; top: number; bottom: number} => {
@@ -237,6 +237,67 @@ test("header regions do not overlap across supported widths", async ({page}) => 
     expect(Math.abs(regions.transport.bottom - regions.toggle.bottom)).toBeLessThan(1);
     expect(regions.overflow).toBeLessThanOrEqual(0);
   }
+});
+
+test("panoramic layouts place the scene beneath an acrylic header", async ({page}) => {
+  await page.setViewportSize({width: 1024, height: 614});
+  await page.goto("./?backend=typescript");
+  await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
+  const panoramic = await page.evaluate(() => {
+    const bounds = (selector: string): {top: number; bottom: number} => {
+      const element = document.querySelector(selector);
+      if (element === null) throw new Error(`missing panoramic specimen ${selector}`);
+      const box = element.getBoundingClientRect();
+      return {top: box.top, bottom: box.bottom};
+    };
+    const acrylic = (selector: string): {background: string; backdrop: string} => {
+      const element = document.querySelector(selector);
+      if (element === null) throw new Error(`missing acrylic specimen ${selector}`);
+      const styles = getComputedStyle(element);
+      return {background: styles.backgroundColor, backdrop: styles.backdropFilter};
+    };
+    return {
+      header: bounds(".lab-header"),
+      stage: bounds(".flow-stage"),
+      panel: bounds(".control-panel"),
+      headerAcrylic: acrylic(".lab-header"),
+      cardAcrylic: acrylic(".stage-readout > div"),
+    };
+  });
+  expect(panoramic.stage.top).toBe(0);
+  expect(panoramic.header.top).toBe(0);
+  expect(panoramic.header.bottom).toBeGreaterThan(panoramic.stage.top);
+  expect(panoramic.panel.top).toBeCloseTo(panoramic.header.bottom, 0);
+  expect(panoramic.headerAcrylic).toEqual(panoramic.cardAcrylic);
+
+  await page.setViewportSize({width: 1024, height: 615});
+  const ordinary = await page.evaluate(() => {
+    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
+    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
+    if (header === undefined || stage === undefined) throw new Error("missing ordinary layout regions");
+    return {headerBottom: header.bottom, stageTop: stage.top};
+  });
+  expect(ordinary.stageTop).toBeCloseTo(ordinary.headerBottom, 0);
+
+  await page.setViewportSize({width: 1023, height: 575});
+  const belowWidthFloor = await page.evaluate(() => {
+    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
+    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
+    if (header === undefined || stage === undefined) throw new Error("missing minimum-width layout regions");
+    return {headerBottom: header.bottom, stageTop: stage.top};
+  });
+  expect(belowWidthFloor.stageTop).toBeCloseTo(belowWidthFloor.headerBottom, 0);
+
+  await page.setViewportSize({width: 1200, height: 667});
+  await page.getByLabel("Experiment").selectOption("reference");
+  await expect(page).toHaveURL(/preset=reference/);
+  const reference = await page.evaluate(() => {
+    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
+    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
+    if (header === undefined || stage === undefined) throw new Error("missing reference-layout regions");
+    return {headerBottom: header.bottom, stageTop: stage.top};
+  });
+  expect(reference.stageTop).toBeCloseTo(reference.headerBottom, 0);
 });
 
 test("invalid local scenarios fail visibly without leaving the browser", async ({page}) => {

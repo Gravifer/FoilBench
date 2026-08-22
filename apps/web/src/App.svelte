@@ -15,6 +15,7 @@
   const requestedBackend = query.get("backend") ?? "typescript";
   const requestedPreset = query.get("preset") ?? "dynamic";
   const narrowControlsQuery = window.matchMedia("(max-width: 980px)");
+  const panoramicWidthFloor = 1024;
 
   let sceneHost: HTMLDivElement;
   let scene: FoilSceneController | null = null;
@@ -33,6 +34,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let narrowViewport = $state(narrowControlsQuery.matches);
+  let panoramicViewport = $state(false);
   let wideControlsOpen = $state(true);
   let narrowControlsOpen = $state(false);
   let teachingOpen = $state(true);
@@ -52,6 +54,19 @@
     const status = fused?.status;
     return status === undefined || status === "running" || status === "warming" || status === "motion resolved; running" ? null : status;
   });
+
+  function updatePanoramicLayout(nextScenario: Scenario | null = scenario): void {
+    const xBounds = nextScenario?.domain.bounds[0];
+    const yBounds = nextScenario?.domain.bounds[1];
+    if (xBounds === undefined || yBounds === undefined) {
+      panoramicViewport = false;
+      return;
+    }
+    const domainAspect = (xBounds[1] - xBounds[0]) / (yBounds[1] - yBounds[0]);
+    panoramicViewport = window.innerWidth >= panoramicWidthFloor && window.innerWidth / window.innerHeight >= domainAspect;
+  }
+
+  const updatePanoramicLayoutFromViewport = (): void => updatePanoramicLayout();
 
   $effect(() => {
     if (detailStatus === null) return;
@@ -110,6 +125,7 @@
     try {
       const nextScenario = await loadPreset(preset);
       scenario = nextScenario;
+      updatePanoramicLayout(nextScenario);
       tuningSteps = {"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0};
       connect(nextScenario);
     } catch (reason) {
@@ -178,6 +194,7 @@
       const document = JSON.parse(await file.text()) as unknown;
       const nextScenario = await parseScenarioDocument(document);
       scenario = nextScenario;
+      updatePanoramicLayout(nextScenario);
       presetId = "custom";
       tuningSteps = {"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0};
       connect(nextScenario);
@@ -259,6 +276,7 @@
     };
     draw();
     window.addEventListener("keydown", handleKey);
+    window.addEventListener("resize", updatePanoramicLayoutFromViewport);
     const updateControlsMode = (event: MediaQueryListEvent): void => { narrowViewport = event.matches; };
     narrowControlsQuery.addEventListener("change", updateControlsMode);
     const visibility = (): void => { client?.setVisible(document.visibilityState === "visible"); };
@@ -270,6 +288,7 @@
       if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("resize", updatePanoramicLayoutFromViewport);
       narrowControlsQuery.removeEventListener("change", updateControlsMode);
       document.removeEventListener("visibilitychange", visibility);
       client?.shutdown();
@@ -284,7 +303,7 @@
   <meta property="og:description" content="An interactive browser lab for airflow, separation, and wakes." />
 </svelte:head>
 
-<main class:panel-open={controlsOpen} class="lab-shell">
+<main class:panel-open={controlsOpen} class:panoramic={panoramicViewport} class="lab-shell">
   <header class="lab-header">
     <div class="header-left">
       <div class="header-identity">
