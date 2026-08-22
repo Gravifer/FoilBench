@@ -361,7 +361,7 @@ impl<T: FlowScalar> StableFluids<T> {
                         ],
                     ),
                     "poiseuille" => {
-                        let center = 0.5 * (domain.bounds[1][0] + domain.bounds[1][1]);
+                        let center = f64::midpoint(domain.bounds[1][0], domain.bounds[1][1]);
                         let radius = 0.5 * (domain.bounds[1][1] - domain.bounds[1][0]);
                         let profile = 1.5 * (1.0 - ((point[1] - center) / radius).powi(2));
                         field.set(x, y, [T::from_f64(profile), T::from_f64(0.0)]);
@@ -647,13 +647,17 @@ impl<T: FlowScalar> StableFluids<T> {
                 v_on_u.set(
                     x,
                     y,
-                    T::from_f64(
-                        0.5 * (cells.get(x - 1, y)[1].to_f64() + cells.get(x, y)[1].to_f64()),
-                    ),
+                    T::from_f64(f64::midpoint(
+                        cells.get(x - 1, y)[1].to_f64(),
+                        cells.get(x, y)[1].to_f64(),
+                    )),
                 );
             }
             let boundary = if domain.periodic_x {
-                0.5 * (cells.get(domain.nx() - 1, y)[1].to_f64() + cells.get(0, y)[1].to_f64())
+                f64::midpoint(
+                    cells.get(domain.nx() - 1, y)[1].to_f64(),
+                    cells.get(0, y)[1].to_f64(),
+                )
             } else {
                 cells.get(0, y)[1].to_f64()
             };
@@ -674,13 +678,17 @@ impl<T: FlowScalar> StableFluids<T> {
                 u_on_v.set(
                     x,
                     y,
-                    T::from_f64(
-                        0.5 * (cells.get(x, y - 1)[0].to_f64() + cells.get(x, y)[0].to_f64()),
-                    ),
+                    T::from_f64(f64::midpoint(
+                        cells.get(x, y - 1)[0].to_f64(),
+                        cells.get(x, y)[0].to_f64(),
+                    )),
                 );
             }
             let boundary = if domain.periodic_y {
-                0.5 * (cells.get(x, domain.ny() - 1)[0].to_f64() + cells.get(x, 0)[0].to_f64())
+                f64::midpoint(
+                    cells.get(x, domain.ny() - 1)[0].to_f64(),
+                    cells.get(x, 0)[0].to_f64(),
+                )
             } else {
                 cells.get(x, 0)[0].to_f64()
             };

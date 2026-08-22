@@ -146,7 +146,9 @@ pub fn read_canonical<T: FlowScalar>(
     }
     let velocity = velocity_npy
         .values
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|value| [T::from_f64(value[0]), T::from_f64(value[1])])
         .collect::<Vec<_>>();
     let density = if let Some(metadata) = common.density {

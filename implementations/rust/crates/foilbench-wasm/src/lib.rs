@@ -438,7 +438,9 @@ impl WasmSolver {
             return Err(text_error("solver precision is not float32"));
         };
         let points = points_xy
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|point| [point[0], point[1]])
             .collect::<Vec<_>>();
         let mut output = vec![[0.0_f32; 2]; points.len()];
@@ -456,7 +458,9 @@ impl WasmSolver {
             return Err(text_error("solver precision is not float64"));
         };
         let points = points_xy
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|point| [point[0], point[1]])
             .collect::<Vec<_>>();
         let mut output = vec![[0.0_f64; 2]; points.len()];
@@ -565,7 +569,9 @@ impl WasmSolver {
             producer: metadata.producer,
             source_solver: metadata.source_solver,
             velocity: velocity_xy
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|value| [value[0], value[1]])
                 .collect(),
             density: has_density.then(|| density_values.to_vec()),
@@ -601,7 +607,9 @@ impl WasmSolver {
             producer: metadata.producer,
             source_solver: metadata.source_solver,
             velocity: velocity_xy
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|value| [value[0], value[1]])
                 .collect(),
             density: has_density.then(|| density_values.to_vec()),
