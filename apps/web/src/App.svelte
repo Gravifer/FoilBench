@@ -10,6 +10,7 @@
   import {ViewerWorkerClient} from "foilbench-typescript/src/viewer/workerClient.js";
   import {LatestRequestGate} from "./latestRequest.js";
   import {loadPreset, parseScenarioDocument, PRESETS} from "./presets.js";
+  import {StatusNoticeController} from "./statusNotice.js";
 
   const query = new URLSearchParams(location.search);
   const requestedSolver = query.get("solver") ?? "stable-fluids";
@@ -52,7 +53,7 @@
   let teachingOpen = $state(true);
   let diagnosticsOpen = $state(false);
   let statusNotice = $state<string | null>(null);
-  let statusNoticeTimer: number | undefined;
+  const statusNotices = new StatusNoticeController((notice) => { statusNotice = notice; });
   let tuningSteps = $state<Record<SolverId, number>>({"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0});
 
   let fused = $derived(snapshot === null ? null : fuseViewerStatus(snapshot, statusEvent));
@@ -115,12 +116,7 @@
 
   $effect(() => {
     if (detailStatusIdentity === null || detailStatus === null) return;
-    statusNotice = detailStatus;
-    if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
-    statusNoticeTimer = window.setTimeout(() => {
-      statusNotice = null;
-      statusNoticeTimer = undefined;
-    }, STATUS_NOTICE_MILLISECONDS);
+    statusNotices.show(detailStatusIdentity, detailStatus, STATUS_NOTICE_MILLISECONDS);
   });
 
   const solverLabels: Readonly<Record<SolverId, string>> = {
@@ -339,7 +335,7 @@
     return () => {
       scenarioRequests.invalidate();
       cancelAnimationFrame(animationFrame);
-      if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
+      statusNotices.dispose();
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKey);
       narrowControlsQuery.removeEventListener("change", updateControlsMode);

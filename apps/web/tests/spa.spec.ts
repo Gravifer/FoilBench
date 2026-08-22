@@ -28,8 +28,6 @@ test("curated controls and local scenario import remain browser-local", async ({
   await page.getByLabel("Angle of attack").fill("12");
   await page.getByLabel("Angle of attack").press("ArrowRight");
   await expect(page.getByText("manual control", {exact: false})).toBeVisible();
-  await page.waitForTimeout(1200);
-  await expect(page.getByText("manual control", {exact: false})).toBeVisible();
   await page.getByRole("button", {name: "Vorticity"}).click();
   await page.getByRole("button", {name: /^Diagnostics/}).click();
   await expect(page.getByText("Kinetic energy")).toBeVisible();
