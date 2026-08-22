@@ -45,12 +45,52 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - run: npm run build:web:pages
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser:dist
         env: {CI: 'true'}
-      - run: npm run test:web:dist
-        env: {CI: 'true'}
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            implementations/typescript/package-lock.json
+            apps/web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: implementations/rust
+          shared-key: web-wasm
+      - name: Install TypeScript solver dependencies
+        run: npm ci
+        working-directory: implementations/typescript
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: apps/web
+      - name: Check web sources
+        run: npm run check
+        working-directory: apps/web
+      - name: Test web units
+        run: npm test
+        working-directory: apps/web
+      - name: Build static web artifact
+        run: npm run build:pages
+        working-directory: apps/web
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Test static web artifact
+        run: npm run test:browser
+        working-directory: apps/web
+        env:
+          CI: 'true'
 
   rust:
     runs-on: ubuntu-latest
