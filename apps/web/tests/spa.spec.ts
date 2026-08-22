@@ -28,6 +28,8 @@ test("curated controls and local scenario import remain browser-local", async ({
   await page.getByLabel("Angle of attack").fill("12");
   await page.getByLabel("Angle of attack").press("ArrowRight");
   await expect(page.getByText("manual control", {exact: false})).toBeVisible();
+  await page.waitForTimeout(1200);
+  await expect(page.getByText("manual control", {exact: false})).toBeVisible();
   await page.getByRole("button", {name: "Vorticity"}).click();
   await page.getByRole("button", {name: /^Diagnostics/}).click();
   await expect(page.getByText("Kinetic energy")).toBeVisible();
@@ -70,9 +72,17 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
 
   const header = page.locator("header");
   const transport = page.getByLabel("Simulation transport");
+  const phaseStatus = header.locator(".header-status");
   await expect(transport.getByRole("button", {name: "Reset simulation"})).toHaveAttribute("title", "Reset (R)");
   await expect(transport.getByRole("button", {name: "Pause simulation"})).toHaveAttribute("title", "Pause (Space)");
   await expect(transport.locator("kbd")).toHaveCount(0);
+  await expect(phaseStatus).toHaveClass(/status-running/);
+  const bulbPaint = await phaseStatus.locator(".status-bulb").evaluate((bulb) => {
+    const style = getComputedStyle(bulb);
+    return {background: style.backgroundColor, color: style.color, shadow: style.boxShadow};
+  });
+  expect(bulbPaint.background).toBe(bulbPaint.color);
+  expect(bulbPaint.shadow).toBe("none");
   await expect(header.locator(".playback-time")).toHaveText(/^t=\d+\.\d{2}$/i);
   await expect(page.getByText("Flow time", {exact: true})).toHaveCount(0);
   const [headerBox, transportBox] = await Promise.all([header.boundingBox(), transport.boundingBox()]);

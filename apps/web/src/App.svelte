@@ -34,6 +34,8 @@
   let controlsOpen = $state(false);
   let teachingOpen = $state(true);
   let diagnosticsOpen = $state(false);
+  let statusNotice = $state<string | null>(null);
+  let statusNoticeTimer: number | undefined;
   let tuningSteps = $state<Record<SolverId, number>>({"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0});
 
   let fused = $derived(snapshot === null ? null : fuseViewerStatus(snapshot, statusEvent));
@@ -45,6 +47,16 @@
     if (fused?.pendingStatus !== null && fused?.pendingStatus !== undefined) return fused.pendingStatus;
     const status = fused?.status;
     return status === undefined || status === "running" || status === "warming" || status === "motion resolved; running" ? null : status;
+  });
+
+  $effect(() => {
+    if (detailStatus === null) return;
+    statusNotice = detailStatus;
+    if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
+    statusNoticeTimer = window.setTimeout(() => {
+      statusNotice = null;
+      statusNoticeTimer = undefined;
+    }, 5000);
   });
 
   const solverLabels: Readonly<Record<SolverId, string>> = {
@@ -242,6 +254,7 @@
 
     return () => {
       cancelAnimationFrame(animationFrame);
+      if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKey);
       document.removeEventListener("visibilitychange", visibility);
@@ -281,8 +294,8 @@
       <span class="playback-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
     </div>
     <div class="header-right">
-      <div class="header-status" aria-live="polite">
-        <span class:status-running={phase === "running"} class:status-warning={phase === "warming" || phase === "paused"} class:status-failed={phase === "failed"}></span>
+      <div class="header-status" class:status-running={phase === "running"} class:status-warming={phase === "warming"} class:status-paused={phase === "paused"} class:status-failed={phase === "failed"} aria-live="polite">
+        <span class="status-bulb" aria-hidden="true"></span>
         <span>{phase}</span>
       </div>
       <button class="mobile-control-button" type="button" aria-expanded={controlsOpen} onclick={() => controlsOpen = !controlsOpen}>Controls</button>
@@ -296,7 +309,7 @@
     {:else if error !== null}
       <div class="stage-message stage-error"><strong>Simulation unavailable</strong><span>{error}</span></div>
     {/if}
-    {#if detailStatus !== null}<p class="stage-status" aria-live="polite">{detailStatus}</p>{/if}
+    {#if statusNotice !== null}<p class="stage-status" aria-live="polite">{statusNotice}</p>{/if}
     <div class="stage-readout">
       <div><span>Angle of attack</span><strong>{displayedAoa.toFixed(1)}°</strong></div>
       <div><span>Reynolds number</span><strong>{currentReynolds.toFixed(0)}</strong></div>
