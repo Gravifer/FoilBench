@@ -1,96 +1,118 @@
-import * as THREE from "three";
-import {vorticityRgba} from "./vorticityTexture.js";
 import {isSolverId} from "../core/contracts.js";
 import {parseScenario} from "../core/scenario.js";
-import type {SolverBackend, ViewerCommandInput, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
+import type {SolverBackend, ViewerSnapshot, ViewerStatusEvent} from "./protocol.js";
+import {FoilSceneController} from "./sceneController.js";
 import {fuseViewerStatus} from "./statusFusion.js";
+import {ViewerWorkerClient} from "./workerClient.js";
 
-const app = document.querySelector<HTMLDivElement>("#app"); if (app === null) throw new Error("viewer root is missing");
-const renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x000000); app.append(renderer.domElement);
-const scene = new THREE.Scene(); const camera = new THREE.OrthographicCamera(-4, 4, 2, -2, -10, 10); camera.position.z = 5;
-const paths = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0x148cff, transparent: true, opacity: 0.55})); scene.add(paths);
-const points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({color: 0x3ba5ff, size: 2, sizeAttenuation: false})); scene.add(points);
-const foil = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0xe7eef8})); scene.add(foil);
-const vortCanvas = document.createElement("canvas"); const vortTexture = new THREE.CanvasTexture(vortCanvas); vortTexture.minFilter = THREE.LinearFilter; vortTexture.magFilter = THREE.LinearFilter; const vortMaterial = new THREE.MeshBasicMaterial({map: vortTexture, transparent: true, depthWrite: false}); const vortPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), vortMaterial); vortPlane.position.z = -1; scene.add(vortPlane);
-const overlay = document.createElement("div"); overlay.id = "foilbench-overlay"; overlay.style.cssText = "position:absolute;left:16px;top:12px;white-space:pre;color:#eee;font-size:13px;pointer-events:none;text-shadow:0 1px 2px #000"; app.append(overlay);
-const help = document.createElement("div"); help.id = "foilbench-help"; help.style.cssText = "position:absolute;left:16px;bottom:12px;color:#bbb;font-size:12px;pointer-events:none"; app.append(help);
+const app = document.querySelector<HTMLDivElement>("#app");
+if (app === null) throw new Error("viewer root is missing");
 
-let sequence = 0; let latest: ViewerSnapshot | null = null; let latestStatus: ViewerStatusEvent | null = null; let statusGeneration = 0; let renderedStatusGeneration = -1; let renderedRevision = -1; let shutdownAcknowledged = false;
-let pendingPose: {readonly sequence: number; readonly kind: "set-angle"; readonly angleDegrees: number; readonly timestamp: number} | null = null; let poseFrame = 0;
-const worker = new Worker(new URL("../worker/simulationWorker.ts", import.meta.url), {type: "module"});
-const flushPose = (): void => { poseFrame = 0; const pose = pendingPose; pendingPose = null; if (pose !== null) worker.postMessage(pose); };
-const send = (command: ViewerCommandInput): void => {
-  if (latest === null && command.kind !== "initialize" && command.kind !== "shutdown") return;
-  flushPose(); sequence += 1; worker.postMessage({...command, sequence});
-};
-worker.onmessage = (event: MessageEvent<ViewerEvent>): void => {
-  if (event.data.kind === "shutdown-ack") { shutdownAcknowledged = true; return; }
-  if (event.data.kind === "status") {
-    latestStatus = event.data; statusGeneration += 1;
-    if (latest === null) overlay.textContent = event.data.status;
-    return;
-  }
-  latest = event.data;
-};
-worker.onerror = (event): void => { overlay.textContent = `worker failure: ${event.message}`; };
+const scene = new FoilSceneController(app);
+scene.resize(innerWidth, innerHeight);
+const overlay = document.createElement("div");
+overlay.id = "foilbench-overlay";
+overlay.style.cssText = "position:absolute;left:16px;top:12px;white-space:pre;color:#eee;font-size:13px;pointer-events:none;text-shadow:0 1px 2px #000";
+app.append(overlay);
+const help = document.createElement("div");
+help.id = "foilbench-help";
+help.style.cssText = "position:absolute;left:16px;bottom:12px;color:#bbb;font-size:12px;pointer-events:none";
+help.textContent = "1/2/3 solver  left-drag foil  Space pause  R reset  +/- Re  0 Re reset  [/] tuning  V vorticity  D diagnostics  T tracers  C crop";
+app.append(help);
 
-const query = new URLSearchParams(location.search); const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href; const schemaUrl = new URL("../../../../spec/schemas/scenario.schema.json", import.meta.url).href;
-const [scenarioDocument, schemaDocument] = await Promise.all([fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>), fetch(schemaUrl).then(async (response) => response.json() as Promise<object>)]); const scenario = parseScenario(scenarioDocument, schemaDocument); const requestedSolver = query.get("solver") ?? "stable-fluids"; if (!isSolverId(requestedSolver)) throw new Error(`unsupported solver id: ${requestedSolver}`); const backendValue = query.get("backend") ?? "typescript"; if (backendValue !== "typescript" && backendValue !== "rust-wasm") throw new Error(`unsupported backend: ${backendValue}`); const backend: SolverBackend = backendValue; send({kind: "initialize", scenario, solverId: requestedSolver, backend});
-help.textContent = `1/2/3 solver  left-drag foil  Space pause  R reset  +/- Re  0 Re reset  [/] tuning  V vorticity  D diagnostics  T tracers  C crop`;
+const query = new URLSearchParams(location.search);
+const scenarioUrl = query.get("scenario") ?? new URL("../../../../scenarios/airfoil/default.json", import.meta.url).href;
+const schemaUrl = new URL("../../../../spec/schemas/scenario.schema.json", import.meta.url).href;
+const [scenarioDocument, schemaDocument] = await Promise.all([
+  fetch(scenarioUrl).then(async (response) => response.json() as Promise<unknown>),
+  fetch(schemaUrl).then(async (response) => response.json() as Promise<object>),
+]);
+const scenario = parseScenario(scenarioDocument, schemaDocument);
+const requestedSolver = query.get("solver") ?? "stable-fluids";
+if (!isSolverId(requestedSolver)) throw new Error(`unsupported solver id: ${requestedSolver}`);
+const backendValue = query.get("backend") ?? "typescript";
+if (backendValue !== "typescript" && backendValue !== "rust-wasm") throw new Error(`unsupported backend: ${backendValue}`);
+const backend: SolverBackend = backendValue;
 
-function updateGeometry(geometry: THREE.BufferGeometry, values: Float32Array): void {
-  const vertexCount = values.length / 2;
-  let attribute = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
-  if (attribute === undefined || attribute.array.length < 3 * vertexCount) {
-    let capacity = 3;
-    while (capacity < 3 * vertexCount) capacity *= 2;
-    attribute = new THREE.BufferAttribute(new Float32Array(capacity), 3);
-    attribute.setUsage(THREE.DynamicDrawUsage);
-    geometry.setAttribute("position", attribute);
-  }
-  const xyz = attribute.array as Float32Array;
-  for (let index = 0; index < vertexCount; index += 1) { xyz[3 * index] = values[2 * index] ?? 0; xyz[3 * index + 1] = values[2 * index + 1] ?? 0; xyz[3 * index + 2] = 0; }
-  attribute.needsUpdate = true;
-  geometry.setDrawRange(0, vertexCount);
-}
-
-function updateCamera(snapshot: ViewerSnapshot): void {
-  const [[x0, x1], [y0, y1]] = snapshot.bounds; const crop = snapshot.cropEnabled ? (scenario.solverOptions.viewerCropCells ?? 0) : 0; const dx = (x1 - x0) / snapshot.resolution[0]; const dy = (y1 - y0) / snapshot.resolution[1]; let left = x0 + crop * dx; let right = x1 - crop * dx; let bottom = y0 + crop * dy; let top = y1 - crop * dy; const domainAspect = (right - left) / (top - bottom); const viewportAspect = innerWidth / Math.max(innerHeight, 1);
-  if (viewportAspect > domainAspect) { const extra = 0.5 * ((top - bottom) * viewportAspect - (right - left)); left -= extra; right += extra; } else { const extra = 0.5 * ((right - left) / viewportAspect - (top - bottom)); bottom -= extra; top += extra; }
-  camera.left = left; camera.right = right; camera.bottom = bottom; camera.top = top; camera.updateProjectionMatrix();
-}
-
-function updateVorticity(snapshot: ViewerSnapshot): void {
-  vortPlane.visible = snapshot.vorticityVisible; if (!snapshot.vorticityVisible || snapshot.vorticity.length === 0) return; const [nx, ny] = snapshot.resolution; vortCanvas.width = nx; vortCanvas.height = ny; const context = vortCanvas.getContext("2d"); if (context === null) return; const image = context.createImageData(nx, ny);
-  image.data.set(vorticityRgba(snapshot.vorticity, nx, ny));
-  context.putImageData(image, 0, 0); vortTexture.needsUpdate = true; const [[x0, x1], [y0, y1]] = snapshot.bounds; vortPlane.scale.set(x1 - x0, y1 - y0, 1); vortPlane.position.set((x0 + x1) / 2, (y0 + y1) / 2, -1);
-}
+const client = new ViewerWorkerClient();
+let latest: ViewerSnapshot | null = null;
+let latestStatus: ViewerStatusEvent | null = null;
+let renderedRevision = -1;
+let dragging = false;
 
 function updateOverlay(snapshot: ViewerSnapshot): void {
-  const rate = snapshot.stepRate === null ? "warming" : snapshot.stepRate.toFixed(1).padStart(5); const throughput = snapshot.simulatedPerWall === null ? "warming" : snapshot.simulatedPerWall.toFixed(2).padStart(5); const metric = (name: string): string => snapshot.diagnostics[name]?.toFixed(3) ?? "—"; const effective = snapshot.diagnostics["effective_reynolds"]; const effectiveText = effective === undefined ? "" : `  Re_eff=${effective.toFixed(0).padStart(6)}`; const paused = snapshot.paused ? "  PAUSED" : "";
-  const control = fuseViewerStatus(snapshot, latestStatus); const status = control.status; const phase = control.phase; const recovery = control.recoveryEpoch; const pending = control.pendingStatus === null ? "" : `\n${control.pendingStatus}`;
+  const rate = snapshot.stepRate === null ? "warming" : snapshot.stepRate.toFixed(1).padStart(5);
+  const throughput = snapshot.simulatedPerWall === null ? "warming" : snapshot.simulatedPerWall.toFixed(2).padStart(5);
+  const metric = (name: string): string => snapshot.diagnostics[name]?.toFixed(3) ?? "—";
+  const effective = snapshot.diagnostics["effective_reynolds"];
+  const effectiveText = effective === undefined ? "" : `  Re_eff=${effective.toFixed(0).padStart(6)}`;
+  const paused = snapshot.paused ? "  PAUSED" : "";
+  const control = fuseViewerStatus(snapshot, latestStatus);
+  const pending = control.pendingStatus === null ? "" : `\n${control.pendingStatus}`;
   const displayedAoa = Math.abs(snapshot.angleDegrees) < 0.05 ? 0 : -snapshot.angleDegrees;
-  overlay.textContent = `${snapshot.solverId} [${backend}]  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${displayedAoa.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(recovery)}  motion=${snapshot.motionMode}  phase=${phase}\n${status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  diag=${snapshot.diagnosticMode}  view=${snapshot.cropEnabled ? "cropped" : "full"}${pending}`;
+  overlay.textContent = `${snapshot.solverId} [${backend}]  t=${snapshot.time.toFixed(2).padStart(6)}  AoA=${displayedAoa.toFixed(1).padStart(5)}°  Re=${snapshot.reynolds.toFixed(0).padStart(6)}${effectiveText}  rate=${snapshot.playbackRate.toFixed(2)}x  ${snapshot.solverTuning}  step=${rate}/s  sim/wall=${throughput}  sub=${String(snapshot.substeps).padStart(2)}  max|u|=${snapshot.maxSpeed.toFixed(2)}${paused}\nE=${metric("kinetic_energy")}  Ω=${metric("enstrophy")}  div=${metric("divergence_linf")}  leak=${metric("solid_leakage")}  recovery=${String(control.recoveryEpoch)}  motion=${snapshot.motionMode}  phase=${control.phase}\n${control.status}  schedule=${snapshot.scheduleActive ? "on" : "manual"}  tracers=${snapshot.tracerMode}  vort=${snapshot.vorticityVisible ? "on" : "off"}  diag=${snapshot.diagnosticMode}  view=${snapshot.cropEnabled ? "cropped" : "full"}${pending}`;
 }
 
+client.subscribe((state) => {
+  if (state.status !== null) latestStatus = state.status;
+  if (state.snapshot !== null) latest = state.snapshot;
+  if (state.error !== null) overlay.textContent = state.error;
+  else if (latest === null && state.status !== null) overlay.textContent = state.status.status;
+});
+client.initialize(scenario, requestedSolver, backend);
+
 function draw(): void {
-  requestAnimationFrame(draw); const snapshot = latest; if (snapshot === null) return;
-  if (snapshot.revision !== renderedRevision) { renderedRevision = snapshot.revision; updateCamera(snapshot); updateGeometry(paths.geometry, snapshot.pathSegments); updateGeometry(points.geometry, snapshot.tracerPositions); updateGeometry(foil.geometry, snapshot.foilOutline); updateVorticity(snapshot); updateOverlay(snapshot); renderedStatusGeneration = statusGeneration; worker.postMessage({kind: "snapshot-consumed", revision: snapshot.revision}); }
-  else if (statusGeneration !== renderedStatusGeneration) { renderedStatusGeneration = statusGeneration; updateOverlay(snapshot); }
-  renderer.render(scene, camera);
+  requestAnimationFrame(draw);
+  const snapshot = latest;
+  if (snapshot === null) return;
+  if (snapshot.revision !== renderedRevision) {
+    renderedRevision = snapshot.revision;
+    scene.render(snapshot, scenario);
+    client.acknowledgeSnapshot(snapshot.revision);
+  } else scene.draw();
+  updateOverlay(snapshot);
 }
 draw();
 
-let dragging = false;
-const pointerAngle = (event: PointerEvent): number => { const rect = renderer.domElement.getBoundingClientRect(); const worldX = camera.left + (event.clientX - rect.left) / rect.width * (camera.right - camera.left); const worldY = camera.top - (event.clientY - rect.top) / rect.height * (camera.top - camera.bottom); return Math.max(-30, Math.min(30, Math.atan2(worldY - (scenario.foil.pivot[1] ?? 0), worldX - (scenario.foil.pivot[0] ?? 0)) * 180 / Math.PI)); };
-const queuePose = (event: PointerEvent): void => { const next = {angleDegrees: pointerAngle(event), timestamp: performance.now()}; if (pendingPose === null) { sequence += 1; pendingPose = {kind: "set-angle", sequence, ...next}; } else pendingPose = {...pendingPose, ...next}; if (poseFrame === 0) poseFrame = requestAnimationFrame(flushPose); };
-const releasePointer = (event: PointerEvent): void => { if (!dragging) return; dragging = false; if (poseFrame !== 0) cancelAnimationFrame(poseFrame); flushPose(); if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId); send({kind: "release-angle"}); };
-renderer.domElement.addEventListener("pointerdown", (event) => { if (event.button !== 0) return; dragging = true; renderer.domElement.setPointerCapture(event.pointerId); });
-renderer.domElement.addEventListener("pointermove", (event) => { if (dragging) queuePose(event); });
-renderer.domElement.addEventListener("pointerup", releasePointer); renderer.domElement.addEventListener("pointercancel", releasePointer); renderer.domElement.addEventListener("lostpointercapture", (event) => { if (dragging) releasePointer(event); });
+const releasePointer = (event: PointerEvent): void => {
+  if (!dragging) return;
+  dragging = false;
+  client.releaseAngle();
+  if (scene.canvas.hasPointerCapture(event.pointerId)) scene.canvas.releasePointerCapture(event.pointerId);
+};
+scene.canvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  dragging = true;
+  scene.canvas.setPointerCapture(event.pointerId);
+});
+scene.canvas.addEventListener("pointermove", (event) => {
+  if (dragging) client.queueAngle(scene.pointerAngle(event, scenario));
+});
+scene.canvas.addEventListener("pointerup", releasePointer);
+scene.canvas.addEventListener("pointercancel", releasePointer);
+scene.canvas.addEventListener("lostpointercapture", (event) => {
+  if (dragging) releasePointer(event);
+});
 
-window.addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); renderedRevision = -1; });
-window.addEventListener("keydown", (event: KeyboardEvent) => { if (event.key === " ") send({kind: "pause"}); else if (event.key.toLowerCase() === "r") send({kind: "reset"}); else if (event.key === "1" || event.key === "2" || event.key === "3") send({kind: "switch", solverId: (["stable-fluids", "lbm-d2q9", "pic-flip"] as const)[Number(event.key) - 1] ?? "stable-fluids"}); else if (event.key === "+" || event.key === "=") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) * 10 ** 0.25}); else if (event.key === "-") send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) / 10 ** 0.25}); else if (event.key === "0") send({kind: "set-reynolds", reynolds: scenario.reynolds}); else if (event.key === "[") send({kind: "adjust-tuning", amount: -1}); else if (event.key === "]") send({kind: "adjust-tuning", amount: 1}); else if (event.key.toLowerCase() === "v") send({kind: "toggle-vorticity"}); else if (event.key.toLowerCase() === "d") send({kind: "toggle-diagnostics"}); else if (event.key.toLowerCase() === "t") send({kind: "toggle-tracers"}); else if (event.key.toLowerCase() === "c") send({kind: "toggle-crop"}); });
-document.addEventListener("visibilitychange", () => { send({kind: "visibility", visible: document.visibilityState === "visible"}); });
-const requestShutdown = (): void => { if (!shutdownAcknowledged) send({kind: "shutdown"}); };
-window.addEventListener("pagehide", requestShutdown); window.addEventListener("beforeunload", requestShutdown);
+window.addEventListener("resize", () => {
+  scene.resize(innerWidth, innerHeight);
+  renderedRevision = -1;
+});
+window.addEventListener("keydown", (event: KeyboardEvent) => {
+  if (event.key === " ") client.send({kind: "pause"});
+  else if (event.key.toLowerCase() === "r") client.send({kind: "reset"});
+  else if (event.key === "1" || event.key === "2" || event.key === "3") client.send({kind: "switch", solverId: (["stable-fluids", "lbm-d2q9", "pic-flip"] as const)[Number(event.key) - 1] ?? "stable-fluids"});
+  else if (event.key === "+" || event.key === "=") client.send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) * 10 ** 0.25});
+  else if (event.key === "-") client.send({kind: "set-reynolds", reynolds: (latest?.reynolds ?? scenario.reynolds) / 10 ** 0.25});
+  else if (event.key === "0") client.send({kind: "set-reynolds", reynolds: scenario.reynolds});
+  else if (event.key === "[") client.send({kind: "adjust-tuning", amount: -1});
+  else if (event.key === "]") client.send({kind: "adjust-tuning", amount: 1});
+  else if (event.key.toLowerCase() === "v") client.send({kind: "toggle-vorticity"});
+  else if (event.key.toLowerCase() === "d") client.send({kind: "toggle-diagnostics"});
+  else if (event.key.toLowerCase() === "t") client.send({kind: "toggle-tracers"});
+  else if (event.key.toLowerCase() === "c") client.send({kind: "toggle-crop"});
+});
+document.addEventListener("visibilitychange", () => { client.setVisible(document.visibilityState === "visible"); });
+const requestShutdown = (): void => { client.shutdown(); };
+window.addEventListener("pagehide", requestShutdown);
+window.addEventListener("beforeunload", requestShutdown);
