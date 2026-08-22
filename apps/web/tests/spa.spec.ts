@@ -121,15 +121,15 @@ test("wide and narrow control-panel preferences remain independent", async ({pag
   await page.setViewportSize({width: 1280, height: 720});
   await page.goto("./?backend=typescript");
   const panel = page.getByLabel("Simulation controls");
-  const stage = page.getByLabel("Interactive airflow visualization");
+  const viewport = page.locator(".flow-viewport");
   await expect(page.getByRole("button", {name: "Hide controls"})).toBeVisible();
   await expect(panel).toBeVisible();
-  const openStage = await stage.boundingBox();
+  const openViewport = await viewport.boundingBox();
   expect(await page.locator("main").evaluate((main) => getComputedStyle(main).transitionProperty)).toContain("grid-template-columns");
   await page.getByRole("button", {name: "Hide controls"}).click();
   await expect(panel).toBeHidden();
-  const closedStage = await stage.boundingBox();
-  expect((closedStage?.width ?? 0) - (openStage?.width ?? 0)).toBeGreaterThan(300);
+  const closedViewport = await viewport.boundingBox();
+  expect((closedViewport?.width ?? 0) - (openViewport?.width ?? 0)).toBeGreaterThan(300);
 
   await page.setViewportSize({width: 390, height: 720});
   await expect(page.getByRole("button", {name: "Show controls"})).toBeVisible();
@@ -239,65 +239,55 @@ test("header regions do not overlap across supported widths", async ({page}) => 
   }
 });
 
-test("panoramic layouts place the scene beneath an acrylic header", async ({page}) => {
-  await page.setViewportSize({width: 1024, height: 614});
+test("the scene passes continuously through centered, header-overlap, and height-fit layouts", async ({page}) => {
+  await page.setViewportSize({width: 900, height: 700});
   await page.goto("./?backend=typescript");
   await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
-  const panoramic = await page.evaluate(() => {
-    const bounds = (selector: string): {top: number; bottom: number} => {
-      const element = document.querySelector(selector);
-      if (element === null) throw new Error(`missing panoramic specimen ${selector}`);
-      const box = element.getBoundingClientRect();
-      return {top: box.top, bottom: box.bottom};
-    };
-    const acrylic = (selector: string): {background: string; backdrop: string} => {
+  const stage = page.getByLabel("Interactive airflow visualization");
+  const measure = async (): Promise<{left: number; top: number; right: number; bottom: number; width: number; height: number}> => stage.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return {left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height};
+  });
+
+  const centered = await measure();
+  expect(centered.top).toBeGreaterThan(64);
+  expect(centered.bottom).toBeLessThan(700);
+  expect(centered.width / centered.height).toBeCloseTo(5 / 3, 3);
+
+  await page.setViewportSize({width: 900, height: 580});
+  await expect.poll(async () => (await measure()).top).toBeCloseTo(40, 0);
+  const overlapping = await measure();
+  expect(overlapping.top).toBeGreaterThan(0);
+  expect(overlapping.top).toBeLessThan(64);
+  expect(overlapping.bottom).toBeCloseTo(580, 0);
+  expect(overlapping.width / overlapping.height).toBeCloseTo(5 / 3, 3);
+
+  await page.setViewportSize({width: 900, height: 500});
+  await expect.poll(async () => (await measure()).top).toBeCloseTo(0, 0);
+  const heightFit = await measure();
+  expect(heightFit.left).toBeGreaterThan(0);
+  expect(heightFit.right).toBeLessThan(900);
+  expect(heightFit.bottom).toBeCloseTo(500, 0);
+  expect(heightFit.width / heightFit.height).toBeCloseTo(5 / 3, 3);
+
+  await page.getByRole("button", {name: "Show controls"}).click();
+  await page.getByLabel("Preset").selectOption("reference");
+  await expect(page).toHaveURL(/preset=reference/);
+  await expect.poll(async () => (await measure()).top).toBeCloseTo(50, 0);
+  const reference = await measure();
+  expect(reference.bottom).toBeCloseTo(500, 0);
+  expect(reference.width / reference.height).toBeCloseTo(2, 3);
+
+  const acrylic = await page.evaluate(() => {
+    const values = (selector: string): {background: string; backdrop: string} => {
       const element = document.querySelector(selector);
       if (element === null) throw new Error(`missing acrylic specimen ${selector}`);
       const styles = getComputedStyle(element);
       return {background: styles.backgroundColor, backdrop: styles.backdropFilter};
     };
-    return {
-      header: bounds(".lab-header"),
-      stage: bounds(".flow-stage"),
-      panel: bounds(".control-panel"),
-      headerAcrylic: acrylic(".lab-header"),
-      cardAcrylic: acrylic(".stage-readout > div"),
-    };
+    return {header: values(".lab-header"), card: values(".stage-readout > div")};
   });
-  expect(panoramic.stage.top).toBe(0);
-  expect(panoramic.header.top).toBe(0);
-  expect(panoramic.header.bottom).toBeGreaterThan(panoramic.stage.top);
-  expect(panoramic.panel.top).toBeCloseTo(panoramic.header.bottom, 0);
-  expect(panoramic.headerAcrylic).toEqual(panoramic.cardAcrylic);
-
-  await page.setViewportSize({width: 1024, height: 615});
-  const ordinary = await page.evaluate(() => {
-    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
-    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
-    if (header === undefined || stage === undefined) throw new Error("missing ordinary layout regions");
-    return {headerBottom: header.bottom, stageTop: stage.top};
-  });
-  expect(ordinary.stageTop).toBeCloseTo(ordinary.headerBottom, 0);
-
-  await page.setViewportSize({width: 1023, height: 575});
-  const belowWidthFloor = await page.evaluate(() => {
-    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
-    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
-    if (header === undefined || stage === undefined) throw new Error("missing minimum-width layout regions");
-    return {headerBottom: header.bottom, stageTop: stage.top};
-  });
-  expect(belowWidthFloor.stageTop).toBeCloseTo(belowWidthFloor.headerBottom, 0);
-
-  await page.setViewportSize({width: 1200, height: 667});
-  await page.getByLabel("Experiment").selectOption("reference");
-  await expect(page).toHaveURL(/preset=reference/);
-  const reference = await page.evaluate(() => {
-    const header = document.querySelector(".lab-header")?.getBoundingClientRect();
-    const stage = document.querySelector(".flow-stage")?.getBoundingClientRect();
-    if (header === undefined || stage === undefined) throw new Error("missing reference-layout regions");
-    return {headerBottom: header.bottom, stageTop: stage.top};
-  });
-  expect(reference.stageTop).toBeCloseTo(reference.headerBottom, 0);
+  expect(acrylic.header).toEqual(acrylic.card);
 });
 
 test("invalid local scenarios fail visibly without leaving the browser", async ({page}) => {

@@ -15,8 +15,17 @@
   const requestedBackend = query.get("backend") ?? "typescript";
   const requestedPreset = query.get("preset") ?? "dynamic";
   const narrowControlsQuery = window.matchMedia("(max-width: 980px)");
-  const panoramicWidthFloor = 1024;
 
+  interface SceneLayout {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+    readonly headerOverlap: number;
+  }
+
+  let labHeader: HTMLElement;
+  let flowViewport: HTMLDivElement;
   let sceneHost: HTMLDivElement;
   let scene: FoilSceneController | null = null;
   let client: ViewerWorkerClient | null = null;
@@ -34,7 +43,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let narrowViewport = $state(narrowControlsQuery.matches);
-  let panoramicViewport = $state(false);
+  let sceneLayout = $state.raw<SceneLayout>({left: 0, top: 0, width: window.innerWidth, height: window.innerHeight, headerOverlap: 0});
   let wideControlsOpen = $state(true);
   let narrowControlsOpen = $state(false);
   let teachingOpen = $state(true);
@@ -55,18 +64,44 @@
     return status === undefined || status === "running" || status === "warming" || status === "motion resolved; running" ? null : status;
   });
 
-  function updatePanoramicLayout(nextScenario: Scenario | null = scenario): void {
+  function updateSceneLayout(nextScenario: Scenario | null = scenario): void {
     const xBounds = nextScenario?.domain.bounds[0];
     const yBounds = nextScenario?.domain.bounds[1];
-    if (xBounds === undefined || yBounds === undefined) {
-      panoramicViewport = false;
-      return;
-    }
+    if (xBounds === undefined || yBounds === undefined || flowViewport === undefined || labHeader === undefined) return;
     const domainAspect = (xBounds[1] - xBounds[0]) / (yBounds[1] - yBounds[0]);
-    panoramicViewport = window.innerWidth >= panoramicWidthFloor && window.innerWidth / window.innerHeight >= domainAspect;
+    const availableWidth = flowViewport.clientWidth;
+    const availableHeight = flowViewport.clientHeight;
+    const headerHeight = labHeader.getBoundingClientRect().height;
+    const belowHeaderHeight = Math.max(0, availableHeight - headerHeight);
+    const naturalHeight = availableWidth / domainAspect;
+    if (naturalHeight <= belowHeaderHeight) {
+      sceneLayout = {
+        left: 0,
+        top: headerHeight + 0.5 * (belowHeaderHeight - naturalHeight),
+        width: availableWidth,
+        height: naturalHeight,
+        headerOverlap: 0,
+      };
+    } else if (naturalHeight < availableHeight) {
+      const top = availableHeight - naturalHeight;
+      sceneLayout = {
+        left: 0,
+        top,
+        width: availableWidth,
+        height: naturalHeight,
+        headerOverlap: Math.max(0, headerHeight - top),
+      };
+    } else {
+      const width = availableHeight * domainAspect;
+      sceneLayout = {
+        left: 0.5 * (availableWidth - width),
+        top: 0,
+        width,
+        height: availableHeight,
+        headerOverlap: headerHeight,
+      };
+    }
   }
-
-  const updatePanoramicLayoutFromViewport = (): void => updatePanoramicLayout();
 
   $effect(() => {
     if (detailStatus === null) return;
@@ -125,7 +160,7 @@
     try {
       const nextScenario = await loadPreset(preset);
       scenario = nextScenario;
-      updatePanoramicLayout(nextScenario);
+      updateSceneLayout(nextScenario);
       tuningSteps = {"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0};
       connect(nextScenario);
     } catch (reason) {
@@ -194,7 +229,7 @@
       const document = JSON.parse(await file.text()) as unknown;
       const nextScenario = await parseScenarioDocument(document);
       scenario = nextScenario;
-      updatePanoramicLayout(nextScenario);
+      updateSceneLayout(nextScenario);
       presetId = "custom";
       tuningSteps = {"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0};
       connect(nextScenario);
@@ -235,6 +270,7 @@
   onMount(() => {
     scene = new FoilSceneController(sceneHost, LAB_PALETTE, {showTracerPoints: false, trailStyle: "age-speed-alpha"});
     const resize = (): void => {
+      updateSceneLayout();
       const bounds = sceneHost.getBoundingClientRect();
       scene?.resize(bounds.width, bounds.height);
       if (snapshot !== null && scenario !== null) scene?.reframe(snapshot, scenario);
@@ -243,6 +279,8 @@
     resize();
     resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(sceneHost);
+    resizeObserver.observe(flowViewport);
+    resizeObserver.observe(labHeader);
 
     const canvas = scene.canvas;
     const releasePointer = (event: PointerEvent): void => {
@@ -276,7 +314,6 @@
     };
     draw();
     window.addEventListener("keydown", handleKey);
-    window.addEventListener("resize", updatePanoramicLayoutFromViewport);
     const updateControlsMode = (event: MediaQueryListEvent): void => { narrowViewport = event.matches; };
     narrowControlsQuery.addEventListener("change", updateControlsMode);
     const visibility = (): void => { client?.setVisible(document.visibilityState === "visible"); };
@@ -288,7 +325,6 @@
       if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKey);
-      window.removeEventListener("resize", updatePanoramicLayoutFromViewport);
       narrowControlsQuery.removeEventListener("change", updateControlsMode);
       document.removeEventListener("visibilitychange", visibility);
       client?.shutdown();
@@ -303,8 +339,8 @@
   <meta property="og:description" content="An interactive browser lab for airflow, separation, and wakes." />
 </svelte:head>
 
-<main class:panel-open={controlsOpen} class:panoramic={panoramicViewport} class="lab-shell">
-  <header class="lab-header">
+<main class:panel-open={controlsOpen} class="lab-shell">
+  <header class="lab-header" bind:this={labHeader}>
     <div class="header-left">
       <div class="header-identity">
         <h1>FoilBench</h1>
@@ -339,21 +375,27 @@
     </div>
   </header>
 
-  <section class="flow-stage" aria-label="Interactive airflow visualization">
-    <div class="scene-host" bind:this={sceneHost}></div>
-    {#if loading}
-      <div class="stage-message"><strong>Preparing the flow</strong><span>The numerical backend is warming up.</span></div>
-    {:else if error !== null}
-      <div class="stage-message stage-error"><strong>Simulation unavailable</strong><span>{error}</span></div>
-    {/if}
-    {#if statusNotice !== null}<p class="stage-status" aria-live="polite">{statusNotice}</p>{/if}
-    <div class="stage-readout">
-      <div><span>Angle of attack</span><strong>{displayedAoa.toFixed(1)}°</strong></div>
-      <div><span>Reynolds number</span><strong>{currentReynolds.toFixed(0)}</strong></div>
-      <div><span>Solver rate</span><strong>{snapshot?.stepRate?.toFixed(1) ?? "—"}<small> steps/s</small></strong></div>
-    </div>
-    <p class="drag-hint">Drag around the foil to change its angle</p>
-  </section>
+  <div class="flow-viewport" bind:this={flowViewport}>
+    <section
+      class="flow-stage"
+      aria-label="Interactive airflow visualization"
+      style={`left:${sceneLayout.left}px; top:${sceneLayout.top}px; width:${sceneLayout.width}px; height:${sceneLayout.height}px; --scene-header-overlap:${sceneLayout.headerOverlap}px;`}
+    >
+      <div class="scene-host" bind:this={sceneHost}></div>
+      {#if loading}
+        <div class="stage-message"><strong>Preparing the flow</strong><span>The numerical backend is warming up.</span></div>
+      {:else if error !== null}
+        <div class="stage-message stage-error"><strong>Simulation unavailable</strong><span>{error}</span></div>
+      {/if}
+      {#if statusNotice !== null}<p class="stage-status" aria-live="polite">{statusNotice}</p>{/if}
+      <div class="stage-readout">
+        <div><span>Angle of attack</span><strong>{displayedAoa.toFixed(1)}°</strong></div>
+        <div><span>Reynolds number</span><strong>{currentReynolds.toFixed(0)}</strong></div>
+        <div><span>Solver rate</span><strong>{snapshot?.stepRate?.toFixed(1) ?? "—"}<small> steps/s</small></strong></div>
+      </div>
+      <p class="drag-hint">Drag around the foil to change its angle</p>
+    </section>
+  </div>
 
   <aside id="simulation-controls" class:controls-open={controlsOpen} class="control-panel" aria-label="Simulation controls">
     <div class="panel-scroll">

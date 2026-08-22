@@ -78,7 +78,7 @@
 @layer components {
   .lab-shell { display: grid; grid-template: 76px minmax(0, 1fr) / minmax(0, 1fr) 0; width: 100%; height: 100%; background: var(--color-canvas); transition: grid-template-columns 180ms ease; }
   .lab-shell.panel-open { grid-template-columns: minmax(0, 1fr) 330px; }
-  .lab-header { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; padding: 9px 22px; border-bottom: 1px solid var(--color-rule); background: color-mix(in srgb, var(--color-surface) 92%, transparent); }
+  .lab-header { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; padding: 9px 22px; border-bottom: 1px solid var(--color-rule); background: color-mix(in srgb, var(--color-surface) 80%, transparent); backdrop-filter: blur(8px); }
   .header-left { grid-column: 1; display: flex; min-width: 0; align-items: center; gap: 24px; }
   .header-identity { flex: 0 0 auto; }
   .lab-header h1 { margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: .02em; }
@@ -107,21 +107,22 @@
   .controls-toggle { display: inline-grid; width: 38px; min-width: 38px; height: 36px; padding: 0; place-content: center; }
   .controls-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.5; }
 
-  .flow-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-canvas); }
+  .flow-viewport { position: relative; grid-row: 1 / -1; grid-column: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-canvas); }
+  .flow-stage { position: absolute; overflow: hidden; background: var(--color-canvas); }
   .scene-host, .scene-host canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   .stage-message { position: absolute; inset: 0; display: grid; place-content: center; gap: 4px; text-align: center; background: color-mix(in srgb, var(--color-canvas) 72%, transparent); pointer-events: none; }
   .stage-message strong { font-family: var(--font-display); font-size: 24px; }
   .stage-message span { color: var(--color-ink-muted); }
   .stage-error strong { color: var(--color-negative); }
   .stage-status { position: absolute; z-index: 2; left: 18px; bottom: 12px; max-width: calc(100% - 36px); margin: 0; overflow: hidden; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--color-rule) 70%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--color-surface) 86%, transparent); color: var(--color-ink-muted); font-family: var(--font-ui-gothic); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
-  .stage-readout { position: absolute; top: 16px; left: 18px; display: grid; grid-template-columns: repeat(3, auto); gap: 8px; pointer-events: none; }
+  .stage-readout { position: absolute; top: calc(16px + var(--scene-header-overlap, 0px)); left: 18px; display: grid; grid-template-columns: repeat(3, auto); gap: 8px; pointer-events: none; }
   .stage-readout > div { min-width: 106px; padding: 8px 10px 7px; border: 1px solid color-mix(in srgb, var(--color-rule) 70%, transparent); background: color-mix(in srgb, var(--color-surface) 80%, transparent); backdrop-filter: blur(8px); }
   .stage-readout span { display: block; margin-bottom: 2px; color: var(--color-ink-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
   .stage-readout strong { color: var(--color-flow-soft); font-family: var(--font-data); font-size: 14px; font-weight: 500; }
   .stage-readout small { color: var(--color-ink-faint); font-size: 10px; }
   .drag-hint { position: absolute; left: 50%; bottom: 12px; margin: 0; padding: 5px 10px; translate: -50% 0; border-radius: 999px; background: color-mix(in srgb, var(--color-surface) 78%, transparent); color: var(--color-ink-muted); font-size: 11px; pointer-events: none; }
 
-  .control-panel { --panel-font-section: 17px; --panel-font-card: 14px; --panel-font-control: 12px; --panel-font-caption: 10px; --panel-font-data: 11px; min-width: 0; min-height: 0; overflow: hidden; visibility: hidden; opacity: 0; border-left: 1px solid var(--color-rule); background: var(--color-surface); font-size: var(--panel-font-control); line-height: 1.4; transition: opacity 120ms ease, visibility 0s linear 180ms; }
+  .control-panel { --panel-font-section: 17px; --panel-font-card: 14px; --panel-font-control: 12px; --panel-font-caption: 10px; --panel-font-data: 11px; grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; overflow: hidden; visibility: hidden; opacity: 0; border-left: 1px solid var(--color-rule); background: var(--color-surface); font-size: var(--panel-font-control); line-height: 1.4; transition: opacity 120ms ease, visibility 0s linear 180ms; }
   .panel-open > .control-panel { visibility: visible; opacity: 1; transition-delay: 0s; }
   .panel-scroll { height: 100%; overflow-y: auto; scrollbar-color: var(--color-rule) var(--color-surface); }
   .control-section { padding: 16px 18px; border-bottom: 1px solid var(--color-rule); }
@@ -170,11 +171,6 @@
 
 }
 
-.lab-shell.panoramic .lab-header { z-index: 3; grid-row: 1; background: color-mix(in srgb, var(--color-surface) 80%, transparent); backdrop-filter: blur(8px); }
-.lab-shell.panoramic .flow-stage { grid-row: 1 / -1; grid-column: 1; }
-.lab-shell.panoramic .control-panel { grid-row: 2; grid-column: 2; }
-.lab-shell.panoramic .stage-readout { top: 92px; }
-
 @media (max-width: 980px) {
   .lab-shell, .lab-shell.panel-open { grid-template: 64px minmax(0, 1fr) / 1fr; }
   .lab-header { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; padding-inline: 15px; }
@@ -198,7 +194,7 @@
   .header-transport { height: 34px; }
   .header-transport .transport-icon { width: 34px; min-width: 34px; }
   .controls-toggle { width: 34px; min-width: 34px; height: 34px; }
-  .stage-readout { top: 9px; left: 9px; gap: 4px; }
+  .stage-readout { top: calc(9px + var(--scene-header-overlap, 0px)); left: 9px; gap: 4px; }
   .stage-readout > div { min-width: 94px; padding: 6px 7px; }
   .stage-readout > div:nth-child(3) { display: none; }
   .drag-hint { width: max-content; max-width: calc(100% - 20px); text-align: center; }
