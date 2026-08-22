@@ -1,12 +1,12 @@
 <script lang="ts">
   import {onMount} from "svelte";
 
-  import {isSolverId, SOLVER_IDS} from "../core/contracts.js";
-  import type {Scenario, SolverId} from "../core/contracts.js";
-  import type {SolverBackend, ViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "../viewer/protocol.js";
-  import {FoilSceneController, LAB_PALETTE} from "../viewer/sceneController.js";
-  import {fuseViewerStatus} from "../viewer/statusFusion.js";
-  import {ViewerWorkerClient} from "../viewer/workerClient.js";
+  import {isSolverId, SOLVER_IDS} from "foilbench-typescript/src/core/contracts.js";
+  import type {Scenario, SolverId} from "foilbench-typescript/src/core/contracts.js";
+  import type {SolverBackend, ViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "foilbench-typescript/src/viewer/protocol.js";
+  import {FoilSceneController, LAB_PALETTE} from "foilbench-typescript/src/viewer/sceneController.js";
+  import {fuseViewerStatus} from "foilbench-typescript/src/viewer/statusFusion.js";
+  import {ViewerWorkerClient} from "foilbench-typescript/src/viewer/workerClient.js";
   import {loadPreset, parseScenarioDocument, PRESETS} from "./presets.js";
 
   const query = new URLSearchParams(location.search);

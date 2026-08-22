@@ -23,3 +23,5 @@ implementations/typescript/dist-web/
 implementations/typescript/dist-types/
 implementations/typescript/public/rust-wasm/
 implementations/typescript/*.tsbuildinfo
+apps/web/dist/
+apps/web/public/rust-wasm/

@@ -1,11 +1,11 @@
-import chaoticUrl from "../../../../scenarios/airfoil/chaotic-experimental.json?url";
-import defaultUrl from "../../../../scenarios/airfoil/default.json?url";
-import fixedStallUrl from "../../../../scenarios/airfoil/fixed-stall.json?url";
-import referenceUrl from "../../../../scenarios/airfoil/reference.json?url";
-import schemaUrl from "../../../../spec/schemas/scenario.schema.json?url";
+import chaoticUrl from "../../../scenarios/airfoil/chaotic-experimental.json?url";
+import defaultUrl from "../../../scenarios/airfoil/default.json?url";
+import fixedStallUrl from "../../../scenarios/airfoil/fixed-stall.json?url";
+import referenceUrl from "../../../scenarios/airfoil/reference.json?url";
+import schemaUrl from "../../../spec/schemas/scenario.schema.json?url";
 
-import type {Scenario} from "../core/contracts.js";
-import {parseScenario} from "../core/scenario.js";
+import type {Scenario} from "foilbench-typescript/src/core/contracts.js";
+import {parseScenario} from "foilbench-typescript/src/core/scenario.js";
 
 export interface PresetDefinition {
   readonly id: string;

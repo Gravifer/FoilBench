@@ -46,7 +46,7 @@ just web-build
 just web-preview
 ```
 
-The output is written to `implementations/typescript/dist-web/` and uses the
+The output is written to `apps/web/dist/` and uses the
 repository base path `/FoilBench/`. Deployment is deliberately not enabled yet.
 
 ## Presentation policy

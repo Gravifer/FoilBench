@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {describe, expect, it} from "vitest";
 
-const spaRoot = resolve(import.meta.dirname, "../../src/spa");
+const spaRoot = resolve(import.meta.dirname, "../src");
 const theme = readFileSync(resolve(spaRoot, "theme.css"), "utf8");
 const application = readFileSync(resolve(spaRoot, "App.svelte"), "utf8");
 

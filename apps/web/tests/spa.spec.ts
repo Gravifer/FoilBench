@@ -31,7 +31,7 @@ test("curated controls and local scenario import remain browser-local", async ({
   await page.getByRole("button", {name: /^Diagnostics/}).click();
   await expect(page.getByText("Kinetic energy")).toBeVisible();
 
-  const scenarioPath = resolve(import.meta.dirname, "../../../../scenarios/airfoil/default.json");
+  const scenarioPath = resolve(import.meta.dirname, "../../../scenarios/airfoil/default.json");
   await page.locator('input[type="file"]').setInputFiles(scenarioPath);
   await expect(page.getByLabel("Preset")).toHaveValue("custom");
   await expect(page.getByText("A locally imported, schema-validated scenario.")).toBeVisible();

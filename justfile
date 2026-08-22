@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Install every currently implemented language environment.
-setup: py-setup jl-setup ts-setup rs-setup
+setup: py-setup jl-setup ts-setup web-setup rs-setup
 
 # Install the Python reference and development dependencies.
 py-setup:
@@ -22,6 +22,11 @@ ts-setup:
     @$client = [System.Net.Sockets.TcpClient]::new(); $viewerRunning = $false; try { $client.Connect('127.0.0.1', 4173); $viewerRunning = $true } catch [System.Net.Sockets.SocketException] { } finally { $client.Dispose() }; if ($viewerRunning) { throw 'FoilBench TypeScript viewer is running on port 4173. Stop ts-view before ts-setup so npm ci can replace native modules on Windows.' }
     npm --prefix implementations/typescript ci
     npm --prefix implementations/typescript run setup:browser
+
+# Install the polished static browser-lab environment.
+web-setup:
+    npm --prefix apps/web ci
+    npm --prefix apps/web run setup:browser
 
 # Fetch and build the Rust Phase 3 native and WASM workspace.
 rs-setup:
@@ -93,19 +98,19 @@ ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids" backend
 
 # Open the polished static FoilBench browser lab.
 web-view:
-    npm --prefix implementations/typescript run web
+    npm --prefix apps/web run dev
 
 # Build the GitHub Pages-shaped static browser lab without deploying it.
 web-build:
-    npm --prefix implementations/typescript run build:web:pages
+    npm --prefix apps/web run build:pages
 
 # Preview the most recent static browser-lab build.
 web-preview:
-    npm --prefix implementations/typescript run web:preview
+    npm --prefix apps/web run preview
 
 # Test the production static browser lab.
 web-test:
-    npm --prefix implementations/typescript run test:web:dist
+    npm --prefix apps/web run test:browser
 
 # Run a TypeScript Chromium benchmark matrix.
 ts-bench matrix="benchmark-matrices/smoke.json":
