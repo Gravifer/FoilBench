@@ -14,6 +14,7 @@
   const requestedSolver = query.get("solver") ?? "stable-fluids";
   const requestedBackend = query.get("backend") ?? "typescript";
   const requestedPreset = query.get("preset") ?? "dynamic";
+  const narrowControlsQuery = window.matchMedia("(max-width: 980px)");
 
   let sceneHost: HTMLDivElement;
   let scene: FoilSceneController | null = null;
@@ -31,7 +32,9 @@
   let presetId = $state(PRESETS.some((preset) => preset.id === requestedPreset) ? requestedPreset : "dynamic");
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let controlsOpen = $state(false);
+  let narrowViewport = $state(narrowControlsQuery.matches);
+  let wideControlsOpen = $state(true);
+  let narrowControlsOpen = $state(false);
   let teachingOpen = $state(true);
   let diagnosticsOpen = $state(false);
   let statusNotice = $state<string | null>(null);
@@ -43,6 +46,7 @@
   let currentReynolds = $derived(snapshot?.reynolds ?? scenario?.reynolds ?? 1000);
   let phase = $derived(fused?.phase ?? (loading ? "warming" : "failed"));
   let tuning = $derived(snapshot?.solverTuning ?? null);
+  let controlsOpen = $derived(narrowViewport ? narrowControlsOpen : wideControlsOpen);
   let detailStatus = $derived.by(() => {
     if (fused?.pendingStatus !== null && fused?.pendingStatus !== undefined) return fused.pendingStatus;
     const status = fused?.status;
@@ -187,9 +191,15 @@
     return snapshot?.diagnostics[name]?.toFixed(digits) ?? "—";
   }
 
+  function toggleControls(): void {
+    if (narrowViewport) narrowControlsOpen = !narrowControlsOpen;
+    else wideControlsOpen = !wideControlsOpen;
+  }
+
   function handleKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "Escape" && narrowViewport && narrowControlsOpen) { narrowControlsOpen = false; return; }
     if (target !== null && target.closest("input, select, textarea, button, [contenteditable='true']") !== null) return;
     if (event.key === " ") { event.preventDefault(); client?.send({kind: "pause"}); }
     else if (event.key.toLowerCase() === "r") client?.send({kind: "reset"});
@@ -210,11 +220,12 @@
     const resize = (): void => {
       const bounds = sceneHost.getBoundingClientRect();
       scene?.resize(bounds.width, bounds.height);
-      renderedRevision = -1;
+      if (snapshot !== null && scenario !== null) scene?.reframe(snapshot, scenario);
+      else renderedRevision = -1;
     };
+    resize();
     resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(sceneHost);
-    resize();
 
     const canvas = scene.canvas;
     const releasePointer = (event: PointerEvent): void => {
@@ -248,6 +259,8 @@
     };
     draw();
     window.addEventListener("keydown", handleKey);
+    const updateControlsMode = (event: MediaQueryListEvent): void => { narrowViewport = event.matches; };
+    narrowControlsQuery.addEventListener("change", updateControlsMode);
     const visibility = (): void => { client?.setVisible(document.visibilityState === "visible"); };
     document.addEventListener("visibilitychange", visibility);
     void choosePreset(presetId);
@@ -257,6 +270,7 @@
       if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
       resizeObserver?.disconnect();
       window.removeEventListener("keydown", handleKey);
+      narrowControlsQuery.removeEventListener("change", updateControlsMode);
       document.removeEventListener("visibilitychange", visibility);
       client?.shutdown();
       client?.terminate();
@@ -270,7 +284,7 @@
   <meta property="og:description" content="An interactive browser lab for airflow, separation, and wakes." />
 </svelte:head>
 
-<main class="lab-shell">
+<main class:panel-open={controlsOpen} class="lab-shell">
   <header class="lab-header">
     <div class="header-left">
       <div class="header-identity">
@@ -291,14 +305,18 @@
         <button class="transport-icon" type="button" aria-label="Reset simulation" aria-keyshortcuts="R" title="Reset (R)" onclick={() => client?.send({kind: "reset"})}><span aria-hidden="true">↺</span></button>
         <button class="transport-icon primary-action" type="button" aria-label={snapshot?.paused === true ? "Resume simulation" : "Pause simulation"} aria-keyshortcuts="Space" title={snapshot?.paused === true ? "Resume (Space)" : "Pause (Space)"} onclick={() => client?.send({kind: "pause"})}><span aria-hidden="true">{snapshot?.paused === true ? "▶︎" : "⏸︎"}</span></button>
       </div>
-      <span class="playback-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
+      <div class="playback-meta">
+        <span class="playback-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
+        <div class="header-status" class:status-running={phase === "running"} class:status-warming={phase === "warming"} class:status-paused={phase === "paused"} class:status-failed={phase === "failed"} aria-label={`Simulation ${phase}`} aria-live="polite">
+          <span class="status-bulb" aria-hidden="true"></span>
+          {#if phase !== "running"}<span class="status-label">{phase}</span>{/if}
+        </div>
+      </div>
     </div>
     <div class="header-right">
-      <div class="header-status" class:status-running={phase === "running"} class:status-warming={phase === "warming"} class:status-paused={phase === "paused"} class:status-failed={phase === "failed"} aria-live="polite">
-        <span class="status-bulb" aria-hidden="true"></span>
-        <span>{phase}</span>
-      </div>
-      <button class="mobile-control-button" type="button" aria-expanded={controlsOpen} onclick={() => controlsOpen = !controlsOpen}>Controls</button>
+      <button class="controls-toggle" type="button" aria-controls="simulation-controls" aria-expanded={controlsOpen} aria-label={controlsOpen ? "Hide controls" : "Show controls"} title={controlsOpen ? "Hide controls" : "Show controls"} onclick={toggleControls}>
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
+      </button>
     </div>
   </header>
 
@@ -318,7 +336,7 @@
     <p class="drag-hint">Drag around the foil to change its angle</p>
   </section>
 
-  <aside class:controls-open={controlsOpen} class="control-panel" aria-label="Simulation controls">
+  <aside id="simulation-controls" class:controls-open={controlsOpen} class="control-panel" aria-label="Simulation controls">
     <div class="panel-scroll">
       <section class="control-section">
         <div class="section-heading"><h2>Experiment</h2><span>{scenario?.foil.naca === undefined ? "" : `NACA ${scenario.foil.naca}`}</span></div>

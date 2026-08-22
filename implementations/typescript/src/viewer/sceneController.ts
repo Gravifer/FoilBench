@@ -103,6 +103,11 @@ export class FoilSceneController {
     this.renderer.setSize(this.width, this.height, false);
   }
 
+  public reframe(snapshot: ViewerSnapshot, scenario: Scenario): void {
+    this.updateCamera(snapshot, scenario);
+    this.renderer.render(this.scene, this.camera);
+  }
+
   public render(snapshot: ViewerSnapshot, scenario: Scenario): void {
     this.updateCamera(snapshot, scenario);
     this.updateGeometry(this.paths.geometry, snapshot.pathSegments);
