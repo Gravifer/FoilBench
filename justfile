@@ -108,8 +108,8 @@ web-build:
 web-preview:
     npm --prefix apps/web run preview
 
-# Test the production static browser lab.
-web-test:
+# Build and test the production static browser lab.
+web-test: web-build
     npm --prefix apps/web run test:browser
 
 # Run a TypeScript Chromium benchmark matrix.
