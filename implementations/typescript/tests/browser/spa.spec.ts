@@ -70,5 +70,5 @@ test("invalid local scenarios fail visibly without leaving the browser", async (
     mimeType: "application/json",
     buffer: Buffer.from("{}", "utf8"),
   });
-  await expect(page.getByText("Scenario rejected:", {exact: false})).toBeVisible();
+  await expect(page.locator("footer").getByText("Scenario rejected:", {exact: false})).toBeVisible();
 });
