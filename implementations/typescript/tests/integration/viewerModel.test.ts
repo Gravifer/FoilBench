@@ -83,10 +83,13 @@ describe("headless viewer model", () => {
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
     const scenario = parseScenario(raw, schema);
     const model = new ViewerModel(scenario, "stable-fluids");
+    const spaModel = new ViewerModel(scenario, "stable-fluids", undefined, "spa");
     const reference = model.snapshot(model.createSnapshotStorage());
     const spa = model.spaSnapshot(model.createSpaSnapshotStorage());
     expect("pathAges" in reference).toBe(false);
     expect(spa.pathAges.length).toBe(spa.pathSegments.length / 4);
+    expect(model.tracers.boundaryExitTrailPolicy).toBe("clear");
+    expect(spaModel.tracers.boundaryExitTrailPolicy).toBe("age-out");
   });
   it("uses quarter-decade Reynolds controls and measures owner cycles", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;

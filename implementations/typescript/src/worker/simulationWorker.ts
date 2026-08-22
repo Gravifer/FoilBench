@@ -30,7 +30,7 @@ async function initialize(command: Extract<ViewerCommand, {readonly kind: "initi
     presentationProfile = command.presentationProfile ?? "reference";
     const factory = command.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : undefined;
     if (shuttingDown) return;
-    model = new ViewerModel(command.scenario, command.solverId, factory);
+    model = new ViewerModel(command.scenario, command.solverId, factory, presentationProfile);
     if (command.startState !== undefined) {
       model.restartInteractive(command.startState.angleDegrees, command.startState.reynolds);
       const direction = command.startState.tuningSteps < 0 ? -1 : 1;

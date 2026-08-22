@@ -98,6 +98,26 @@ describe("visible tracer contract", () => {
     expect(tracers.recycleCounters.boundary_exit).toBe(1);
   });
 
+  it("can retire an outlet trail gradually without connecting it to the inlet", () => {
+    const immediate = new TracerSystem(scenario, 1, 5);
+    const retiring = new TracerSystem(scenario, 1, 5);
+    retiring.setBoundaryExitTrailPolicy("age-out");
+    for (const tracers of [immediate, retiring]) {
+      tracers.positions[0] = 3; tracers.positions[1] = 1;
+      tracers.ages[0] = 0; tracers.lifetimes[0] = 10;
+      for (let step = 0; step < 11; step += 1) tracers.advance(new SampleSolver(() => [1, 0]), 0.1);
+      expect(tracers.positions[0]).toBeLessThan(-3.9);
+      expect(tracers.recycleCounters.boundary_exit).toBe(1);
+    }
+    const immediatePath = immediate.segments();
+    const retiringPath = retiring.segments();
+    expect([...immediatePath].some((value, index) => index % 2 === 0 && value > 3.7)).toBe(false);
+    expect([...retiringPath].some((value, index) => index % 2 === 0 && value > 3.7)).toBe(true);
+    for (let scalar = 0; scalar < retiringPath.length; scalar += 4) {
+      expect(Math.abs((retiringPath[scalar + 2] ?? 0) - (retiringPath[scalar] ?? 0))).toBeLessThan(1);
+    }
+  });
+
   it("expires display tracers across the full domain but not material tracers", () => {
     const display = new TracerSystem(scenario, 1, 3);
     display.positions[0] = 2; display.positions[1] = 1;

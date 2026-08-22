@@ -4,6 +4,7 @@ import {bounds2d, dimensions} from "../core/grid.js";
 import {Pcg32} from "../core/rng.js";
 
 export type TracerMode = "display" | "material";
+export type BoundaryExitTrailPolicy = "clear" | "age-out";
 export type TracerRecycleReason = "boundary_exit" | "lifetime_expiry" | "invalid_collision" | "forced_recovery" | "scenario_reset" | "periodic_wrap";
 type Placement = "domain" | "inlet";
 
@@ -38,6 +39,7 @@ export class TracerSystem {
   private readonly foil: NacaFoil;
   private readonly counters = makeCounters();
   private currentMode: TracerMode = "display";
+  private boundaryExitTrailPolicyValue: BoundaryExitTrailPolicy = "clear";
   private cursor = 0;
 
   public constructor(private readonly scenario: Scenario, count = defaultTracerCount(scenario), private readonly depth = 12) {
@@ -57,6 +59,7 @@ export class TracerSystem {
   }
 
   public get mode(): TracerMode { return this.currentMode; }
+  public get boundaryExitTrailPolicy(): BoundaryExitTrailPolicy { return this.boundaryExitTrailPolicyValue; }
   public get recycleCounters(): TracerRecycleCounters { return {...this.counters}; }
   public get maximumSegmentScalars(): number { return 4 * this.count * (this.depth - 1); }
   public get maximumSegmentCount(): number { return this.count * (this.depth - 1); }
@@ -70,6 +73,10 @@ export class TracerSystem {
   public toggleMode(): TracerMode {
     this.setMode(this.currentMode === "display" ? "material" : "display");
     return this.currentMode;
+  }
+
+  public setBoundaryExitTrailPolicy(policy: BoundaryExitTrailPolicy): void {
+    this.boundaryExitTrailPolicyValue = policy;
   }
 
   public reseed(angleDegrees: number, reason: "forced_recovery" | "scenario_reset" | null = null): void {
@@ -115,7 +122,7 @@ export class TracerSystem {
     this.generations[index] = (this.generations[index] ?? 0) + 1;
     this.place(index, angleDegrees, placement);
     this.resetLifetime(index, false);
-    this.resetHistory(index);
+    if (reason !== "boundary_exit" || this.boundaryExitTrailPolicyValue === "clear") this.resetHistory(index);
     this.counters[reason] += 1;
   }
 

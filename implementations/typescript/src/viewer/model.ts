@@ -4,7 +4,7 @@ import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {createSolver} from "../solvers/factory.js";
-import type {SpaViewerSnapshot, ViewerSnapshot} from "./protocol.js";
+import type {SpaViewerSnapshot, ViewerPresentationProfile, ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
 const POSE_SAMPLE_WINDOW_MILLISECONDS = 80;
@@ -103,11 +103,12 @@ export class ViewerModel {
   private readonly tuningValues = new Map<SolverId, InteractiveTuningValue>();
   private readonly presentationFoil: NacaFoil;
 
-  public constructor(public readonly scenario: Scenario, solverId: SolverId, private readonly solverFactory: SolverFactory = createSolver) {
+  public constructor(public readonly scenario: Scenario, solverId: SolverId, private readonly solverFactory: SolverFactory = createSolver, presentationProfile: ViewerPresentationProfile = "reference") {
     this.solver = this.solverFactory(solverId);
     this.solver.initialize(scenario, scenario.seed);
     this.rememberTuning(this.solver);
     this.tracers = new TracerSystem(scenario);
+    this.tracers.setBoundaryExitTrailPolicy(presentationProfile === "spa" ? "age-out" : "clear");
     this.presentationFoil = new NacaFoil(scenario.foil);
     this.presentation = {
       vorticityVisible: true,
