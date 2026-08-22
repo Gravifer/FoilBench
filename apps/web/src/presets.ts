@@ -25,11 +25,18 @@ export const PRESETS: readonly PresetDefinition[] = [
 let schemaPromise: Promise<object> | null = null;
 
 async function scenarioSchema(): Promise<object> {
-  schemaPromise ??= fetch(schemaUrl).then(async (response) => {
+  if (schemaPromise !== null) return schemaPromise;
+  const pending = fetch(schemaUrl).then(async (response) => {
     if (!response.ok) throw new Error(`scenario schema failed to load (${String(response.status)})`);
     return response.json() as Promise<object>;
   });
-  return schemaPromise;
+  schemaPromise = pending;
+  try {
+    return await pending;
+  } catch (reason) {
+    if (schemaPromise === pending) schemaPromise = null;
+    throw reason;
+  }
 }
 
 export async function parseScenarioDocument(document: unknown): Promise<Scenario> {

@@ -8,6 +8,7 @@
   import {FoilSceneController, LAB_PALETTE} from "foilbench-typescript/src/viewer/sceneController.js";
   import {fuseViewerStatus} from "foilbench-typescript/src/viewer/statusFusion.js";
   import {ViewerWorkerClient} from "foilbench-typescript/src/viewer/workerClient.js";
+  import {LatestRequestGate} from "./latestRequest.js";
   import {loadPreset, parseScenarioDocument, PRESETS} from "./presets.js";
 
   const query = new URLSearchParams(location.search);
@@ -33,6 +34,7 @@
   let animationFrame = 0;
   let renderedRevision = -1;
   let dragging = false;
+  const scenarioRequests = new LatestRequestGate();
 
   let scenario = $state.raw<Scenario | null>(null);
   let snapshot = $state.raw<SpaViewerSnapshot | null>(null);
@@ -158,7 +160,9 @@
     loading = true;
     error = null;
     try {
-      const nextScenario = await loadPreset(preset);
+      const result = await scenarioRequests.run(() => loadPreset(preset));
+      if (!result.current) return;
+      const nextScenario = result.value;
       scenario = nextScenario;
       updateSceneLayout(nextScenario);
       tuningSteps = {"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0};
@@ -226,8 +230,12 @@
     loading = true;
     error = null;
     try {
-      const document = JSON.parse(await file.text()) as unknown;
-      const nextScenario = await parseScenarioDocument(document);
+      const result = await scenarioRequests.run(async () => {
+        const document = JSON.parse(await file.text()) as unknown;
+        return parseScenarioDocument(document);
+      });
+      if (!result.current) return;
+      const nextScenario = result.value;
       scenario = nextScenario;
       updateSceneLayout(nextScenario);
       presetId = "custom";
@@ -321,6 +329,7 @@
     void choosePreset(presetId);
 
     return () => {
+      scenarioRequests.invalidate();
       cancelAnimationFrame(animationFrame);
       if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
       resizeObserver?.disconnect();
