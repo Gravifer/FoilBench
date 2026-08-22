@@ -370,3 +370,14 @@ observed or right-censored recovery evidence. See the
 The accepted PCG32 Float32 conversion is retained even though it can rarely
 round to `1.0`. Correcting that behavior changes deterministic streams and is
 therefore explicitly deferred to Revision 6 with new conformance vectors.
+
+## Post-Phase 3: static browser lab
+
+**Status:** Implemented locally; deployment deferred.
+
+The student-facing FoilBench SPA builds on the accepted TypeScript worker and
+Rust/WASM production path without changing Revision 5 solver semantics. It
+adds a responsive Svelte presentation, curated scenario controls, local
+schema-validated scenario import, semantic 3Blue1Brown-inspired design tokens,
+and a GitHub Pages-shaped static build. The original Three.js viewer remains
+the cross-language parity reference. See [the browser-lab architecture](web-spa.md).

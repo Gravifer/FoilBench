@@ -93,6 +93,21 @@ for solvers, left-drag for foil pose, `Space` pause, `R` reset, `+/-/0`
 Reynolds control, `[/]` solver tuning, and `V/T/C` for vorticity, tracer mode,
 and diagnostic cropping.
 
+### Static browser lab
+
+The polished FoilBench SPA is a separate, canvas-first presentation built with
+Svelte, Tailwind, Three.js, and the existing simulation worker. It defaults to
+the Rust/WASM backend and retains TypeScript as a selectable comparison backend:
+
+```powershell
+just web-view
+```
+
+`just web-build` produces a base-path-safe static build for `/FoilBench/`, and
+`just web-preview` serves that build locally. No web server backend is required,
+and deployment is intentionally not enabled yet. See the
+[static browser lab architecture](docs/web-spa.md).
+
 ## Rust/WASM
 
 The platform-neutral core implements PCG32, validated typed scenarios, NACA

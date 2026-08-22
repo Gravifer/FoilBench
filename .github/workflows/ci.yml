@@ -45,8 +45,11 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - run: npm run build:web:pages
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser:dist
+        env: {CI: 'true'}
+      - run: npm run test:web:dist
         env: {CI: 'true'}
 
   rust:
