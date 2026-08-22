@@ -269,8 +269,8 @@
       </label>
     </div>
     <div class="header-transport" aria-label="Simulation transport">
-      <button type="button" aria-keyshortcuts="R" onclick={() => client?.send({kind: "reset"})}><span>Reset</span><kbd>R</kbd></button>
-      <button class="primary-action" type="button" aria-keyshortcuts="Space" onclick={() => client?.send({kind: "pause"})}><span>{snapshot?.paused === true ? "Resume" : "Pause"}</span><kbd>Space</kbd></button>
+      <button class="transport-icon" type="button" aria-label="Reset simulation" aria-keyshortcuts="R" title="Reset (R)" onclick={() => client?.send({kind: "reset"})}><span aria-hidden="true">↻</span></button>
+      <button class="transport-icon primary-action" type="button" aria-label={snapshot?.paused === true ? "Resume simulation" : "Pause simulation"} aria-keyshortcuts="Space" title={snapshot?.paused === true ? "Resume (Space)" : "Pause (Space)"} onclick={() => client?.send({kind: "pause"})}><span aria-hidden="true">{snapshot?.paused === true ? "▶︎" : "⏸︎"}</span></button>
     </div>
     <div class="header-right">
       <div class="header-status" aria-live="polite">

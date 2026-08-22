@@ -61,7 +61,7 @@ test("phone layout keeps the simulation playable behind a controls drawer", asyn
   await page.getByRole("button", {name: "Controls"}).click();
   await expect(page.getByLabel("Preset")).toBeVisible();
   await expect(page.getByLabel("Angle of attack")).toBeVisible();
-  await expect(page.getByRole("button", {name: "Pause"})).toBeVisible({timeout: 30_000});
+  await expect(page.getByRole("button", {name: "Pause simulation"})).toBeVisible({timeout: 30_000});
 });
 
 test("the centered transport, key hints, and solver-aware tuning remain semantic", async ({page}) => {
@@ -70,6 +70,9 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
 
   const header = page.locator("header");
   const transport = page.getByLabel("Simulation transport");
+  await expect(transport.getByRole("button", {name: "Reset simulation"})).toHaveAttribute("title", "Reset (R)");
+  await expect(transport.getByRole("button", {name: "Pause simulation"})).toHaveAttribute("title", "Pause (Space)");
+  await expect(transport.locator("kbd")).toHaveCount(0);
   const [headerBox, transportBox] = await Promise.all([header.boundingBox(), transport.boundingBox()]);
   expect(headerBox).not.toBeNull();
   expect(transportBox).not.toBeNull();

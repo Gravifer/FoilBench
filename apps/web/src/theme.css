@@ -83,7 +83,7 @@
   .header-preset { display: grid; width: min(180px, 32vw); gap: 3px; color: var(--color-ink-faint); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
   .header-preset select { height: 30px; padding: 4px 27px 4px 8px; font-size: 11px; text-transform: none; letter-spacing: normal; }
   .header-transport { display: flex; justify-self: center; gap: 7px; }
-  .header-transport button { display: inline-flex; min-width: 92px; height: 34px; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px 6px 11px; }
+  .header-transport .transport-icon { display: inline-grid; width: 38px; min-width: 38px; height: 34px; padding: 0; place-content: center; font-family: "Noto Sans Symbols 2", "Noto Sans Symbols", "Segoe UI Symbol", sans-serif; font-size: 18px; font-variant-emoji: text; line-height: 1; }
   .header-transport .primary-action { border-color: var(--color-interaction); background: color-mix(in srgb, var(--color-interaction) 14%, var(--color-surface-raised)); color: var(--color-ink); }
   .header-right { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 10px; }
   .header-status { display: flex; align-items: center; gap: 8px; color: var(--color-ink-muted); font-family: var(--font-data); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
@@ -163,7 +163,7 @@
   .lab-header { grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-inline: 15px; }
   .header-preset { display: none; }
   .mobile-preset-field { display: block; margin-bottom: 10px; }
-  .header-transport button { min-width: 78px; }
+  .header-transport .transport-icon { width: 36px; min-width: 36px; }
   .mobile-control-button { display: block; margin-left: 4px; padding: 7px 10px; }
   .control-panel { position: fixed; z-index: 10; top: 64px; right: 0; bottom: 32px; width: min(350px, 92vw); border-top: 1px solid var(--color-rule); translate: 100% 0; transition: translate 180ms ease; box-shadow: -10px 0 30px #0008; }
   .control-panel.controls-open { translate: 0 0; }
@@ -173,10 +173,10 @@
 
 @media (max-width: 560px) {
   .lab-header { grid-template-columns: minmax(0, 1fr) auto auto; padding-inline: 10px; }
-  .lab-header p, .header-status, .header-transport kbd { display: none; }
+  .lab-header p, .header-status { display: none; }
   .lab-header h1 { font-size: 21px; }
   .header-transport { gap: 4px; }
-  .header-transport button { min-width: auto; height: 32px; padding: 5px 8px; }
+  .header-transport .transport-icon { width: 34px; min-width: 34px; height: 32px; }
   .stage-readout { top: 9px; left: 9px; gap: 4px; }
   .stage-readout > div { min-width: 94px; padding: 6px 7px; }
   .stage-readout > div:nth-child(3), .stage-readout > div:nth-child(4) { display: none; }
