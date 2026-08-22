@@ -39,6 +39,20 @@ describe("headless viewer model", () => {
     expect(model.paused).toBe(false);
     expect(model.snapshot().diagnosticMode).toBe("every-step");
   });
+  it("starts a backend replacement at the authoritative interactive pose", async () => {
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
+    const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
+    const scenario = parseScenario(raw, schema);
+    const model = new ViewerModel(scenario, "stable-fluids");
+    model.restartInteractive(-12, 5000);
+    const snapshot = model.snapshot();
+    expect(snapshot.time).toBe(0);
+    expect(snapshot.angleDegrees).toBe(-12);
+    expect(snapshot.reynolds).toBe(5000);
+    expect(snapshot.scheduleActive).toBe(false);
+    expect(snapshot.status).toContain("backend restart");
+    expect(snapshot.tracerPositions.every(Number.isFinite)).toBe(true);
+  });
   it("keeps diagnostic cadence and per-solver tuning as presentation state", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;

@@ -91,6 +91,22 @@ jl-view scenario="scenarios/airfoil/default.json" solver="stable-fluids":
 ts-view scenario="scenarios/airfoil/default.json" solver="stable-fluids" backend="typescript":
     npm --prefix implementations/typescript run view -- "{{ scenario }}" "{{ solver }}" "{{ backend }}"
 
+# Open the polished static FoilBench browser lab.
+web-view:
+    npm --prefix implementations/typescript run web
+
+# Build the GitHub Pages-shaped static browser lab without deploying it.
+web-build:
+    npm --prefix implementations/typescript run build:web:pages
+
+# Preview the most recent static browser-lab build.
+web-preview:
+    npm --prefix implementations/typescript run web:preview
+
+# Test the production static browser lab.
+web-test:
+    npm --prefix implementations/typescript run test:web:dist
+
 # Run a TypeScript Chromium benchmark matrix.
 ts-bench matrix="benchmark-matrices/smoke.json":
     npm --prefix implementations/typescript run bench -- "{{ matrix }}"

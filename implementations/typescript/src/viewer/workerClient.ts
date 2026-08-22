@@ -1,6 +1,7 @@
 import type {Scenario, SolverId} from "../core/contracts.js";
 import type {
   SolverBackend,
+  ViewerStartState,
   ViewerCommandInput,
   ViewerEvent,
   ViewerSnapshot,
@@ -51,8 +52,11 @@ export class ViewerWorkerClient {
     return (): void => { this.listeners.delete(listener); };
   }
 
-  public initialize(scenario: Scenario, solverId: SolverId, backend: SolverBackend): void {
-    this.send({kind: "initialize", scenario, solverId, backend}, true);
+  public initialize(scenario: Scenario, solverId: SolverId, backend: SolverBackend, startState?: ViewerStartState): void {
+    const command: ViewerCommandInput = startState === undefined
+      ? {kind: "initialize", scenario, solverId, backend}
+      : {kind: "initialize", scenario, solverId, backend, startState};
+    this.send(command, true);
   }
 
   public send(command: ViewerCommandInput, allowBeforeReady = false): void {

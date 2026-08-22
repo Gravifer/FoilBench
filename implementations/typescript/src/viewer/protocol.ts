@@ -3,8 +3,14 @@ import type {TracerRecycleCounters} from "./tracers.js";
 
 export type SolverBackend = "typescript" | "rust-wasm";
 
+export interface ViewerStartState {
+  readonly angleDegrees: number;
+  readonly reynolds: number;
+  readonly tuningSteps: number;
+}
+
 export type ViewerCommand =
-  | {readonly kind: "initialize"; readonly sequence: number; readonly scenario: Scenario; readonly solverId: SolverId; readonly backend: SolverBackend}
+  | {readonly kind: "initialize"; readonly sequence: number; readonly scenario: Scenario; readonly solverId: SolverId; readonly backend: SolverBackend; readonly startState?: ViewerStartState}
   | {readonly kind: "pause" | "reset" | "release-angle" | "toggle-vorticity" | "toggle-crop" | "toggle-tracers" | "toggle-diagnostics"; readonly sequence: number}
   | {readonly kind: "shutdown"; readonly sequence: number}
   | {readonly kind: "switch"; readonly sequence: number; readonly solverId: SolverId}

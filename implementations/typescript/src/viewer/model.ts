@@ -238,6 +238,29 @@ export class ViewerModel {
     this.clearMeasurements();
   }
 
+  public restartInteractive(angleDegrees: number, reynolds: number): void {
+    if (!Number.isFinite(angleDegrees) || !Number.isFinite(reynolds)) throw new RangeError("interactive restart values must be finite");
+    const selectedAngle = Math.max(-30, Math.min(30, angleDegrees));
+    const selectedReynolds = Math.max(50, Math.min(100_000, reynolds));
+    this.solver.restart(this.scenario, this.scenario.seed, {time: 0, angleDegrees: selectedAngle, reynolds: selectedReynolds});
+    this.time = 0;
+    this.manualAngle = selectedAngle;
+    this.angularVelocity = 0;
+    this.dragging = false;
+    this.poseSamples = [];
+    this.lastPoseReceivedAt = null;
+    this.disablePoseOnly();
+    this.presentation.recoveryReason = "backend_restart";
+    this.presentation.recoveryStage = "restart";
+    this.playbackRate = Math.max(0.5, Math.min(2, (selectedReynolds / this.scenario.reynolds) ** Math.log10(1.5)));
+    this.failureTimes = [];
+    this.recoveryPending = false;
+    this.warmValidationPending = false;
+    this.tracers.reseed(selectedAngle, "scenario_reset");
+    this.status = "backend restart; warming";
+    this.clearMeasurements();
+  }
+
   public switchSolver(id: SolverId): boolean {
     if (id === this.solver.info.id) return true;
     const incoming = this.solverFactory(id);

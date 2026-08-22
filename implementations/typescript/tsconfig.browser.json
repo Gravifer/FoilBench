@@ -14,6 +14,7 @@
     "src/viewer/main.ts",
     "src/viewer/sceneController.ts",
     "src/viewer/workerClient.ts",
+    "src/spa/**/*.ts",
     "src/worker/**/*.ts",
     "src/wasm/**/*.ts",
     "src/benchmark/browserEntry.ts",

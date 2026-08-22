@@ -43,7 +43,7 @@ interface WasmSolverBinding {
 }
 
 interface WasmModule {
-  default(input?: URL): Promise<unknown>;
+  default(input?: {readonly module_or_path: URL} | URL): Promise<unknown>;
   WasmSolver: new (scenarioJson: string, solverId: string, seed: number) => WasmSolverBinding;
 }
 
@@ -129,10 +129,11 @@ let modulePromise: Promise<WasmModule> | null = null;
 
 export async function loadRustWasmSolverFactory(): Promise<(id: SolverId) => FlowSolver> {
   modulePromise ??= (async (): Promise<WasmModule> => {
-    const script = new URL("/rust-wasm/foilbench_wasm.js", self.location.origin).href;
+    const publicBase = new URL(import.meta.env.BASE_URL, self.location.origin);
+    const script = new URL("rust-wasm/foilbench_wasm.js", publicBase).href;
     const imported: unknown = await import(/* @vite-ignore */ script);
     const module = imported as WasmModule;
-    await module.default(new URL("/rust-wasm/foilbench_wasm_bg.wasm", self.location.origin));
+    await module.default({module_or_path: new URL("rust-wasm/foilbench_wasm_bg.wasm", publicBase)});
     return module;
   })();
   const module = await modulePromise;

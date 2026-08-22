@@ -29,6 +29,11 @@ async function initialize(command: Extract<ViewerCommand, {readonly kind: "initi
     const factory = command.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : undefined;
     if (shuttingDown) return;
     model = new ViewerModel(command.scenario, command.solverId, factory);
+    if (command.startState !== undefined) {
+      model.restartInteractive(command.startState.angleDegrees, command.startState.reynolds);
+      const direction = command.startState.tuningSteps < 0 ? -1 : 1;
+      for (let index = 0; index < Math.abs(command.startState.tuningSteps); index += 1) model.adjustSolverTuning(direction);
+    }
     snapshotStorage = model.createSnapshotStorage();
     model.appliedCommand = command.sequence;
     lastCycleWall = performance.now();
