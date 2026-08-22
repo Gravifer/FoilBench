@@ -100,6 +100,16 @@ test("phone layout keeps the simulation playable behind a controls drawer", asyn
   await expect(controls).toHaveAttribute("aria-expanded", "false");
   await controls.click();
   await expect(page.getByRole("button", {name: "Hide controls"})).toHaveAttribute("aria-expanded", "true");
+  const acrylic = await page.evaluate(() => {
+    const values = (selector: string): {background: string; backdrop: string} => {
+      const element = document.querySelector(selector);
+      if (element === null) throw new Error(`missing acrylic specimen ${selector}`);
+      const styles = getComputedStyle(element);
+      return {background: styles.backgroundColor, backdrop: styles.backdropFilter};
+    };
+    return {drawer: values(".control-panel"), card: values(".stage-readout > div")};
+  });
+  expect(acrylic.drawer).toEqual(acrylic.card);
   await expect(page.getByLabel("Preset")).toBeVisible();
   await expect(page.getByLabel("Angle of attack")).toBeVisible();
   await expect(page.getByRole("button", {name: "Pause simulation"})).toBeVisible({timeout: 30_000});

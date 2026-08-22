@@ -178,7 +178,7 @@
   .mobile-preset-field { display: block; margin-bottom: 10px; }
   .header-playback { width: 36px; }
   .header-transport .transport-icon { width: 36px; min-width: 36px; }
-  .control-panel { position: fixed; z-index: 10; top: 64px; right: 0; bottom: 0; width: min(350px, 92vw); overflow: visible; visibility: hidden; border-top: 1px solid var(--color-rule); translate: 100% 0; transition: opacity 120ms ease, visibility 0s linear 180ms, translate 180ms ease; box-shadow: -10px 0 30px #0008; }
+  .control-panel { position: fixed; z-index: 10; top: 64px; right: 0; bottom: 0; width: min(350px, 92vw); overflow: visible; visibility: hidden; border-top: 1px solid var(--color-rule); background: color-mix(in srgb, var(--color-surface) 80%, transparent); backdrop-filter: blur(8px); translate: 100% 0; transition: opacity 120ms ease, visibility 0s linear 180ms, translate 180ms ease; box-shadow: -10px 0 30px #0008; }
   .panel-open > .control-panel { visibility: visible; translate: 0 0; transition-delay: 0s; }
   .stage-readout { grid-template-columns: repeat(2, auto); }
 }
