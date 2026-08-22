@@ -2,21 +2,21 @@ import {expect, test} from "@playwright/test";
 import {Buffer} from "node:buffer";
 import {resolve} from "node:path";
 
-test("static SPA runs Rust/WASM and retains the TypeScript comparison backend", async ({page}) => {
+test("static SPA defaults to TypeScript and retains the Rust/WASM comparison backend", async ({page}) => {
   await page.goto("./");
   await expect(page.getByRole("heading", {level: 1, name: "FoilBench"})).toBeVisible();
   await expect(page.locator("canvas")).toBeVisible();
-  await expect(page.getByText("Rust / WASM", {exact: true}).first()).toBeVisible();
+  await expect(page.getByText("TypeScript", {exact: true}).first()).toBeVisible();
   await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible({timeout: 30_000});
 
   const lbm = page.getByRole("button", {name: "D2Q9 LBM"});
   await lbm.click();
   await expect(lbm).toHaveClass(/active/, {timeout: 30_000});
   await page.getByRole("button", {name: "Stable Fluids"}).click();
-  await page.getByRole("button", {name: "TypeScript", exact: true}).click();
-  await expect(page.getByText("TypeScript", {exact: true}).first()).toBeVisible();
+  await page.getByRole("button", {name: "Rust / WASM", exact: true}).click();
+  await expect(page.getByText("Rust / WASM", {exact: true}).first()).toBeVisible();
   await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible({timeout: 30_000});
-  await expect(page).toHaveURL(/backend=typescript/);
+  await expect(page).toHaveURL(/backend=rust-wasm/);
 });
 
 test("curated controls and local scenario import remain browser-local", async ({page}) => {

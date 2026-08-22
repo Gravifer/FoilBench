@@ -96,8 +96,9 @@ and diagnostic cropping.
 ### Static browser lab
 
 The polished FoilBench SPA is a separate, canvas-first presentation built with
-Svelte, Tailwind, Three.js, and the existing simulation worker. It defaults to
-the Rust/WASM backend and retains TypeScript as a selectable comparison backend:
+Svelte, Tailwind, Three.js, and the existing simulation worker. During the SPA
+polishing stage it defaults to TypeScript, with Rust/WASM retained as a
+selectable comparison backend:
 
 ```powershell
 just web-view

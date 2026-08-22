@@ -18,8 +18,9 @@ remote simulation process.
 
 The browser supports two numerical backends:
 
-- Rust/WASM is the default production path.
-- TypeScript remains an independent comparison implementation.
+- TypeScript is the development-phase default while the SPA is polished.
+- Rust/WASM remains the intended production path and is selectable for direct
+  comparison.
 
 Warm switching is available among solver families within one backend. Changing
 backend is intentionally a cold restart: it preserves the authoritative foil

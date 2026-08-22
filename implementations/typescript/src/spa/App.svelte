@@ -11,7 +11,7 @@
 
   const query = new URLSearchParams(location.search);
   const requestedSolver = query.get("solver") ?? "stable-fluids";
-  const requestedBackend = query.get("backend") ?? "rust-wasm";
+  const requestedBackend = query.get("backend") ?? "typescript";
   const requestedPreset = query.get("preset") ?? "dynamic";
 
   let sceneHost: HTMLDivElement;
@@ -26,7 +26,7 @@
   let snapshot = $state.raw<ViewerSnapshot | null>(null);
   let statusEvent = $state.raw<ViewerStatusEvent | null>(null);
   let solverId = $state<SolverId>(isSolverId(requestedSolver) ? requestedSolver : "stable-fluids");
-  let backend = $state<SolverBackend>(requestedBackend === "typescript" ? "typescript" : "rust-wasm");
+  let backend = $state<SolverBackend>(requestedBackend === "rust-wasm" ? "rust-wasm" : "typescript");
   let presetId = $state(PRESETS.some((preset) => preset.id === requestedPreset) ? requestedPreset : "dynamic");
   let loading = $state(true);
   let error = $state<string | null>(null);
