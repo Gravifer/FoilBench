@@ -56,6 +56,42 @@ test("semantic design tokens replace Tailwind defaults", async ({page}) => {
   await expect.poll(async () => page.evaluate(() => document.fonts.check('12px "CMU Sans Serif"'))).toBe(true);
 });
 
+test("the control panel uses a deliberate compact type scale", async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 720});
+  await page.goto("./?backend=typescript");
+  await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
+  const sizes = await page.locator(".control-panel").evaluate((panel) => {
+    const size = (selector: string): string => {
+      const element = panel.querySelector(selector);
+      if (element === null) throw new Error(`missing panel type specimen ${selector}`);
+      return getComputedStyle(element).fontSize;
+    };
+    return {
+      section: size(".section-heading h2"),
+      card: size(".explanation-card > button"),
+      caption: size(".field-label"),
+      data: size(".range-label output"),
+      controls: [
+        size(".field-note"),
+        size(".file-button"),
+        size(".solver-grid button"),
+        size(".segmented button"),
+        size(".range-label"),
+        size(".tuning-buttons button"),
+        size(".toggle-grid button"),
+        size(".explanation-copy p"),
+      ],
+    };
+  });
+  expect(sizes).toEqual({
+    section: "17px",
+    card: "14px",
+    caption: "10px",
+    data: "11px",
+    controls: Array<string>(8).fill("12px"),
+  });
+});
+
 test("phone layout keeps the simulation playable behind a controls drawer", async ({page}) => {
   await page.setViewportSize({width: 390, height: 844});
   await page.goto("./?backend=typescript");

@@ -121,50 +121,50 @@
   .stage-readout small { color: var(--color-ink-faint); font-size: 10px; }
   .drag-hint { position: absolute; left: 50%; bottom: 12px; margin: 0; padding: 5px 10px; translate: -50% 0; border-radius: 999px; background: color-mix(in srgb, var(--color-surface) 78%, transparent); color: var(--color-ink-muted); font-size: 11px; pointer-events: none; }
 
-  .control-panel { min-width: 0; min-height: 0; overflow: hidden; visibility: hidden; opacity: 0; border-left: 1px solid var(--color-rule); background: var(--color-surface); transition: opacity 120ms ease, visibility 0s linear 180ms; }
+  .control-panel { --panel-font-section: 17px; --panel-font-card: 14px; --panel-font-control: 12px; --panel-font-caption: 10px; --panel-font-data: 11px; min-width: 0; min-height: 0; overflow: hidden; visibility: hidden; opacity: 0; border-left: 1px solid var(--color-rule); background: var(--color-surface); font-size: var(--panel-font-control); line-height: 1.4; transition: opacity 120ms ease, visibility 0s linear 180ms; }
   .panel-open > .control-panel { visibility: visible; opacity: 1; transition-delay: 0s; }
   .panel-scroll { height: 100%; overflow-y: auto; scrollbar-color: var(--color-rule) var(--color-surface); }
   .control-section { padding: 16px 18px; border-bottom: 1px solid var(--color-rule); }
   .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px; }
-  .section-heading h2 { margin: 0; font-family: var(--font-display); font-size: 17px; }
-  .section-heading span { color: var(--color-ink-faint); font-family: var(--font-data); font-size: 10px; }
-  .field-label { display: block; margin-bottom: 5px; color: var(--color-ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .section-heading h2 { margin: 0; font-family: var(--font-display); font-size: var(--panel-font-section); line-height: 1.2; }
+  .section-heading span { color: var(--color-ink-faint); font-family: var(--font-data); font-size: var(--panel-font-caption); }
+  .field-label { display: block; margin-bottom: 5px; color: var(--color-ink-muted); font-size: var(--panel-font-caption); text-transform: uppercase; letter-spacing: .08em; }
   .mobile-preset-field { display: none; }
   .engine-label { margin-top: 13px; }
-  select { width: 100%; padding: 8px 9px; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink); }
-  .field-note { min-height: 30px; margin: 7px 0 10px; color: var(--color-ink-muted); font-size: 11px; line-height: 1.4; }
+  select { width: 100%; padding: 8px 9px; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink); font-size: var(--panel-font-control); line-height: 1.35; }
+  .field-note { min-height: 30px; margin: 7px 0 10px; color: var(--color-ink-muted); font-size: var(--panel-font-control); line-height: 1.45; }
   button, .file-button { border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink-muted); cursor: pointer; transition: border-color 120ms ease, color 120ms ease, background 120ms ease; }
   button:hover, .file-button:hover { border-color: var(--color-flow); color: var(--color-ink); }
-  .file-button { display: inline-flex; padding: 6px 9px; font-size: 11px; }
+  .file-button { display: inline-flex; padding: 6px 9px; font-size: var(--panel-font-control); }
   .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .segmented { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 10px; }
-  .segmented button { padding: 7px; border-radius: 0; }
+  .segmented button { padding: 7px; border-radius: 0; font-size: var(--panel-font-control); }
   .segmented button:first-child { border-radius: 4px 0 0 4px; }
   .segmented button:last-child { margin-left: -1px; border-radius: 0 4px 4px 0; }
   button.active { position: relative; border-color: var(--color-flow); background: color-mix(in srgb, var(--color-flow) 12%, var(--color-surface-raised)); color: var(--color-flow-soft); }
   .solver-grid { display: grid; gap: 6px; }
-  .solver-grid button { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 7px 8px 7px 10px; text-align: left; }
-  .range-label { display: flex; justify-content: space-between; margin: 11px 0 4px; color: var(--color-ink-muted); font-size: 11px; }
-  .range-label output { color: var(--color-flow-soft); font-family: var(--font-data); }
+  .solver-grid button { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 7px 8px 7px 10px; font-size: var(--panel-font-control); text-align: left; }
+  .range-label { display: flex; justify-content: space-between; margin: 11px 0 4px; color: var(--color-ink-muted); font-size: var(--panel-font-control); }
+  .range-label output { color: var(--color-flow-soft); font-family: var(--font-data); font-size: var(--panel-font-data); }
   .inline-keys { display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: middle; }
   .inline-keys kbd { min-width: 17px; height: 17px; padding: 0 3px; font-size: 8px; }
   input[type="range"] { width: 100%; }
   .tuning-control, .static-tuning { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--color-rule); }
   .tuning-control > div:first-child, .static-tuning { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .tuning-control span, .static-tuning span { color: var(--color-ink-muted); font-size: 10px; }
-  .tuning-control strong, .static-tuning strong { color: var(--color-flow-soft); font-family: var(--font-data); font-size: 11px; font-weight: 500; text-align: right; }
+  .tuning-control span, .static-tuning span { color: var(--color-ink-muted); font-size: var(--panel-font-data); }
+  .tuning-control strong, .static-tuning strong { color: var(--color-flow-soft); font-family: var(--font-data); font-size: var(--panel-font-data); font-weight: 500; text-align: right; }
   .tuning-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-  .tuning-buttons button { display: flex; height: 30px; align-items: center; justify-content: space-between; gap: 5px; padding: 4px 5px 4px 8px; font-size: 10px; }
+  .tuning-buttons button { display: flex; height: 30px; align-items: center; justify-content: space-between; gap: 5px; padding: 4px 5px 4px 8px; font-size: var(--panel-font-control); }
   button:disabled { cursor: default; opacity: .38; }
   .toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .toggle-grid button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; padding: 6px 6px 6px 8px; font-size: 11px; text-align: left; }
+  .toggle-grid button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; padding: 6px 6px 6px 8px; font-size: var(--panel-font-control); text-align: left; }
   .explanation-card, .diagnostics-card { margin: 12px; border: 1px solid var(--color-rule); border-radius: 5px; background: color-mix(in srgb, var(--color-surface-raised) 58%, var(--color-surface)); }
-  .explanation-card > button, .diagnostics-card > button { display: flex; justify-content: space-between; width: 100%; padding: 10px 11px; border: 0; background: transparent; color: var(--color-ink); font-family: var(--font-display); }
+  .explanation-card > button, .diagnostics-card > button { display: flex; justify-content: space-between; width: 100%; padding: 10px 11px; border: 0; background: transparent; color: var(--color-ink); font-family: var(--font-display); font-size: var(--panel-font-card); line-height: 1.25; }
   .explanation-copy { padding: 0 11px 3px; }
-  .explanation-copy p { margin: 0 0 10px; color: var(--color-ink-muted); font-size: 11px; line-height: 1.45; }
+  .explanation-copy p { margin: 0 0 10px; color: var(--color-ink-muted); font-size: var(--panel-font-control); line-height: 1.5; }
   .explanation-copy strong { color: var(--color-flow-soft); font-weight: 500; }
   .diagnostics-card dl { margin: 0; padding: 0 11px 8px; }
-  .diagnostics-card dl div { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--color-rule) 60%, transparent); font-size: 11px; }
+  .diagnostics-card dl div { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--color-rule) 60%, transparent); font-size: var(--panel-font-data); }
   .diagnostics-card dt { color: var(--color-ink-muted); }
   .diagnostics-card dd { margin: 0; color: var(--color-flow-soft); font-family: var(--font-data); }
 
