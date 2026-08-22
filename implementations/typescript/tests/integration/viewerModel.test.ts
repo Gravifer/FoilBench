@@ -60,13 +60,13 @@ describe("headless viewer model", () => {
     const model = new ViewerModel(scenario, "stable-fluids");
     model.toggleDiagnostics(); model.adjustSolverTuning(1);
     expect(model.snapshot().diagnosticMode).toBe("every-step");
-    expect(model.snapshot().solverTuning).toBe("adv=skew-rk2");
+    expect(model.snapshot().solverTuning?.value).toBe("skew-rk2");
     expect(model.switchSolver("lbm-d2q9")).toBe(true);
     expect(model.switchSolver("stable-fluids")).toBe(true);
-    expect(model.snapshot().solverTuning).toBe("adv=skew-rk2");
+    expect(model.snapshot().solverTuning?.value).toBe("skew-rk2");
     model.reset();
     expect(model.snapshot().diagnosticMode).toBe("every-step");
-    expect(model.snapshot().solverTuning).toBe("adv=maccormack");
+    expect(model.snapshot().solverTuning?.value).toBe("maccormack");
   });
   it("fills reusable snapshot storage without exposing mutable solver arrays", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;

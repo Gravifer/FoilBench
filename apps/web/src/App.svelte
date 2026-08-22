@@ -2,7 +2,7 @@
   import {onMount} from "svelte";
 
   import {isSolverId, SOLVER_IDS} from "foilbench-typescript/src/core/contracts.js";
-  import type {Scenario, SolverId} from "foilbench-typescript/src/core/contracts.js";
+  import type {InteractiveTuning, Scenario, SolverId} from "foilbench-typescript/src/core/contracts.js";
   import type {SolverBackend, ViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "foilbench-typescript/src/viewer/protocol.js";
   import {FoilSceneController, LAB_PALETTE} from "foilbench-typescript/src/viewer/sceneController.js";
   import {fuseViewerStatus} from "foilbench-typescript/src/viewer/statusFusion.js";
@@ -39,6 +39,7 @@
   let displayedAoa = $derived(snapshot === null ? 0 : (Math.abs(snapshot.angleDegrees) < 0.05 ? 0 : -snapshot.angleDegrees));
   let currentReynolds = $derived(snapshot?.reynolds ?? scenario?.reynolds ?? 1000);
   let phase = $derived(fused?.phase ?? (loading ? "warming" : "failed"));
+  let tuning = $derived(snapshot?.solverTuning ?? null);
 
   const solverLabels: Readonly<Record<SolverId, string>> = {
     "stable-fluids": "Stable Fluids",
@@ -118,8 +119,30 @@
   }
 
   function adjustTuning(amount: -1 | 1): void {
+    if (tuning === null || (amount < 0 && !tuning.canDecrease) || (amount > 0 && !tuning.canIncrease)) return;
     tuningSteps = {...tuningSteps, [solverId]: tuningSteps[solverId] + amount};
     client?.send({kind: "adjust-tuning", amount});
+  }
+
+  function tuningTitle(selected: InteractiveTuning): string {
+    if (selected.id === "stable-advection") {
+      const names: Readonly<Record<string, string>> = {"semi-lagrangian": "Semi-Lagrangian", maccormack: "MacCormack", "skew-rk2": "Skew RK2"};
+      return names[String(selected.value)] ?? String(selected.value);
+    }
+    if (selected.id === "pic-flip-blend" && typeof selected.value === "number") return `${Math.round(100 * selected.value)}% FLIP · ${Math.round(100 * (1 - selected.value))}% PIC`;
+    return String(selected.value);
+  }
+
+  function tuningDescription(selected: InteractiveTuning): string {
+    if (selected.id === "stable-advection") {
+      const descriptions: Readonly<Record<string, string>> = {
+        "semi-lagrangian": "Smooth and forgiving transport",
+        maccormack: "Sharper balanced transport",
+        "skew-rk2": "Energetic eddy-preserving experiment",
+      };
+      return descriptions[String(selected.value)] ?? selected.label;
+    }
+    return selected.id === "pic-flip-blend" ? "Particle velocity update" : selected.label;
   }
 
   async function importScenario(event: Event): Promise<void> {
@@ -148,7 +171,8 @@
 
   function handleKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
-    if (target?.matches("input, select, textarea, button") === true) return;
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (target !== null && target.closest("input, select, textarea, button, [contenteditable='true']") !== null) return;
     if (event.key === " ") { event.preventDefault(); client?.send({kind: "pause"}); }
     else if (event.key.toLowerCase() === "r") client?.send({kind: "reset"});
     else if (event.key === "1" || event.key === "2" || event.key === "3") changeSolver(SOLVER_IDS[Number(event.key) - 1] ?? "stable-fluids");
@@ -229,16 +253,32 @@
 
 <main class="lab-shell">
   <header class="lab-header">
-    <div>
-      <h1>FoilBench</h1>
-      <p>Make the invisible flow visible.</p>
+    <div class="header-left">
+      <div class="header-identity">
+        <h1>FoilBench</h1>
+        <p>Toy 2D wind tunnel with an airfoil</p>
+      </div>
+      <label class="header-preset" for="preset"><span>Experiment</span>
+        <select id="preset" value={presetId} onchange={(event) => void choosePreset(event.currentTarget.value)}>
+          {#each PRESETS as preset}
+            <option value={preset.id}>{preset.label}{preset.expensive === true ? " · heavy" : ""}</option>
+          {/each}
+          {#if presetId === "custom"}<option value="custom">Imported scenario</option>{/if}
+        </select>
+      </label>
     </div>
-    <div class="header-status" aria-live="polite">
-      <span class:status-running={phase === "running"} class:status-warning={phase === "warming" || phase === "paused"} class:status-failed={phase === "failed"}></span>
-      <span>{phase}</span>
-      <span class="header-backend">{backend === "rust-wasm" ? "Rust / WASM" : "TypeScript"}</span>
+    <div class="header-transport" aria-label="Simulation transport">
+      <button type="button" aria-keyshortcuts="R" onclick={() => client?.send({kind: "reset"})}><span>Reset</span><kbd>R</kbd></button>
+      <button class="primary-action" type="button" aria-keyshortcuts="Space" onclick={() => client?.send({kind: "pause"})}><span>{snapshot?.paused === true ? "Resume" : "Pause"}</span><kbd>Space</kbd></button>
     </div>
-    <button class="mobile-control-button" type="button" aria-expanded={controlsOpen} onclick={() => controlsOpen = !controlsOpen}>Controls</button>
+    <div class="header-right">
+      <div class="header-status" aria-live="polite">
+        <span class:status-running={phase === "running"} class:status-warning={phase === "warming" || phase === "paused"} class:status-failed={phase === "failed"}></span>
+        <span>{phase}</span>
+        <span class="header-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
+      </div>
+      <button class="mobile-control-button" type="button" aria-expanded={controlsOpen} onclick={() => controlsOpen = !controlsOpen}>Controls</button>
+    </div>
   </header>
 
   <section class="flow-stage" aria-label="Interactive airflow visualization">
@@ -261,49 +301,58 @@
     <div class="panel-scroll">
       <section class="control-section">
         <div class="section-heading"><h2>Experiment</h2><span>{scenario?.foil.naca === undefined ? "" : `NACA ${scenario.foil.naca}`}</span></div>
-        <label class="field-label" for="preset">Preset</label>
-        <select id="preset" value={presetId} onchange={(event) => void choosePreset(event.currentTarget.value)}>
-          {#each PRESETS as preset}
-            <option value={preset.id}>{preset.label}{preset.expensive === true ? " · heavy" : ""}</option>
-          {/each}
-          {#if presetId === "custom"}<option value="custom">Imported scenario</option>{/if}
-        </select>
+        <label class="mobile-preset-field" for="mobile-preset"><span class="field-label">Preset</span>
+          <select id="mobile-preset" value={presetId} onchange={(event) => void choosePreset(event.currentTarget.value)}>
+            {#each PRESETS as preset}
+              <option value={preset.id}>{preset.label}{preset.expensive === true ? " · heavy" : ""}</option>
+            {/each}
+            {#if presetId === "custom"}<option value="custom">Imported scenario</option>{/if}
+          </select>
+        </label>
         <p class="field-note">{PRESETS.find((preset) => preset.id === presetId)?.summary ?? "A locally imported, schema-validated scenario."}</p>
         <label class="file-button">Import scenario<input type="file" accept="application/json,.json" onchange={(event) => void importScenario(event)} /></label>
       </section>
 
       <section class="control-section">
-        <div class="section-heading"><h2>Numerical model</h2><span>runs locally</span></div>
-        <div class="segmented" aria-label="Numerical backend">
-          <button class:active={backend === "rust-wasm"} type="button" onclick={() => changeBackend("rust-wasm")}>Rust / WASM</button>
-          <button class:active={backend === "typescript"} type="button" onclick={() => changeBackend("typescript")}>TypeScript</button>
-        </div>
+        <div class="section-heading"><h2>Solver</h2><span>runs locally</span></div>
+        <span class="field-label">Method</span>
         <div class="solver-grid">
           {#each SOLVER_IDS as id, index}
-            <button class:active={solverId === id} type="button" onclick={() => changeSolver(id)}><span>{index + 1}</span>{solverLabels[id]}</button>
+            <button class:active={solverId === id} type="button" aria-keyshortcuts={String(index + 1)} onclick={() => changeSolver(id)}><span>{solverLabels[id]}</span><kbd>{index + 1}</kbd></button>
           {/each}
+        </div>
+        <span class="field-label engine-label">Execution engine</span>
+        <div class="segmented" aria-label="Execution engine">
+          <button class:active={backend === "typescript"} type="button" onclick={() => changeBackend("typescript")}>TypeScript</button>
+          <button class:active={backend === "rust-wasm"} type="button" onclick={() => changeBackend("rust-wasm")}>Rust / WASM</button>
         </div>
       </section>
 
       <section class="control-section">
-        <div class="transport-row">
-          <button class="primary-action" type="button" onclick={() => client?.send({kind: "pause"})}>{snapshot?.paused === true ? "Resume" : "Pause"}</button>
-          <button type="button" onclick={() => client?.send({kind: "reset"})}>Reset</button>
-        </div>
         <label class="range-label" for="angle"><span>Angle of attack</span><output>{displayedAoa.toFixed(1)}°</output></label>
         <input id="angle" type="range" min="-30" max="30" step="0.5" value={displayedAoa} oninput={(event) => client?.queueAngle(-Number(event.currentTarget.value))} onchange={() => client?.releaseAngle()} />
-        <label class="range-label" for="reynolds"><span>Reynolds number</span><output>{currentReynolds.toFixed(0)}</output></label>
+        <label class="range-label" for="reynolds"><span>Reynolds number <span class="inline-keys"><kbd>−</kbd><kbd>+</kbd><kbd>0</kbd></span></span><output>{currentReynolds.toFixed(0)}</output></label>
         <input id="reynolds" type="range" min={Math.log10(50)} max={5} step="0.05" value={Math.log10(currentReynolds)} oninput={(event) => setReynolds(10 ** Number(event.currentTarget.value))} />
-        <div class="tuning-row"><span>{snapshot?.solverTuning ?? "tuning=—"}</span><button type="button" aria-label="Decrease solver tuning" onclick={() => adjustTuning(-1)}>[</button><button type="button" aria-label="Increase solver tuning" onclick={() => adjustTuning(1)}>]</button></div>
+        {#if tuning !== null}
+          <div class="tuning-control">
+            <div><span>{tuningDescription(tuning)}</span><strong>{tuningTitle(tuning)}</strong></div>
+            <div class="tuning-buttons">
+              <button type="button" aria-label={tuning.id === "pic-flip-blend" ? "More PIC" : "Previous transport method"} aria-keyshortcuts="[" disabled={!tuning.canDecrease} onclick={() => adjustTuning(-1)}><span>{tuning.id === "pic-flip-blend" ? "More PIC" : "Previous"}</span><kbd>[</kbd></button>
+              <button type="button" aria-label={tuning.id === "pic-flip-blend" ? "More FLIP" : "Next transport method"} aria-keyshortcuts="]" disabled={!tuning.canIncrease} onclick={() => adjustTuning(1)}><span>{tuning.id === "pic-flip-blend" ? "More FLIP" : "Next"}</span><kbd>]</kbd></button>
+            </div>
+          </div>
+        {:else if solverId === "lbm-d2q9"}
+          <div class="static-tuning"><span>Collision model</span><strong>Automatic TRT scaling</strong></div>
+        {/if}
       </section>
 
       <section class="control-section">
         <div class="section-heading"><h2>View</h2><span>presentation only</span></div>
         <div class="toggle-grid">
-          <button class:active={snapshot?.vorticityVisible === true} type="button" onclick={() => client?.send({kind: "toggle-vorticity"})}>Vorticity</button>
-          <button class:active={snapshot?.tracerMode === "material"} type="button" onclick={() => client?.send({kind: "toggle-tracers"})}>Material tracers</button>
-          <button class:active={snapshot?.cropEnabled === true} type="button" onclick={() => client?.send({kind: "toggle-crop"})}>Crop edges</button>
-          <button class:active={snapshot?.diagnosticMode === "every-step"} type="button" onclick={() => client?.send({kind: "toggle-diagnostics"})}>Live diagnostics</button>
+          <button class:active={snapshot?.vorticityVisible === true} type="button" aria-keyshortcuts="V" onclick={() => client?.send({kind: "toggle-vorticity"})}><span>Vorticity</span><kbd>V</kbd></button>
+          <button class:active={snapshot?.tracerMode === "material"} type="button" aria-keyshortcuts="T" onclick={() => client?.send({kind: "toggle-tracers"})}><span>Material tracers</span><kbd>T</kbd></button>
+          <button class:active={snapshot?.cropEnabled === true} type="button" aria-keyshortcuts="C" onclick={() => client?.send({kind: "toggle-crop"})}><span>Crop edges</span><kbd>C</kbd></button>
+          <button class:active={snapshot?.diagnosticMode === "every-step"} type="button" aria-keyshortcuts="D" onclick={() => client?.send({kind: "toggle-diagnostics"})}><span>Live diagnostics</span><kbd>D</kbd></button>
         </div>
       </section>
 

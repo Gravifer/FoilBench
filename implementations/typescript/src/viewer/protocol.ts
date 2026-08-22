@@ -1,4 +1,4 @@
-import type {Scenario, SolverId} from "../core/contracts.js";
+import type {InteractiveTuning, Scenario, SolverId} from "../core/contracts.js";
 import type {TracerRecycleCounters} from "./tracers.js";
 
 export type SolverBackend = "typescript" | "rust-wasm";
@@ -47,7 +47,7 @@ export interface ViewerSnapshot {
   readonly tracerRecycleCounters: TracerRecycleCounters;
   readonly poseOnly: boolean; readonly motionMode: "resolved" | "pose-only"; readonly scheduleActive: boolean;
   readonly phase: "warming" | "running" | "paused" | "failed"; readonly diagnosticMode: "cadenced" | "every-step";
-  readonly solverTuning: string;
+  readonly solverTuning: InteractiveTuning | null;
   readonly resolution: readonly [number, number]; readonly bounds: readonly [readonly [number, number], readonly [number, number]];
   readonly tracerPositions: Float32Array; readonly pathSegments: Float32Array; readonly vorticity: Float32Array; readonly foilOutline: Float32Array;
 }

@@ -1,4 +1,4 @@
-import type {CanonicalFlowState, ControlState, FlowSolver, ImportReason, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, FlowSolver, ImportReason, InteractiveTuning, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
@@ -207,10 +207,7 @@ export class ViewerModel {
     return typeof value === "number" ? value.toFixed(2) : value;
   }
 
-  private tuningLabel(): string {
-    const tuning = this.solver.interactiveTuning?.();
-    return tuning === undefined ? "tuning=none" : `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
-  }
+  private currentTuning(): InteractiveTuning | null { return this.solver.interactiveTuning?.() ?? null; }
 
   public reset(): void {
     const id = this.solver.info.id;
@@ -532,7 +529,7 @@ export class ViewerModel {
       recoveryEpoch: session.recoveryEpoch, recoveryReason: session.recoveryReason, recoveryStage: session.recoveryStage,
       tracerRecycleCounters: this.tracers.recycleCounters,
       poseOnly: this.presentation.poseOnly, motionMode: session.motionMode, scheduleActive: session.scheduleActive,
-      phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.tuningLabel(),
+      phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.currentTuning(),
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,
       pathSegments, vorticity: vorticityOutput, foilOutline,
     };

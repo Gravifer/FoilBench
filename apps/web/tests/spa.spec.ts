@@ -5,6 +5,7 @@ import {resolve} from "node:path";
 test("static SPA defaults to TypeScript and retains the Rust/WASM comparison backend", async ({page}) => {
   await page.goto("./");
   await expect(page.getByRole("heading", {level: 1, name: "FoilBench"})).toBeVisible();
+  await expect(page.getByText("Toy 2D wind tunnel with an airfoil", {exact: true})).toBeVisible();
   await expect(page.locator("canvas")).toBeVisible();
   await expect(page.getByText("TypeScript", {exact: true}).first()).toBeVisible();
   await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible({timeout: 30_000});
@@ -21,7 +22,7 @@ test("static SPA defaults to TypeScript and retains the Rust/WASM comparison bac
 
 test("curated controls and local scenario import remain browser-local", async ({page}) => {
   await page.goto("./?preset=fixed-stall&solver=stable-fluids&backend=typescript");
-  await expect(page.getByLabel("Preset")).toHaveValue("fixed-stall");
+  await expect(page.getByLabel("Experiment")).toHaveValue("fixed-stall");
   await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible({timeout: 30_000});
 
   await page.getByLabel("Angle of attack").fill("12");
@@ -33,7 +34,7 @@ test("curated controls and local scenario import remain browser-local", async ({
 
   const scenarioPath = resolve(import.meta.dirname, "../../../scenarios/airfoil/default.json");
   await page.locator('input[type="file"]').setInputFiles(scenarioPath);
-  await expect(page.getByLabel("Preset")).toHaveValue("custom");
+  await expect(page.getByLabel("Experiment")).toHaveValue("custom");
   await expect(page.getByText("A locally imported, schema-validated scenario.")).toBeVisible();
 });
 
@@ -61,6 +62,32 @@ test("phone layout keeps the simulation playable behind a controls drawer", asyn
   await expect(page.getByLabel("Preset")).toBeVisible();
   await expect(page.getByLabel("Angle of attack")).toBeVisible();
   await expect(page.getByRole("button", {name: "Pause"})).toBeVisible({timeout: 30_000});
+});
+
+test("the centered transport, key hints, and solver-aware tuning remain semantic", async ({page}) => {
+  await page.goto("./?backend=typescript&solver=stable-fluids");
+  await expect(page.locator("header").getByText("running", {exact: true})).toBeVisible({timeout: 30_000});
+
+  const header = page.locator("header");
+  const transport = page.getByLabel("Simulation transport");
+  const [headerBox, transportBox] = await Promise.all([header.boundingBox(), transport.boundingBox()]);
+  expect(headerBox).not.toBeNull();
+  expect(transportBox).not.toBeNull();
+  expect(Math.abs((transportBox?.x ?? 0) + (transportBox?.width ?? 0) / 2 - ((headerBox?.x ?? 0) + (headerBox?.width ?? 0) / 2))).toBeLessThan(3);
+
+  await expect(page.getByText("MacCormack", {exact: true})).toBeVisible();
+  await expect(page.getByText("adv=maccormack", {exact: false})).toHaveCount(0);
+  await page.getByRole("button", {name: "Next transport"}).click();
+  await expect(page.getByText("Skew RK2", {exact: true})).toBeVisible();
+  await expect(page.getByText("Rust / WASM", {exact: true}).first()).toBeVisible();
+  await expect(page.getByText("Execution engine", {exact: true})).toBeVisible();
+
+  const crop = page.getByRole("button", {name: "Crop"});
+  await expect(crop).not.toHaveClass(/active/);
+  await page.keyboard.press("Control+C");
+  await expect(crop).not.toHaveClass(/active/);
+  await page.keyboard.press("c");
+  await expect(crop).toHaveClass(/active/);
 });
 
 test("invalid local scenarios fail visibly without leaving the browser", async ({page}) => {
