@@ -78,6 +78,16 @@ describe("headless viewer model", () => {
     expect(second.pathSegments.buffer).toBe(first.pathSegments.buffer);
     expect(second.tracerPositions.buffer).not.toBe(model.tracers.positions.buffer);
   });
+  it("keeps SPA trail metadata out of reference snapshots", async () => {
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
+    const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
+    const scenario = parseScenario(raw, schema);
+    const model = new ViewerModel(scenario, "stable-fluids");
+    const reference = model.snapshot(model.createSnapshotStorage());
+    const spa = model.spaSnapshot(model.createSpaSnapshotStorage());
+    expect("pathAges" in reference).toBe(false);
+    expect(spa.pathAges.length).toBe(spa.pathSegments.length / 4);
+  });
   it("uses quarter-decade Reynolds controls and measures owner cycles", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;

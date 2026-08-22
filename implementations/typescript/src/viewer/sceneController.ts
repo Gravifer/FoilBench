@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type {Scenario} from "../core/contracts.js";
+import {isSpaViewerSnapshot} from "./protocol.js";
 import type {ViewerSnapshot} from "./protocol.js";
 import {vorticityRgba} from "./vorticityTexture.js";
 
@@ -9,6 +10,11 @@ export interface FoilScenePalette {
   readonly flowPath: number;
   readonly flowPoint: number;
   readonly foil: number;
+}
+
+export interface FoilSceneStyle {
+  readonly showTracerPoints?: boolean;
+  readonly trailStyle?: "reference" | "age-speed-alpha";
 }
 
 const REFERENCE_PALETTE: FoilScenePalette = {
@@ -37,12 +43,14 @@ export class FoilSceneController {
   private readonly vorticityTexture = new THREE.CanvasTexture(this.vorticityCanvas);
   private readonly vorticityMaterial: THREE.MeshBasicMaterial;
   private readonly vorticityPlane: THREE.Mesh;
+  private readonly trailStyle: "reference" | "age-speed-alpha";
   private width = 1;
   private height = 1;
 
   public constructor(
     private readonly host: HTMLElement,
     private readonly palette: FoilScenePalette = REFERENCE_PALETTE,
+    style: FoilSceneStyle = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({antialias: true});
     this.renderer.setPixelRatio(devicePixelRatio);
@@ -52,14 +60,25 @@ export class FoilSceneController {
     this.host.append(this.canvas);
 
     this.camera.position.z = 5;
+    this.trailStyle = style.trailStyle ?? "reference";
     this.paths = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({color: this.palette.flowPath, transparent: true, opacity: 0.55}),
+      this.trailStyle === "age-speed-alpha"
+        ? new THREE.ShaderMaterial({
+            uniforms: {flowColor: {value: new THREE.Color(this.palette.flowPath)}},
+            vertexShader: "attribute float intensity; varying float vIntensity; void main() { vIntensity = intensity; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+            fragmentShader: "uniform vec3 flowColor; varying float vIntensity; void main() { gl_FragColor = vec4(flowColor, vIntensity); }",
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+          })
+        : new THREE.LineBasicMaterial({color: this.palette.flowPath, transparent: true, opacity: 0.55}),
     );
     this.points = new THREE.Points(
       new THREE.BufferGeometry(),
       new THREE.PointsMaterial({color: this.palette.flowPoint, size: 2, sizeAttenuation: false}),
     );
+    this.points.visible = style.showTracerPoints ?? true;
     this.foil = new THREE.LineLoop(
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({color: this.palette.foil}),
@@ -87,6 +106,7 @@ export class FoilSceneController {
   public render(snapshot: ViewerSnapshot, scenario: Scenario): void {
     this.updateCamera(snapshot, scenario);
     this.updateGeometry(this.paths.geometry, snapshot.pathSegments);
+    if (this.trailStyle === "age-speed-alpha" && isSpaViewerSnapshot(snapshot)) this.updateTrailIntensity(snapshot, scenario);
     this.updateGeometry(this.points.geometry, snapshot.tracerPositions);
     this.updateGeometry(this.foil.geometry, snapshot.foilOutline);
     this.updateVorticity(snapshot);
@@ -184,5 +204,35 @@ export class FoilSceneController {
     }
     attribute.needsUpdate = true;
     geometry.setDrawRange(0, vertexCount);
+  }
+
+  private updateTrailIntensity(snapshot: ViewerSnapshot & {readonly pathAges: Uint8Array}, scenario: Scenario): void {
+    const segmentCount = snapshot.pathSegments.length / 4;
+    if (snapshot.pathAges.length !== segmentCount) throw new RangeError("path age metadata does not align with path segments");
+    const vertexCount = 2 * segmentCount;
+    let attribute = this.paths.geometry.getAttribute("intensity") as THREE.BufferAttribute | undefined;
+    if (attribute === undefined || attribute.array.length < vertexCount) {
+      let capacity = 1;
+      while (capacity < vertexCount) capacity *= 2;
+      attribute = new THREE.BufferAttribute(new Float32Array(capacity), 1);
+      attribute.setUsage(THREE.DynamicDrawUsage);
+      this.paths.geometry.setAttribute("intensity", attribute);
+    }
+    const intensities = attribute.array as Float32Array;
+    const referenceSpeed = Math.max(Math.hypot(scenario.freestream[0] ?? 0, scenario.freestream[1] ?? 0), 1e-6);
+    const dt = Math.max(scenario.outputDt, 1e-9);
+    for (let segment = 0; segment < segmentCount; segment += 1) {
+      const scalar = 4 * segment;
+      const speed = Math.hypot(
+        (snapshot.pathSegments[scalar + 2] ?? 0) - (snapshot.pathSegments[scalar] ?? 0),
+        (snapshot.pathSegments[scalar + 3] ?? 0) - (snapshot.pathSegments[scalar + 1] ?? 0),
+      ) / dt;
+      const age = (snapshot.pathAges[segment] ?? 0) / 255;
+      const speedFactor = Math.sqrt(Math.min(1, speed / (1.75 * referenceSpeed)));
+      const intensity = (0.08 + 0.92 * age ** 1.3) * (0.35 + 0.65 * speedFactor);
+      intensities[2 * segment] = intensity;
+      intensities[2 * segment + 1] = intensity;
+    }
+    attribute.needsUpdate = true;
   }
 }

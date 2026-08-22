@@ -59,6 +59,7 @@ export class TracerSystem {
   public get mode(): TracerMode { return this.currentMode; }
   public get recycleCounters(): TracerRecycleCounters { return {...this.counters}; }
   public get maximumSegmentScalars(): number { return 4 * this.count * (this.depth - 1); }
+  public get maximumSegmentCount(): number { return this.count * (this.depth - 1); }
 
   public setMode(mode: TracerMode): void {
     if (mode === this.currentMode) return;
@@ -178,9 +179,23 @@ export class TracerSystem {
   }
 
   public segments(destination?: Float32Array): Float32Array {
+    return this.collectSegments(destination).segments;
+  }
+
+  public segmentsWithAges(segmentDestination?: Float32Array, ageDestination?: Uint8Array): {readonly segments: Float32Array; readonly ages: Uint8Array} {
+    const ageCapacity = this.count * (this.depth - 1);
+    if (ageDestination !== undefined && ageDestination.length < ageCapacity) throw new RangeError("path age destination is too small");
+    const result = this.collectSegments(segmentDestination, ageDestination ?? new Uint8Array(ageCapacity));
+    if (result.ages === undefined) throw new Error("path age collection was not requested");
+    return {segments: result.segments, ages: result.ages};
+  }
+
+  private collectSegments(segmentDestination?: Float32Array, ageDestination?: Uint8Array): {readonly segments: Float32Array; readonly ages?: Uint8Array} {
     const capacity = 4 * this.count * (this.depth - 1);
-    if (destination !== undefined && destination.length < capacity) throw new RangeError("path destination is too small");
-    const output = destination ?? new Float32Array(capacity); let outputCursor = 0;
+    if (segmentDestination !== undefined && segmentDestination.length < capacity) throw new RangeError("path destination is too small");
+    const output = segmentDestination ?? new Float32Array(capacity);
+    let outputCursor = 0;
+    let segmentCursor = 0;
     for (let age = this.depth - 1; age > 0; age -= 1) {
       const older = (this.cursor - age + this.depth) % this.depth; const newer = (older + 1) % this.depth;
       for (let index = 0; index < this.count; index += 1) {
@@ -190,9 +205,13 @@ export class TracerSystem {
         output[outputCursor + 1] = this.history[older * this.positions.length + offset + 1] ?? 0;
         output[outputCursor + 2] = this.history[newer * this.positions.length + offset] ?? 0;
         output[outputCursor + 3] = this.history[newer * this.positions.length + offset + 1] ?? 0;
+        if (ageDestination !== undefined) ageDestination[segmentCursor] = Math.round(255 * (this.depth - 1 - age) / (this.depth - 2));
         outputCursor += 4;
+        segmentCursor += 1;
       }
     }
-    return output.subarray(0, outputCursor);
+    return ageDestination === undefined
+      ? {segments: output.subarray(0, outputCursor)}
+      : {segments: output.subarray(0, outputCursor), ages: ageDestination.subarray(0, segmentCursor)};
   }
 }

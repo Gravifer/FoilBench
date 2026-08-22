@@ -2,6 +2,7 @@ import type {InteractiveTuning, Scenario, SolverId} from "../core/contracts.js";
 import type {TracerRecycleCounters} from "./tracers.js";
 
 export type SolverBackend = "typescript" | "rust-wasm";
+export type ViewerPresentationProfile = "reference" | "spa";
 
 export interface ViewerStartState {
   readonly angleDegrees: number;
@@ -10,7 +11,7 @@ export interface ViewerStartState {
 }
 
 export type ViewerCommand =
-  | {readonly kind: "initialize"; readonly sequence: number; readonly scenario: Scenario; readonly solverId: SolverId; readonly backend: SolverBackend; readonly startState?: ViewerStartState}
+  | {readonly kind: "initialize"; readonly sequence: number; readonly scenario: Scenario; readonly solverId: SolverId; readonly backend: SolverBackend; readonly presentationProfile?: ViewerPresentationProfile; readonly startState?: ViewerStartState}
   | {readonly kind: "pause" | "reset" | "release-angle" | "toggle-vorticity" | "toggle-crop" | "toggle-tracers" | "toggle-diagnostics"; readonly sequence: number}
   | {readonly kind: "shutdown"; readonly sequence: number}
   | {readonly kind: "switch"; readonly sequence: number; readonly solverId: SolverId}
@@ -51,4 +52,6 @@ export interface ViewerSnapshot {
   readonly resolution: readonly [number, number]; readonly bounds: readonly [readonly [number, number], readonly [number, number]];
   readonly tracerPositions: Float32Array; readonly pathSegments: Float32Array; readonly vorticity: Float32Array; readonly foilOutline: Float32Array;
 }
+export interface SpaViewerSnapshot extends ViewerSnapshot {readonly pathAges: Uint8Array}
+export function isSpaViewerSnapshot(snapshot: ViewerSnapshot): snapshot is SpaViewerSnapshot { return "pathAges" in snapshot; }
 export type ViewerEvent = ViewerSnapshot | ViewerStatusEvent | ShutdownAcknowledgement;

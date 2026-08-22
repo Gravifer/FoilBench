@@ -3,7 +3,8 @@
 
   import {isSolverId, SOLVER_IDS} from "foilbench-typescript/src/core/contracts.js";
   import type {InteractiveTuning, Scenario, SolverId} from "foilbench-typescript/src/core/contracts.js";
-  import type {SolverBackend, ViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "foilbench-typescript/src/viewer/protocol.js";
+  import {isSpaViewerSnapshot} from "foilbench-typescript/src/viewer/protocol.js";
+  import type {SolverBackend, SpaViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "foilbench-typescript/src/viewer/protocol.js";
   import {FoilSceneController, LAB_PALETTE} from "foilbench-typescript/src/viewer/sceneController.js";
   import {fuseViewerStatus} from "foilbench-typescript/src/viewer/statusFusion.js";
   import {ViewerWorkerClient} from "foilbench-typescript/src/viewer/workerClient.js";
@@ -23,7 +24,7 @@
   let dragging = false;
 
   let scenario = $state.raw<Scenario | null>(null);
-  let snapshot = $state.raw<ViewerSnapshot | null>(null);
+  let snapshot = $state.raw<SpaViewerSnapshot | null>(null);
   let statusEvent = $state.raw<ViewerStatusEvent | null>(null);
   let solverId = $state<SolverId>(isSolverId(requestedSolver) ? requestedSolver : "stable-fluids");
   let backend = $state<SolverBackend>(requestedBackend === "rust-wasm" ? "rust-wasm" : "typescript");
@@ -65,7 +66,7 @@
     const nextClient = new ViewerWorkerClient();
     client = nextClient;
     nextClient.subscribe((state) => {
-      if (state.snapshot !== null) {
+      if (state.snapshot !== null && isSpaViewerSnapshot(state.snapshot)) {
         snapshot = state.snapshot;
         loading = false;
       }
@@ -75,7 +76,7 @@
         loading = false;
       }
     });
-    nextClient.initialize(nextScenario, solverId, backend, startState);
+    nextClient.initialize(nextScenario, solverId, backend, startState, "spa");
     replaceUrl();
   }
 
@@ -188,7 +189,7 @@
   }
 
   onMount(() => {
-    scene = new FoilSceneController(sceneHost, LAB_PALETTE);
+    scene = new FoilSceneController(sceneHost, LAB_PALETTE, {showTracerPoints: false, trailStyle: "age-speed-alpha"});
     const resize = (): void => {
       const bounds = sceneHost.getBoundingClientRect();
       scene?.resize(bounds.width, bounds.height);

@@ -4,7 +4,7 @@ import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {createSolver} from "../solvers/factory.js";
-import type {ViewerSnapshot} from "./protocol.js";
+import type {SpaViewerSnapshot, ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
 const POSE_SAMPLE_WINDOW_MILLISECONDS = 80;
@@ -65,6 +65,7 @@ export interface ViewerSnapshotStorage {
   readonly vorticity: Float32Array;
   readonly foilOutline: Float32Array;
 }
+export interface SpaViewerSnapshotStorage extends ViewerSnapshotStorage {readonly pathAges: Uint8Array}
 
 export type SolverFactory = (id: SolverId) => FlowSolver;
 
@@ -502,7 +503,19 @@ export class ViewerModel {
     };
   }
 
+  public createSpaSnapshotStorage(): SpaViewerSnapshotStorage {
+    return {...this.createSnapshotStorage(), pathAges: new Uint8Array(this.tracers.maximumSegmentCount)};
+  }
+
   public snapshot(storage?: ViewerSnapshotStorage): ViewerSnapshot {
+    return this.buildSnapshot(storage);
+  }
+
+  public spaSnapshot(storage?: SpaViewerSnapshotStorage): SpaViewerSnapshot {
+    return this.buildSnapshot(storage, storage?.pathAges ?? new Uint8Array(this.tracers.maximumSegmentCount)) as SpaViewerSnapshot;
+  }
+
+  private buildSnapshot(storage?: ViewerSnapshotStorage, pathAgeStorage?: Uint8Array): ViewerSnapshot | SpaViewerSnapshot {
     const {nx, ny} = dimensions(this.scenario.domain);
     const bounds = bounds2d(this.scenario.domain);
     const angle = this.control(this.time).angleDegrees;
@@ -513,12 +526,14 @@ export class ViewerModel {
     catch (error) { this.status = `vorticity failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
     const tracerPositions = storage?.tracerPositions ?? new Float32Array(this.tracers.positions.length);
     tracerPositions.set(this.tracers.positions);
-    const pathSegments = this.tracers.segments(storage?.pathSegments);
+    const path = pathAgeStorage === undefined
+      ? {segments: this.tracers.segments(storage?.pathSegments), ages: undefined}
+      : this.tracers.segmentsWithAges(storage?.pathSegments, pathAgeStorage);
     const vorticityOutput = storage === undefined ? vorticity.slice() : storage.vorticity.subarray(0, vorticity.length);
     if (storage !== undefined) vorticityOutput.set(vorticity);
     const foilOutline = this.presentationFoil.outline(angle, 192, storage?.foilOutline);
     this.revision += 1;
-    return {
+    const snapshot: ViewerSnapshot = {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
       solverEpoch: this.solverEpoch, solverStateRevision: this.solver.stateRevision,
       diagnosticSolverStateRevision: this.diagnosticsCacheRevision, vorticitySolverStateRevision: this.vorticityCacheRevision,
@@ -531,8 +546,9 @@ export class ViewerModel {
       poseOnly: this.presentation.poseOnly, motionMode: session.motionMode, scheduleActive: session.scheduleActive,
       phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.currentTuning(),
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,
-      pathSegments, vorticity: vorticityOutput, foilOutline,
+      pathSegments: path.segments, vorticity: vorticityOutput, foilOutline,
     };
+    return path.ages === undefined ? snapshot : {...snapshot, pathAges: path.ages};
   }
 
   private settleIdleDrag(now: number): void {

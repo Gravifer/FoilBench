@@ -114,6 +114,17 @@ describe("visible tracer contract", () => {
     expect(material.positions[0]).toBe(2);
   });
 
+  it("publishes compact age metadata aligned with each continuous path segment", () => {
+    const tracers = new TracerSystem(scenario, 1, 3);
+    tracers.positions[0] = 2; tracers.positions[1] = 1;
+    tracers.ages[0] = 0; tracers.lifetimes[0] = 10;
+    tracers.advance(new SampleSolver(() => [1, 0]), 0.01);
+    const path = tracers.segmentsWithAges();
+    expect(path.segments.length).toBe(4 * path.ages.length);
+    expect([...path.ages]).toEqual([0, 255]);
+    expect(path.segments[6] ?? 0).toBeGreaterThan(path.segments[4] ?? 0);
+  });
+
   it("derives the ordinary population from visible domain area", () => {
     expect(defaultTracerCount(scenario)).toBe(8192);
     expect(defaultTracerCount({...scenario, domain: {...scenario.domain, bounds: [[-1, 1], [-0.5, 0.5]]}})).toBe(2048);

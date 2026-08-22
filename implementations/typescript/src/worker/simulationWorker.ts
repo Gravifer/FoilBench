@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import type {SnapshotConsumed, ViewerCommand, ViewerEvent, ViewerSnapshot, ViewerStatusEvent} from "../viewer/protocol.js";
+import type {SnapshotConsumed, ViewerCommand, ViewerEvent, ViewerPresentationProfile, ViewerSnapshot, ViewerStatusEvent} from "../viewer/protocol.js";
 import {ViewerModel} from "../viewer/model.js";
-import type {ViewerSnapshotStorage} from "../viewer/model.js";
+import type {SpaViewerSnapshotStorage, ViewerSnapshotStorage} from "../viewer/model.js";
 import {loadRustWasmSolverFactory} from "../wasm/rustWasmSolver.js";
 
 type PoseCommand = Extract<ViewerCommand, {readonly kind: "set-angle"}>;
@@ -9,6 +9,7 @@ type PoseCommand = Extract<ViewerCommand, {readonly kind: "set-angle"}>;
 const minimumCycleMilliseconds = 1000 / 60;
 let model: ViewerModel | null = null;
 let snapshotStorage: ViewerSnapshotStorage | null = null;
+let presentationProfile: ViewerPresentationProfile = "reference";
 let scheduled = false;
 let shuttingDown = false;
 let visible = true;
@@ -26,6 +27,7 @@ async function initialize(command: Extract<ViewerCommand, {readonly kind: "initi
     recoveryEpoch: 0, recoveryReason: null, recoveryStage: "initialization",
   } satisfies ViewerStatusEvent);
   try {
+    presentationProfile = command.presentationProfile ?? "reference";
     const factory = command.backend === "rust-wasm" ? await loadRustWasmSolverFactory() : undefined;
     if (shuttingDown) return;
     model = new ViewerModel(command.scenario, command.solverId, factory);
@@ -34,7 +36,7 @@ async function initialize(command: Extract<ViewerCommand, {readonly kind: "initi
       const direction = command.startState.tuningSteps < 0 ? -1 : 1;
       for (let index = 0; index < Math.abs(command.startState.tuningSteps); index += 1) model.adjustSolverTuning(direction);
     }
-    snapshotStorage = model.createSnapshotStorage();
+    snapshotStorage = presentationProfile === "spa" ? model.createSpaSnapshotStorage() : model.createSnapshotStorage();
     model.appliedCommand = command.sequence;
     lastCycleWall = performance.now();
     publishStatus(true);
@@ -80,7 +82,9 @@ function publish(): void {
   if (!visible) { publishPending = true; return; }
   if (snapshotInFlightRevision !== null) { publishPending = true; return; }
   try {
-    const snapshot = model.snapshot(snapshotStorage ?? undefined);
+    const snapshot = presentationProfile === "spa"
+      ? model.spaSnapshot(snapshotStorage as SpaViewerSnapshotStorage)
+      : model.snapshot(snapshotStorage ?? undefined);
     postSnapshot(snapshot);
     snapshotInFlightRevision = snapshot.revision;
     publishPending = false;
