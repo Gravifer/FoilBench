@@ -200,7 +200,7 @@ impl<T: FlowScalar> LbmD2q9<T> {
                 let velocity = match initial {
                     "taylor-green" => [px.sin() * py.cos(), -px.cos() * py.sin()],
                     "poiseuille" => {
-                        let center = 0.5 * (domain.bounds[1][0] + domain.bounds[1][1]);
+                        let center = f64::midpoint(domain.bounds[1][0], domain.bounds[1][1]);
                         let radius = 0.5 * (domain.bounds[1][1] - domain.bounds[1][0]);
                         [1.5 * (1.0 - ((py - center) / radius).powi(2)), 0.0]
                     }
@@ -504,10 +504,11 @@ impl<T: FlowScalar> LbmD2q9<T> {
                     Self::equilibrium(direction, state.density[cell], state.lattice_velocity[cell]);
                 let opposite_equilibrium =
                     Self::equilibrium(opposite, state.density[cell], state.lattice_velocity[cell]);
-                let symmetric = 0.5 * (f + fo);
+                let symmetric = f64::midpoint(f, fo);
                 let antisymmetric = 0.5 * (f - fo);
                 state.scratch[index] = T::from_f64(
-                    f - state.omega_plus * (symmetric - 0.5 * (equilibrium + opposite_equilibrium))
+                    f - state.omega_plus
+                        * (symmetric - f64::midpoint(equilibrium, opposite_equilibrium))
                         - state.omega_minus
                             * (antisymmetric - 0.5 * (equilibrium - opposite_equilibrium)),
                 );

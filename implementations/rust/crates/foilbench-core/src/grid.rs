@@ -78,12 +78,14 @@ pub fn faces_to_cells<T: FlowScalar>(faces: &MacGrid2<T>) -> VectorField2<T> {
                 x,
                 y,
                 [
-                    T::from_f64(
-                        0.5 * (faces.u.get(x, y).to_f64() + faces.u.get(x + 1, y).to_f64()),
-                    ),
-                    T::from_f64(
-                        0.5 * (faces.v.get(x, y).to_f64() + faces.v.get(x, y + 1).to_f64()),
-                    ),
+                    T::from_f64(f64::midpoint(
+                        faces.u.get(x, y).to_f64(),
+                        faces.u.get(x + 1, y).to_f64(),
+                    )),
+                    T::from_f64(f64::midpoint(
+                        faces.v.get(x, y).to_f64(),
+                        faces.v.get(x, y + 1).to_f64(),
+                    )),
                 ],
             );
         }
@@ -111,9 +113,10 @@ pub fn cells_to_faces<T: FlowScalar>(
             output.u.set(
                 x,
                 y,
-                T::from_f64(
-                    0.5 * (cells.get(left, y)[0].to_f64() + cells.get(right, y)[0].to_f64()),
-                ),
+                T::from_f64(f64::midpoint(
+                    cells.get(left, y)[0].to_f64(),
+                    cells.get(right, y)[0].to_f64(),
+                )),
             );
         }
     }
@@ -128,9 +131,10 @@ pub fn cells_to_faces<T: FlowScalar>(
             output.v.set(
                 x,
                 y,
-                T::from_f64(
-                    0.5 * (cells.get(x, bottom)[1].to_f64() + cells.get(x, top)[1].to_f64()),
-                ),
+                T::from_f64(f64::midpoint(
+                    cells.get(x, bottom)[1].to_f64(),
+                    cells.get(x, top)[1].to_f64(),
+                )),
             );
         }
     }
@@ -147,7 +151,10 @@ pub fn apply_domain_boundaries<T: FlowScalar>(
     let ny = domain.ny();
     if domain.periodic_x {
         for y in 0..ny {
-            let value = T::from_f64(0.5 * (grid.u.get(0, y).to_f64() + grid.u.get(nx, y).to_f64()));
+            let value = T::from_f64(f64::midpoint(
+                grid.u.get(0, y).to_f64(),
+                grid.u.get(nx, y).to_f64(),
+            ));
             grid.u.set(0, y, value);
             grid.u.set(nx, y, value);
         }
@@ -163,7 +170,10 @@ pub fn apply_domain_boundaries<T: FlowScalar>(
     }
     if domain.periodic_y {
         for x in 0..nx {
-            let value = T::from_f64(0.5 * (grid.v.get(x, 0).to_f64() + grid.v.get(x, ny).to_f64()));
+            let value = T::from_f64(f64::midpoint(
+                grid.v.get(x, 0).to_f64(),
+                grid.v.get(x, ny).to_f64(),
+            ));
             grid.v.set(x, 0, value);
             grid.v.set(x, ny, value);
         }
