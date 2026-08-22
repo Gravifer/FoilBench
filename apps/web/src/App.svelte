@@ -65,6 +65,13 @@
     const status = fused?.status;
     return status === undefined || status === "running" || status === "warming" || status === "motion resolved; running" ? null : status;
   });
+  let detailStatusIdentity = $derived(detailStatus === null ? null : [
+    statusEvent?.appliedCommand ?? snapshot?.appliedCommand ?? -1,
+    statusEvent?.revision ?? snapshot?.revision ?? -1,
+    statusEvent?.solverEpoch ?? snapshot?.solverEpoch ?? -1,
+    statusEvent?.recoveryEpoch ?? snapshot?.recoveryEpoch ?? -1,
+    detailStatus,
+  ].join(":"));
 
   function updateSceneLayout(nextScenario: Scenario | null = scenario): void {
     const xBounds = nextScenario?.domain.bounds[0];
@@ -106,7 +113,7 @@
   }
 
   $effect(() => {
-    if (detailStatus === null) return;
+    if (detailStatusIdentity === null || detailStatus === null) return;
     statusNotice = detailStatus;
     if (statusNoticeTimer !== undefined) window.clearTimeout(statusNoticeTimer);
     statusNoticeTimer = window.setTimeout(() => {
