@@ -57,7 +57,9 @@
 
   --font-display: "CMU Serif", "Noto Serif CJK SC", serif;
   --font-ui: "CMU Sans Serif", "Noto Sans CJK SC", sans-serif;
+  --font-ui-gothic: system-ui, "Segoe UI", "Noto Sans CJK SC", sans-serif;
   --font-data: "CMU Typewriter Text", "Sarasa Mono SC", monospace;
+  --font-clock: "Cascadia Mono", "Cascadia Code", ui-monospace, "Sarasa Mono SC", monospace;
 }
 
 @layer base {
@@ -74,7 +76,7 @@
 }
 
 @layer components {
-  .lab-shell { display: grid; grid-template: 76px minmax(0, 1fr) 34px / minmax(0, 1fr) 330px; width: 100%; height: 100%; background: var(--color-canvas); }
+  .lab-shell { display: grid; grid-template: 76px minmax(0, 1fr) / minmax(0, 1fr) 330px; width: 100%; height: 100%; background: var(--color-canvas); }
   .lab-header { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; padding: 9px 22px; border-bottom: 1px solid var(--color-rule); background: color-mix(in srgb, var(--color-surface) 92%, transparent); }
   .header-left { display: flex; min-width: 0; align-items: center; gap: 24px; }
   .header-identity { flex: 0 0 auto; }
@@ -82,16 +84,19 @@
   .lab-header p { margin: 1px 0 0; color: var(--color-ink-muted); font-size: 12px; }
   .header-preset { display: grid; width: min(180px, 32vw); gap: 3px; color: var(--color-ink-faint); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
   .header-preset select { height: 30px; padding: 4px 27px 4px 8px; font-size: 11px; text-transform: none; letter-spacing: normal; }
-  .header-transport { display: flex; justify-self: center; gap: 7px; }
-  .header-transport .transport-icon { display: inline-grid; width: 38px; min-width: 38px; height: 34px; padding: 0; place-content: center; font-family: "Noto Sans Symbols 2", "Noto Sans Symbols", "Segoe UI Symbol", sans-serif; font-size: 18px; font-variant-emoji: text; line-height: 1; }
-  .header-transport .primary-action { border-color: var(--color-interaction); background: color-mix(in srgb, var(--color-interaction) 14%, var(--color-surface-raised)); color: var(--color-ink); }
+  .header-playback { position: relative; justify-self: center; }
+  .header-transport { display: flex; overflow: hidden; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); }
+  .header-transport .transport-icon { display: inline-grid; width: 38px; min-width: 38px; height: 34px; padding: 0; place-content: center; border: 0; border-radius: 0; background: transparent; font-family: "Noto Sans Symbols 2", "Noto Sans Symbols", "Segoe UI Symbol", sans-serif; font-size: 18px; font-variant-emoji: text; line-height: 1; }
+  .header-transport .transport-icon + .transport-icon { border-left: 1px solid var(--color-rule); }
+  .header-transport .transport-icon:hover { background: color-mix(in srgb, var(--color-ink) 5%, transparent); }
+  .header-transport .primary-action { color: var(--color-interaction); }
+  .playback-time { position: absolute; top: 50%; left: calc(100% + 11px); color: var(--color-flow); font-family: var(--font-clock); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: .02em; text-transform: uppercase; translate: 0 -50%; white-space: nowrap; }
   .header-right { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 10px; }
-  .header-status { display: flex; align-items: center; gap: 8px; color: var(--color-ink-muted); font-family: var(--font-data); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .header-status { display: flex; align-items: center; gap: 8px; color: var(--color-ink-muted); font-family: var(--font-ui-gothic); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
   .header-status > span:first-child { width: 8px; height: 8px; border-radius: 999px; background: var(--color-ink-faint); box-shadow: 0 0 10px currentColor; }
   .header-status .status-running { background: var(--color-positive); color: var(--color-positive); }
   .header-status .status-warning { background: var(--color-warning); color: var(--color-warning); }
   .header-status .status-failed { background: var(--color-negative); color: var(--color-negative); }
-  .header-time { padding-left: 9px; border-left: 1px solid var(--color-rule); color: var(--color-flow); white-space: nowrap; }
   .mobile-control-button { display: none; }
 
   .flow-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-canvas); }
@@ -100,7 +105,8 @@
   .stage-message strong { font-family: var(--font-display); font-size: 24px; }
   .stage-message span { color: var(--color-ink-muted); }
   .stage-error strong { color: var(--color-negative); }
-  .stage-readout { position: absolute; top: 16px; left: 18px; display: grid; grid-template-columns: repeat(4, auto); gap: 8px; pointer-events: none; }
+  .stage-status { position: absolute; z-index: 2; left: 18px; bottom: 12px; max-width: calc(100% - 36px); margin: 0; overflow: hidden; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--color-rule) 70%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--color-surface) 86%, transparent); color: var(--color-ink-muted); font-family: var(--font-ui-gothic); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+  .stage-readout { position: absolute; top: 16px; left: 18px; display: grid; grid-template-columns: repeat(3, auto); gap: 8px; pointer-events: none; }
   .stage-readout > div { min-width: 106px; padding: 8px 10px 7px; border: 1px solid color-mix(in srgb, var(--color-rule) 70%, transparent); background: color-mix(in srgb, var(--color-surface) 80%, transparent); backdrop-filter: blur(8px); }
   .stage-readout span { display: block; margin-bottom: 2px; color: var(--color-ink-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
   .stage-readout strong { color: var(--color-flow-soft); font-family: var(--font-data); font-size: 14px; font-weight: 500; }
@@ -153,33 +159,29 @@
   .diagnostics-card dt { color: var(--color-ink-muted); }
   .diagnostics-card dd { margin: 0; color: var(--color-flow-soft); font-family: var(--font-data); }
 
-  .lab-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 18px; border-top: 1px solid var(--color-rule); background: var(--color-surface); color: var(--color-ink-faint); font-family: var(--font-data); font-size: 10px; }
-  .status-copy { overflow: hidden; color: var(--color-ink-muted); text-overflow: ellipsis; white-space: nowrap; }
-  .shortcut-copy { white-space: nowrap; }
 }
 
 @media (max-width: 980px) {
-  .lab-shell { grid-template: 64px minmax(0, 1fr) 32px / 1fr; }
+  .lab-shell { grid-template: 64px minmax(0, 1fr) / 1fr; }
   .lab-header { grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-inline: 15px; }
   .header-preset { display: none; }
   .mobile-preset-field { display: block; margin-bottom: 10px; }
   .header-transport .transport-icon { width: 36px; min-width: 36px; }
   .mobile-control-button { display: block; margin-left: 4px; padding: 7px 10px; }
-  .control-panel { position: fixed; z-index: 10; top: 64px; right: 0; bottom: 32px; width: min(350px, 92vw); border-top: 1px solid var(--color-rule); translate: 100% 0; transition: translate 180ms ease; box-shadow: -10px 0 30px #0008; }
+  .control-panel { position: fixed; z-index: 10; top: 64px; right: 0; bottom: 0; width: min(350px, 92vw); border-top: 1px solid var(--color-rule); translate: 100% 0; transition: translate 180ms ease; box-shadow: -10px 0 30px #0008; }
   .control-panel.controls-open { translate: 0 0; }
   .stage-readout { grid-template-columns: repeat(2, auto); }
-  .shortcut-copy { display: none; }
 }
 
 @media (max-width: 560px) {
   .lab-header { grid-template-columns: minmax(0, 1fr) auto auto; padding-inline: 10px; }
   .lab-header p, .header-status { display: none; }
   .lab-header h1 { font-size: 21px; }
-  .header-transport { gap: 4px; }
+  .playback-time { left: calc(100% + 7px); }
   .header-transport .transport-icon { width: 34px; min-width: 34px; height: 32px; }
   .stage-readout { top: 9px; left: 9px; gap: 4px; }
   .stage-readout > div { min-width: 94px; padding: 6px 7px; }
-  .stage-readout > div:nth-child(3), .stage-readout > div:nth-child(4) { display: none; }
+  .stage-readout > div:nth-child(3) { display: none; }
   .drag-hint { width: max-content; max-width: calc(100% - 20px); text-align: center; }
 }
 

@@ -73,6 +73,8 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
   await expect(transport.getByRole("button", {name: "Reset simulation"})).toHaveAttribute("title", "Reset (R)");
   await expect(transport.getByRole("button", {name: "Pause simulation"})).toHaveAttribute("title", "Pause (Space)");
   await expect(transport.locator("kbd")).toHaveCount(0);
+  await expect(header.locator(".playback-time")).toHaveText(/^t=\d+\.\d{2}$/i);
+  await expect(page.getByText("Flow time", {exact: true})).toHaveCount(0);
   const [headerBox, transportBox] = await Promise.all([header.boundingBox(), transport.boundingBox()]);
   expect(headerBox).not.toBeNull();
   expect(transportBox).not.toBeNull();
@@ -100,5 +102,5 @@ test("invalid local scenarios fail visibly without leaving the browser", async (
     mimeType: "application/json",
     buffer: Buffer.from("{}", "utf8"),
   });
-  await expect(page.locator("footer").getByText("Scenario rejected:", {exact: false})).toBeVisible();
+  await expect(page.locator(".stage-message").getByText("Scenario rejected:", {exact: false})).toBeVisible();
 });

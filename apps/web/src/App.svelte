@@ -41,6 +41,11 @@
   let currentReynolds = $derived(snapshot?.reynolds ?? scenario?.reynolds ?? 1000);
   let phase = $derived(fused?.phase ?? (loading ? "warming" : "failed"));
   let tuning = $derived(snapshot?.solverTuning ?? null);
+  let detailStatus = $derived.by(() => {
+    if (fused?.pendingStatus !== null && fused?.pendingStatus !== undefined) return fused.pendingStatus;
+    const status = fused?.status;
+    return status === undefined || status === "running" || status === "warming" || status === "motion resolved; running" ? null : status;
+  });
 
   const solverLabels: Readonly<Record<SolverId, string>> = {
     "stable-fluids": "Stable Fluids",
@@ -268,15 +273,17 @@
         </select>
       </label>
     </div>
-    <div class="header-transport" aria-label="Simulation transport">
-      <button class="transport-icon" type="button" aria-label="Reset simulation" aria-keyshortcuts="R" title="Reset (R)" onclick={() => client?.send({kind: "reset"})}><span aria-hidden="true">↺</span></button>
-      <button class="transport-icon primary-action" type="button" aria-label={snapshot?.paused === true ? "Resume simulation" : "Pause simulation"} aria-keyshortcuts="Space" title={snapshot?.paused === true ? "Resume (Space)" : "Pause (Space)"} onclick={() => client?.send({kind: "pause"})}><span aria-hidden="true">{snapshot?.paused === true ? "▶︎" : "⏸︎"}</span></button>
+    <div class="header-playback">
+      <div class="header-transport" aria-label="Simulation transport">
+        <button class="transport-icon" type="button" aria-label="Reset simulation" aria-keyshortcuts="R" title="Reset (R)" onclick={() => client?.send({kind: "reset"})}><span aria-hidden="true">↺</span></button>
+        <button class="transport-icon primary-action" type="button" aria-label={snapshot?.paused === true ? "Resume simulation" : "Pause simulation"} aria-keyshortcuts="Space" title={snapshot?.paused === true ? "Resume (Space)" : "Pause (Space)"} onclick={() => client?.send({kind: "pause"})}><span aria-hidden="true">{snapshot?.paused === true ? "▶︎" : "⏸︎"}</span></button>
+      </div>
+      <span class="playback-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
     </div>
     <div class="header-right">
       <div class="header-status" aria-live="polite">
         <span class:status-running={phase === "running"} class:status-warning={phase === "warming" || phase === "paused"} class:status-failed={phase === "failed"}></span>
         <span>{phase}</span>
-        <span class="header-time">t={snapshot?.time.toFixed(2) ?? "—"}</span>
       </div>
       <button class="mobile-control-button" type="button" aria-expanded={controlsOpen} onclick={() => controlsOpen = !controlsOpen}>Controls</button>
     </div>
@@ -289,11 +296,11 @@
     {:else if error !== null}
       <div class="stage-message stage-error"><strong>Simulation unavailable</strong><span>{error}</span></div>
     {/if}
+    {#if detailStatus !== null}<p class="stage-status" aria-live="polite">{detailStatus}</p>{/if}
     <div class="stage-readout">
       <div><span>Angle of attack</span><strong>{displayedAoa.toFixed(1)}°</strong></div>
       <div><span>Reynolds number</span><strong>{currentReynolds.toFixed(0)}</strong></div>
       <div><span>Solver rate</span><strong>{snapshot?.stepRate?.toFixed(1) ?? "—"}<small> steps/s</small></strong></div>
-      <div><span>Flow time</span><strong>{snapshot?.time.toFixed(2) ?? "—"}<small> s</small></strong></div>
     </div>
     <p class="drag-hint">Drag around the foil to change its angle</p>
   </section>
@@ -384,8 +391,4 @@
     </div>
   </aside>
 
-  <footer class="lab-footer">
-    <span class="status-copy" aria-live="polite">{error ?? fused?.pendingStatus ?? fused?.status ?? "Loading the simulation…"}</span>
-    <span class="shortcut-copy">Space pause · R reset · 1/2/3 solver · V vorticity · C crop</span>
-  </footer>
 </main>
