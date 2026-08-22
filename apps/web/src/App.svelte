@@ -16,6 +16,7 @@
   const requestedBackend = query.get("backend") ?? "typescript";
   const requestedPreset = query.get("preset") ?? "dynamic";
   const narrowControlsQuery = window.matchMedia("(max-width: 980px)");
+  const STATUS_NOTICE_MILLISECONDS = 8000;
 
   interface SceneLayout {
     readonly left: number;
@@ -119,7 +120,7 @@
     statusNoticeTimer = window.setTimeout(() => {
       statusNotice = null;
       statusNoticeTimer = undefined;
-    }, 5000);
+    }, STATUS_NOTICE_MILLISECONDS);
   });
 
   const solverLabels: Readonly<Record<SolverId, string>> = {
