@@ -1,0 +1,43 @@
+{
+  "name": "foilbench-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build:wasm && vite build",
+    "build:pages": "npm run build -- --base /FoilBench/",
+    "build:wasm": "node ../../implementations/typescript/tools/buildRustWasm.mjs ../../apps/web/public/rust-wasm",
+    "check": "svelte-check --tsconfig ./tsconfig.json && eslint src tests vite.config.ts playwright.config.ts vitest.config.ts",
+    "dev": "vite",
+    "preview": "vite preview --base /FoilBench/",
+    "setup:browser": "playwright install chromium",
+    "test": "vitest run",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "computer-modern": "^0.1.3",
+    "foilbench-typescript": "file:../../implementations/typescript",
+    "three": "^0.185.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@playwright/test": "^1.55.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.5.2",
+    "eslint": "^10.0.0",
+    "svelte": "^5.56.10",
+    "svelte-check": "^4.7.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.1",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}

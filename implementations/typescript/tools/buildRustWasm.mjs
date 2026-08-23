@@ -5,7 +5,9 @@ import {fileURLToPath} from "node:url";
 
 const typescriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rustRoot = resolve(typescriptRoot, "../rust");
-const output = resolve(typescriptRoot, "public/rust-wasm");
+const output = process.argv[2] === undefined
+  ? resolve(typescriptRoot, "public/rust-wasm")
+  : resolve(process.cwd(), process.argv[2]);
 const wasm = resolve(rustRoot, "target/wasm32-unknown-unknown/release/foilbench_wasm.wasm");
 
 function cargo(commandArguments) {

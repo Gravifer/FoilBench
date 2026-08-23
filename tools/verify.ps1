@@ -165,6 +165,21 @@ try {
         finally {
             Pop-Location
         }
+
+        Write-Host '==> Web SPA: strict checks'
+        Push-Location 'apps/web'
+        try {
+            Invoke-Checked npm @('run', 'check')
+            Write-Host '==> Web SPA: unit tests'
+            Invoke-Checked npm @('test')
+            Write-Host '==> Web SPA: production build'
+            Invoke-Checked npm @('run', 'build:pages')
+            Write-Host '==> Web SPA: production Chromium smoke test'
+            Invoke-Checked npm @('run', 'test:browser')
+        }
+        finally {
+            Pop-Location
+        }
     }
 
     if ($Rust) {

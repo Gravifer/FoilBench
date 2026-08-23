@@ -1,10 +1,10 @@
-import type {CanonicalFlowState, ControlState, FlowSolver, ImportReason, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
+import type {CanonicalFlowState, ControlState, FlowSolver, ImportReason, InteractiveTuning, InteractiveTuningValue, Scenario, SolverId, StepReport} from "../core/contracts.js";
 import {NumericalFailure} from "../core/contracts.js";
 import {NacaFoil} from "../core/geometry.js";
 import {bounds2d, dimensions} from "../core/grid.js";
 import {controlAt} from "../core/scenario.js";
 import {createSolver} from "../solvers/factory.js";
-import type {ViewerSnapshot} from "./protocol.js";
+import type {SpaViewerSnapshot, ViewerPresentationProfile, ViewerSnapshot} from "./protocol.js";
 import {TracerSystem} from "./tracers.js";
 
 const POSE_SAMPLE_WINDOW_MILLISECONDS = 80;
@@ -65,6 +65,7 @@ export interface ViewerSnapshotStorage {
   readonly vorticity: Float32Array;
   readonly foilOutline: Float32Array;
 }
+export interface SpaViewerSnapshotStorage extends ViewerSnapshotStorage {readonly pathAges: Uint8Array}
 
 export type SolverFactory = (id: SolverId) => FlowSolver;
 
@@ -102,11 +103,12 @@ export class ViewerModel {
   private readonly tuningValues = new Map<SolverId, InteractiveTuningValue>();
   private readonly presentationFoil: NacaFoil;
 
-  public constructor(public readonly scenario: Scenario, solverId: SolverId, private readonly solverFactory: SolverFactory = createSolver) {
+  public constructor(public readonly scenario: Scenario, solverId: SolverId, private readonly solverFactory: SolverFactory = createSolver, presentationProfile: ViewerPresentationProfile = "reference") {
     this.solver = this.solverFactory(solverId);
     this.solver.initialize(scenario, scenario.seed);
     this.rememberTuning(this.solver);
     this.tracers = new TracerSystem(scenario);
+    this.tracers.setBoundaryExitTrailPolicy(presentationProfile === "spa" ? "age-out" : "clear");
     this.presentationFoil = new NacaFoil(scenario.foil);
     this.presentation = {
       vorticityVisible: true,
@@ -207,10 +209,7 @@ export class ViewerModel {
     return typeof value === "number" ? value.toFixed(2) : value;
   }
 
-  private tuningLabel(): string {
-    const tuning = this.solver.interactiveTuning?.();
-    return tuning === undefined ? "tuning=none" : `${tuning.label}=${this.formatTuningValue(tuning.value)}`;
-  }
+  private currentTuning(): InteractiveTuning | null { return this.solver.interactiveTuning?.() ?? null; }
 
   public reset(): void {
     const id = this.solver.info.id;
@@ -235,6 +234,29 @@ export class ViewerModel {
     this.warmValidationPending = false;
     this.tracers.reseed(this.scenario.controls[0]?.angleDegrees ?? 0, "scenario_reset");
     this.status = "warming";
+    this.clearMeasurements();
+  }
+
+  public restartInteractive(angleDegrees: number, reynolds: number): void {
+    if (!Number.isFinite(angleDegrees) || !Number.isFinite(reynolds)) throw new RangeError("interactive restart values must be finite");
+    const selectedAngle = Math.max(-30, Math.min(30, angleDegrees));
+    const selectedReynolds = Math.max(50, Math.min(100_000, reynolds));
+    this.solver.restart(this.scenario, this.scenario.seed, {time: 0, angleDegrees: selectedAngle, reynolds: selectedReynolds});
+    this.time = 0;
+    this.manualAngle = selectedAngle;
+    this.angularVelocity = 0;
+    this.dragging = false;
+    this.poseSamples = [];
+    this.lastPoseReceivedAt = null;
+    this.disablePoseOnly();
+    this.presentation.recoveryReason = "backend_restart";
+    this.presentation.recoveryStage = "restart";
+    this.playbackRate = Math.max(0.5, Math.min(2, (selectedReynolds / this.scenario.reynolds) ** Math.log10(1.5)));
+    this.failureTimes = [];
+    this.recoveryPending = false;
+    this.warmValidationPending = false;
+    this.tracers.reseed(selectedAngle, "scenario_reset");
+    this.status = "backend restart; warming";
     this.clearMeasurements();
   }
 
@@ -482,7 +504,19 @@ export class ViewerModel {
     };
   }
 
+  public createSpaSnapshotStorage(): SpaViewerSnapshotStorage {
+    return {...this.createSnapshotStorage(), pathAges: new Uint8Array(this.tracers.maximumSegmentCount)};
+  }
+
   public snapshot(storage?: ViewerSnapshotStorage): ViewerSnapshot {
+    return this.buildSnapshot(storage);
+  }
+
+  public spaSnapshot(storage?: SpaViewerSnapshotStorage): SpaViewerSnapshot {
+    return this.buildSnapshot(storage, storage?.pathAges ?? new Uint8Array(this.tracers.maximumSegmentCount)) as SpaViewerSnapshot;
+  }
+
+  private buildSnapshot(storage?: ViewerSnapshotStorage, pathAgeStorage?: Uint8Array): ViewerSnapshot | SpaViewerSnapshot {
     const {nx, ny} = dimensions(this.scenario.domain);
     const bounds = bounds2d(this.scenario.domain);
     const angle = this.control(this.time).angleDegrees;
@@ -493,12 +527,14 @@ export class ViewerModel {
     catch (error) { this.status = `vorticity failure: ${error instanceof Error ? error.name : "unknown"}; flow retained`; }
     const tracerPositions = storage?.tracerPositions ?? new Float32Array(this.tracers.positions.length);
     tracerPositions.set(this.tracers.positions);
-    const pathSegments = this.tracers.segments(storage?.pathSegments);
+    const path = pathAgeStorage === undefined
+      ? {segments: this.tracers.segments(storage?.pathSegments), ages: undefined}
+      : this.tracers.segmentsWithAges(storage?.pathSegments, pathAgeStorage);
     const vorticityOutput = storage === undefined ? vorticity.slice() : storage.vorticity.subarray(0, vorticity.length);
     if (storage !== undefined) vorticityOutput.set(vorticity);
     const foilOutline = this.presentationFoil.outline(angle, 192, storage?.foilOutline);
     this.revision += 1;
-    return {
+    const snapshot: ViewerSnapshot = {
       kind: "snapshot", revision: this.revision, appliedCommand: this.appliedCommand,
       solverEpoch: this.solverEpoch, solverStateRevision: this.solver.stateRevision,
       diagnosticSolverStateRevision: this.diagnosticsCacheRevision, vorticitySolverStateRevision: this.vorticityCacheRevision,
@@ -509,10 +545,11 @@ export class ViewerModel {
       recoveryEpoch: session.recoveryEpoch, recoveryReason: session.recoveryReason, recoveryStage: session.recoveryStage,
       tracerRecycleCounters: this.tracers.recycleCounters,
       poseOnly: this.presentation.poseOnly, motionMode: session.motionMode, scheduleActive: session.scheduleActive,
-      phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.tuningLabel(),
+      phase: session.phase, diagnosticMode: session.diagnosticMode, solverTuning: this.currentTuning(),
       resolution: [nx, ny], bounds: [bounds.x, bounds.y], tracerPositions,
-      pathSegments, vorticity: vorticityOutput, foilOutline,
+      pathSegments: path.segments, vorticity: vorticityOutput, foilOutline,
     };
+    return path.ages === undefined ? snapshot : {...snapshot, pathAges: path.ages};
   }
 
   private settleIdleDrag(now: number): void {

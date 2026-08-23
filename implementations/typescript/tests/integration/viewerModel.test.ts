@@ -39,6 +39,20 @@ describe("headless viewer model", () => {
     expect(model.paused).toBe(false);
     expect(model.snapshot().diagnosticMode).toBe("every-step");
   });
+  it("starts a backend replacement at the authoritative interactive pose", async () => {
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
+    const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
+    const scenario = parseScenario(raw, schema);
+    const model = new ViewerModel(scenario, "stable-fluids");
+    model.restartInteractive(-12, 5000);
+    const snapshot = model.snapshot();
+    expect(snapshot.time).toBe(0);
+    expect(snapshot.angleDegrees).toBe(-12);
+    expect(snapshot.reynolds).toBe(5000);
+    expect(snapshot.scheduleActive).toBe(false);
+    expect(snapshot.status).toContain("backend restart");
+    expect(snapshot.tracerPositions.every(Number.isFinite)).toBe(true);
+  });
   it("keeps diagnostic cadence and per-solver tuning as presentation state", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
     const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
@@ -46,13 +60,13 @@ describe("headless viewer model", () => {
     const model = new ViewerModel(scenario, "stable-fluids");
     model.toggleDiagnostics(); model.adjustSolverTuning(1);
     expect(model.snapshot().diagnosticMode).toBe("every-step");
-    expect(model.snapshot().solverTuning).toBe("adv=skew-rk2");
+    expect(model.snapshot().solverTuning?.value).toBe("skew-rk2");
     expect(model.switchSolver("lbm-d2q9")).toBe(true);
     expect(model.switchSolver("stable-fluids")).toBe(true);
-    expect(model.snapshot().solverTuning).toBe("adv=skew-rk2");
+    expect(model.snapshot().solverTuning?.value).toBe("skew-rk2");
     model.reset();
     expect(model.snapshot().diagnosticMode).toBe("every-step");
-    expect(model.snapshot().solverTuning).toBe("adv=maccormack");
+    expect(model.snapshot().solverTuning?.value).toBe("maccormack");
   });
   it("fills reusable snapshot storage without exposing mutable solver arrays", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
@@ -63,6 +77,19 @@ describe("headless viewer model", () => {
     expect(second.tracerPositions.buffer).toBe(first.tracerPositions.buffer);
     expect(second.pathSegments.buffer).toBe(first.pathSegments.buffer);
     expect(second.tracerPositions.buffer).not.toBe(model.tracers.positions.buffer);
+  });
+  it("keeps SPA trail metadata out of reference snapshots", async () => {
+    const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
+    const raw = JSON.parse(await readFile(resolve("../../scenarios/validation/uniform.json"), "utf8")) as unknown;
+    const scenario = parseScenario(raw, schema);
+    const model = new ViewerModel(scenario, "stable-fluids");
+    const spaModel = new ViewerModel(scenario, "stable-fluids", undefined, "spa");
+    const reference = model.snapshot(model.createSnapshotStorage());
+    const spa = model.spaSnapshot(model.createSpaSnapshotStorage());
+    expect("pathAges" in reference).toBe(false);
+    expect(spa.pathAges.length).toBe(spa.pathSegments.length / 4);
+    expect(model.tracers.boundaryExitTrailPolicy).toBe("clear");
+    expect(spaModel.tracers.boundaryExitTrailPolicy).toBe("age-out");
   });
   it("uses quarter-decade Reynolds controls and measures owner cycles", async () => {
     const schema = JSON.parse(await readFile(resolve("../../spec/schemas/scenario.schema.json"), "utf8")) as object;
