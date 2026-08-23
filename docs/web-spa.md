@@ -48,7 +48,8 @@ just web-preview
 
 The output is written to `apps/web/dist/` and uses the
 repository base path `/FoilBench/`. Publication is release-gated: ordinary
-pushes and pull requests never update the live site. See the
+pushes and pull requests never update the live site, prereleases are
+publish-only, and only a newer stable release promotes to Pages. See the
 [web release and deployment guide](web-release.md) for the dual manual/tag
 workflow, artifact identity, checksums, and failure behavior.
 

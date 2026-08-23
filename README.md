@@ -106,9 +106,11 @@ just web-view
 
 `just web-build` produces a base-path-safe static build for `/FoilBench/`, and
 `just web-preview` serves that build locally. No web server backend is required,
-and only a published release may update GitHub Pages. Ordinary pushes and pull
-requests never deploy. See the [static browser lab architecture](docs/web-spa.md)
-and [web release guide](docs/web-release.md).
+and only a newer stable published release may update GitHub Pages. Prereleases
+and stable backports remain downloadable without displacing the live lab.
+Ordinary pushes and pull requests never deploy. See the
+[static browser lab architecture](docs/web-spa.md) and
+[web release guide](docs/web-release.md).
 
 ## Rust/WASM
 
