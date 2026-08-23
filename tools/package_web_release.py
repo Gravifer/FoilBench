@@ -62,7 +62,7 @@ def _read_metadata(distribution: Path) -> ReleaseMetadata:
 
 def _zip_timestamp(built_at: str) -> tuple[int, int, int, int, int, int]:
     parsed = _parse_built_at(built_at)
-    year = max(parsed.year, 1980)
+    year = min(max(parsed.year, 1980), 2107)
     return year, parsed.month, parsed.day, parsed.hour, parsed.minute, parsed.second
 
 
