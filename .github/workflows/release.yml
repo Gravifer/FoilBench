@@ -14,7 +14,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  group: web-lab-release
   cancel-in-progress: false
 
 jobs:
@@ -58,8 +58,11 @@ jobs:
               throw "Invalid release version: $version"
           }
           if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-              & git show-ref --verify --quiet "refs/tags/$version"
-              if ($LASTEXITCODE -eq 0) {
+              $existingTag = (& git tag --list $version).Trim()
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Could not check whether tag already exists: $version"
+              }
+              if ($existingTag) {
                   throw "Tag already exists: $version"
               }
           }
@@ -135,6 +138,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Upload Pages artifact
+        if: steps.identity.outputs.prerelease != 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: apps/web/dist
@@ -163,7 +167,8 @@ jobs:
               'release', 'create', $env:RELEASE_VERSION,
               "dist/release/foilbench-web-$($env:RELEASE_VERSION).zip",
               'dist/release/SHA256SUMS',
-              '--draft', '--generate-notes', '--title', "FoilBench $($env:RELEASE_VERSION)"
+              '--draft', '--generate-notes', '--latest=false',
+              '--title', "FoilBench $($env:RELEASE_VERSION)"
           )
           if ($env:EVENT_NAME -eq 'push') {
               $arguments += '--verify-tag'
@@ -183,9 +188,56 @@ jobs:
               throw 'Release assets uploaded, but the draft could not be published'
           }
 
+  deployment_policy:
+    name: Plan Pages promotion
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.plan.outputs.deploy }}
+      deployed_version: ${{ steps.plan.outputs.deployed_version }}
+      reason: ${{ steps.plan.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Compare candidate with the live Pages release
+        id: plan
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $arguments = @(
+              'tools/plan_web_deployment.py',
+              '--candidate', $env:RELEASE_VERSION,
+              '--metadata-url', 'https://gravifer.github.io/FoilBench/release.json',
+              '--github-output', $env:GITHUB_OUTPUT
+          )
+          & python @arguments
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Could not establish a trustworthy Pages promotion decision'
+          }
+      - name: Summarize promotion decision
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          DEPLOYED_VERSION: ${{ steps.plan.outputs.deployed_version }}
+          DEPLOY: ${{ steps.plan.outputs.deploy }}
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          $current = if ($env:DEPLOYED_VERSION) { $env:DEPLOYED_VERSION } else { 'none' }
+          @(
+              '## Pages promotion decision',
+              '',
+              "- Candidate: ``$env:RELEASE_VERSION``",
+              "- Currently deployed: ``$current``",
+              "- Deploy: ``$env:DEPLOY``",
+              "- Reason: $env:REASON"
+          ) >> $env:GITHUB_STEP_SUMMARY
+
   deploy:
     name: Deploy released Pages artifact
-    needs: [prepare, publish]
+    needs: [prepare, publish, deployment_policy]
+    if: needs.deployment_policy.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -200,3 +252,21 @@ jobs:
       - name: Deploy the released build
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+  promote:
+    name: Mark deployed release as Latest
+    needs: [prepare, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Promote the deployed GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          & gh release edit $env:RELEASE_VERSION --latest
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Pages deployed successfully, but the GitHub release could not be marked Latest'
+          }
