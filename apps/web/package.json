@@ -10,7 +10,7 @@
     "build": "npm run build:wasm && vite build",
     "build:pages": "npm run build -- --base /FoilBench/",
     "build:wasm": "node ../../implementations/typescript/tools/buildRustWasm.mjs ../../apps/web/public/rust-wasm",
-    "check": "svelte-check --tsconfig ./tsconfig.json && eslint src tests vite.config.ts playwright.config.ts vitest.config.ts",
+    "check": "svelte-check --tsconfig ./tsconfig.json && eslint src tests releaseMetadata.ts vite.config.ts playwright.config.ts vitest.config.ts",
     "dev": "vite",
     "preview": "vite preview --base /FoilBench/",
     "setup:browser": "playwright install chromium",
