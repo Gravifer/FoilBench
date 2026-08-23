@@ -90,6 +90,8 @@ def test_stable_pages_promotion_is_strictly_monotonic(
         {key: value for key, value in _metadata("v0.1.0").items() if key != "commit"},
         {**_metadata("not-semver")},
         {**_metadata("v0.1.0"), "pages_base": "/wrong/"},
+        {**_metadata("v0.1.0"), "schema_version": True},
+        {**_metadata("v0.1.0"), "built_at": "2026-02-30T12:34:56Z"},
     ],
 )
 def test_untrustworthy_live_metadata_fails_closed(metadata: object, tmp_path: Path) -> None:

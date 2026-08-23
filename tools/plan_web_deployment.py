@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, TypeAlias, cast
 
@@ -112,7 +113,12 @@ def validate_deployed_metadata(value: object) -> str:
         missing = sorted(_METADATA_FIELDS - frozenset(metadata))
         extra = sorted(frozenset(metadata) - _METADATA_FIELDS)
         raise PolicyError(f"deployed release metadata fields differ: missing={missing}, extra={extra}")
-    if metadata["schema_version"] != 1 or metadata["release"] is not True:
+    if (
+        not isinstance(metadata["schema_version"], int)
+        or isinstance(metadata["schema_version"], bool)
+        or metadata["schema_version"] != 1
+        or metadata["release"] is not True
+    ):
         raise PolicyError("deployed metadata does not identify a versioned release build")
     version = metadata["version"]
     if not isinstance(version, str):
@@ -124,6 +130,12 @@ def validate_deployed_metadata(value: object) -> str:
     built_at = metadata["built_at"]
     if not isinstance(built_at, str) or _BUILT_AT_PATTERN.fullmatch(built_at) is None:
         raise PolicyError("deployed release build time must be a UTC ISO-8601 timestamp")
+    try:
+        parsed_built_at = datetime.strptime(built_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError as error:
+        raise PolicyError("deployed release build time is not a real UTC instant") from error
+    if parsed_built_at.strftime("%Y-%m-%dT%H:%M:%SZ") != built_at:
+        raise PolicyError("deployed release build time is not canonical")
     if metadata["pages_base"] != "/FoilBench/":
         raise PolicyError("deployed release metadata has an unexpected Pages base")
     contract_id = metadata["contract_id"]
