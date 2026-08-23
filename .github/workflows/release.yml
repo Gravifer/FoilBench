@@ -58,7 +58,7 @@ jobs:
               throw "Invalid release version: $version"
           }
           if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-              $existingTag = (& git tag --list $version).Trim()
+              $existingTag = & git tag --list $version
               if ($LASTEXITCODE -ne 0) {
                   throw "Could not check whether tag already exists: $version"
               }
@@ -167,7 +167,7 @@ jobs:
               'release', 'create', $env:RELEASE_VERSION,
               "dist/release/foilbench-web-$($env:RELEASE_VERSION).zip",
               'dist/release/SHA256SUMS',
-              '--draft', '--generate-notes', '--latest=false',
+              '--generate-notes', '--latest=false',
               '--title', "FoilBench $($env:RELEASE_VERSION)"
           )
           if ($env:EVENT_NAME -eq 'push') {
@@ -181,11 +181,7 @@ jobs:
           }
           & gh @arguments
           if ($LASTEXITCODE -ne 0) {
-              throw 'Could not create the draft GitHub release'
-          }
-          & gh release edit $env:RELEASE_VERSION --draft=false
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Release assets uploaded, but the draft could not be published'
+              throw 'Could not create and publish the GitHub release'
           }
 
   deployment_policy:
