@@ -24,6 +24,20 @@ _RELEASE_VERSION: Final = re.compile(
     r"(?:-(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*))"
     r"(?:\.(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*)?$"
 )
+_RELEASE_COMMIT: Final = re.compile(r"^[0-9a-f]{40}$")
+_RELEASE_BUILT_AT: Final = re.compile(
+    r"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    r"T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\dZ$"
+)
+
+
+def _parse_built_at(value: str) -> datetime:
+    if _RELEASE_BUILT_AT.fullmatch(value) is None:
+        raise ValueError("release.json build time must be a UTC ISO-8601 timestamp")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("release.json build time must be a UTC ISO-8601 timestamp") from error
 
 
 def _read_metadata(distribution: Path) -> ReleaseMetadata:
@@ -38,15 +52,16 @@ def _read_metadata(distribution: Path) -> ReleaseMetadata:
         raise ValueError("distribution is not a release build")
     if _RELEASE_VERSION.fullmatch(version) is None:
         raise ValueError("release.json contains an invalid release version")
-    if not isinstance(commit, str) or len(commit) != 40:
+    if not isinstance(commit, str) or _RELEASE_COMMIT.fullmatch(commit) is None:
         raise ValueError("release.json does not contain a full commit identity")
     if not isinstance(built_at, str):
         raise TypeError("release.json does not contain a build time")
+    _parse_built_at(built_at)
     return {"release": release, "version": version, "commit": commit, "built_at": built_at}
 
 
 def _zip_timestamp(built_at: str) -> tuple[int, int, int, int, int, int]:
-    parsed = datetime.fromisoformat(built_at.replace("Z", "+00:00"))
+    parsed = _parse_built_at(built_at)
     year = max(parsed.year, 1980)
     return year, parsed.month, parsed.day, parsed.hour, parsed.minute, parsed.second
 

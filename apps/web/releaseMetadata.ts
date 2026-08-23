@@ -1,4 +1,5 @@
 export const RELEASE_VERSION_PATTERN = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*)?$/;
+const RELEASE_BUILT_AT_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\dZ$/;
 
 export interface ContractIdentity {
   readonly contractId: string;
@@ -31,6 +32,12 @@ export function isPrereleaseVersion(value: string): boolean {
   return value.includes("-");
 }
 
+function isReleaseBuildTime(value: string): boolean {
+  if (!RELEASE_BUILT_AT_PATTERN.test(value)) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === `${value.slice(0, -1)}.000Z`;
+}
+
 export function createReleaseMetadata(
   environment: ReleaseEnvironment,
   contract: ContractIdentity,
@@ -54,7 +61,9 @@ export function createReleaseMetadata(
   }
   if (!isReleaseVersion(environment.version)) throw new Error(`invalid release version ${JSON.stringify(environment.version)}`);
   if (!/^[0-9a-f]{40}$/.test(environment.commit)) throw new Error("release commit must be a full lowercase Git SHA");
-  if (!Number.isFinite(Date.parse(environment.builtAt))) throw new Error("release build time must be an ISO-8601 timestamp");
+  if (!isReleaseBuildTime(environment.builtAt)) {
+    throw new Error("release build time must be a UTC ISO-8601 timestamp");
+  }
   if (pagesBase !== "/FoilBench/") throw new Error(`release pages base must be /FoilBench/, received ${JSON.stringify(pagesBase)}`);
   return {
     schema_version: 1,

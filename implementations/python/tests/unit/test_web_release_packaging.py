@@ -1,0 +1,90 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+def _write_metadata(
+    directory: Path,
+    *,
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    built_at: str = "2026-08-23T12:34:56Z",
+) -> None:
+    metadata = {
+        "release": True,
+        "version": "v0.2.0",
+        "commit": commit,
+        "built_at": built_at,
+    }
+    (directory / "release.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+
+def _run_packager(distribution: Path, output: Path) -> subprocess.CompletedProcess[str]:
+    script = Path(__file__).resolve().parents[4] / "tools" / "package_web_release.py"
+    return subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--dist",
+            str(distribution),
+            "--output",
+            str(output),
+            "--version",
+            "v0.2.0",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_release_packager_accepts_canonical_identity(tmp_path: Path) -> None:
+    distribution = tmp_path / "dist"
+    distribution.mkdir()
+    _write_metadata(distribution)
+    (distribution / "index.html").write_text("FoilBench", encoding="utf-8")
+    result = _run_packager(distribution, tmp_path / "release")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "release" / "foilbench-web-v0.2.0.zip").is_file()
+    assert (tmp_path / "release" / "SHA256SUMS").is_file()
+
+
+@pytest.mark.parametrize(
+    "commit",
+    [
+        "g" * 40,
+        "A" * 40,
+        "deadbeef",
+    ],
+)
+def test_release_packager_rejects_noncanonical_commit(tmp_path: Path, commit: str) -> None:
+    distribution = tmp_path / "dist"
+    distribution.mkdir()
+    _write_metadata(distribution, commit=commit)
+    result = _run_packager(distribution, tmp_path / "release")
+    assert result.returncode != 0
+    assert "full commit identity" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "built_at",
+    [
+        "2026-08-23",
+        "2026-08-23T12:34:56",
+        "2026-08-23T12:34:56+00:00",
+        "2026-02-31T12:34:56Z",
+        "soon",
+    ],
+)
+def test_release_packager_rejects_noncanonical_build_time(
+    tmp_path: Path,
+    built_at: str,
+) -> None:
+    distribution = tmp_path / "dist"
+    distribution.mkdir()
+    _write_metadata(distribution, built_at=built_at)
+    result = _run_packager(distribution, tmp_path / "release")
+    assert result.returncode != 0
+    assert "UTC ISO-8601" in result.stderr

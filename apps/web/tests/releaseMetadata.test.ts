@@ -48,7 +48,26 @@ describe("release metadata", () => {
     });
     expect(() => createReleaseMetadata({version: environment.version}, contract, "/FoilBench/")).toThrow(/together/);
     expect(() => createReleaseMetadata({...environment, commit: "deadbeef"}, contract, "/FoilBench/")).toThrow(/full lowercase/);
-    expect(() => createReleaseMetadata({...environment, builtAt: "soon"}, contract, "/FoilBench/")).toThrow(/ISO-8601/);
     expect(() => createReleaseMetadata(environment, contract, "/wrong/")).toThrow(/pages base/);
+  });
+
+  it.each([
+    "2026-08-23",
+    "2026-08-23T12:34:56",
+    "2026-08-23T12:34:56+00:00",
+    "2026-02-31T12:34:56Z",
+    "soon",
+  ])("rejects the non-canonical release build time %s", (builtAt) => {
+    expect(() =>
+      createReleaseMetadata(
+        {
+          version: "v0.2.0",
+          commit: "0123456789abcdef0123456789abcdef01234567",
+          builtAt,
+        },
+        contract,
+        "/FoilBench/",
+      ),
+    ).toThrow(/UTC ISO-8601/);
   });
 });
