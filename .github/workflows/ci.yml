@@ -83,6 +83,13 @@ jobs:
       - name: Build static web artifact
         run: npm run build:pages
         working-directory: apps/web
+        env:
+          FOILBENCH_BASE: /FoilBench/
+          FOILBENCH_RELEASE_VERSION: v0.0.0-ci
+          FOILBENCH_RELEASE_COMMIT: ${{ github.sha }}
+          FOILBENCH_RELEASE_BUILT_AT: '2000-01-01T00:00:00Z'
+      - name: Exercise release packaging without publishing
+        run: python tools/package_web_release.py --version v0.0.0-ci --output dist/ci-release
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
         working-directory: apps/web
