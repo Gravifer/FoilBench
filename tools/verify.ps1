@@ -54,6 +54,7 @@ try {
             'tools/generate_conformance.py',
             'tools/validate_spec.py',
             'tools/validate_acceptance_fixtures.py',
+            'tools/package_web_release.py',
             'tools/validate_scheduled_fidelity.py'
         )
         if ($Representative) {
