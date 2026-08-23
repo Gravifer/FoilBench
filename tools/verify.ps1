@@ -56,6 +56,7 @@ try {
             'tools/validate_acceptance_fixtures.py',
             'tools/package_web_release.py',
             'tools/plan_web_deployment.py',
+            'tools/validate_web_release_candidate.py',
             'tools/validate_scheduled_fidelity.py'
         )
         if ($Representative) {

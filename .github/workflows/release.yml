@@ -42,7 +42,6 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          $versionPattern = '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*)?$'
           if ($env:EVENT_NAME -eq 'workflow_dispatch') {
               if ($env:EVENT_REF -ne 'refs/heads/main') {
                   throw 'Manual releases must run from main'
@@ -54,19 +53,19 @@ jobs:
               $version = $env:EVENT_REF_NAME
               $commit = $env:EVENT_SHA
           }
-          if ($version -notmatch $versionPattern) {
-              throw "Invalid release version: $version"
-          }
+          $candidateArguments = @(
+              'tools/validate_web_release_candidate.py',
+              '--candidate', $version,
+              '--repository', '.'
+          )
           if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-              $existingTag = & git tag --list $version
-              if ($LASTEXITCODE -ne 0) {
-                  throw "Could not check whether tag already exists: $version"
-              }
-              if ($existingTag) {
-                  throw "Tag already exists: $version"
-              }
+              $candidateArguments += '--require-candidate-tag-absent'
           }
-          else {
+          & python @candidateArguments
+          if ($LASTEXITCODE -ne 0) {
+              throw "Release candidate policy rejected $version"
+          }
+          if ($env:EVENT_NAME -ne 'workflow_dispatch') {
               & git fetch --no-tags origin main:refs/remotes/origin/main
               if ($LASTEXITCODE -ne 0) {
                   throw 'Could not fetch origin/main for the release ancestry check'
@@ -162,13 +161,15 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           $arguments = @(
               'release', 'create', $env:RELEASE_VERSION,
               "dist/release/foilbench-web-$($env:RELEASE_VERSION).zip",
               'dist/release/SHA256SUMS',
               '--generate-notes', '--latest=false',
-              '--title', "FoilBench $($env:RELEASE_VERSION)"
+              '--title', "FoilBench $($env:RELEASE_VERSION)",
+              '--repo', $env:RELEASE_REPOSITORY
           )
           if ($env:EVENT_NAME -eq 'push') {
               $arguments += '--verify-tag'
@@ -261,8 +262,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          & gh release edit $env:RELEASE_VERSION --latest
+          & gh release edit $env:RELEASE_VERSION --latest --repo $env:RELEASE_REPOSITORY
           if ($LASTEXITCODE -ne 0) {
               throw 'Pages deployed successfully, but the GitHub release could not be marked Latest'
           }
