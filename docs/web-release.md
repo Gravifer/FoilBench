@@ -16,11 +16,11 @@ The release workflow accepts versions of the form
 `v0.2.0-rc.1`. A suffix marks the GitHub Release as a prerelease. Build
 metadata introduced with `+` is intentionally unsupported.
 
-Release labels need only be valid and unused; publication itself is not
-monotonic. For example, publishing `v4.2.13` after `v4.7.1`, or publishing an
-RC after its corresponding final release, is allowed. Those releases remain
-available as historical or backport artifacts without necessarily replacing
-the live lab.
+Stable release labels need only be valid and unused; publication itself is not
+globally monotonic. For example, publishing the stable backport `v4.2.13`
+after `v4.7.1` is allowed without replacing the live lab. A prerelease is
+stricter: once `vX.Y.Z` exists, that final tag permanently closes its series
+and every later `vX.Y.Z-*` candidate is rejected before build work begins.
 
 There are two equivalent entry points.
 
@@ -31,9 +31,10 @@ There are two equivalent entry points.
 3. Enter the new version.
 4. Run the workflow.
 
-The workflow refuses manual runs from any other branch and refuses a version
-whose tag already exists. It creates the release tag at the tested `main`
-commit only after the identified artifact is ready to publish.
+The workflow refuses manual runs from any other branch, refuses a version
+whose tag already exists, and refuses a prerelease whose corresponding final
+tag exists. It creates the release tag at the tested `main` commit only after
+the identified artifact is ready to publish.
 
 The same operation can be requested through GitHub CLI:
 
@@ -53,7 +54,8 @@ git push origin v0.2.0-rc.1
 The workflow fetches the full repository history and requires the tagged
 commit to be reachable from `origin/main`. A tag on an unmerged feature commit
 therefore cannot publish or deploy the lab. A known-good older commit on the
-`main` history remains eligible.
+`main` history remains eligible. Pushed prerelease tags are subject to the same
+closed-series rule as manually requested versions.
 
 ## Build, publication, and Pages promotion
 
