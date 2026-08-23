@@ -95,10 +95,21 @@ and diagnostic cropping.
 
 ### Static browser lab
 
-The polished FoilBench SPA is a separate, canvas-first presentation built with
-Svelte, Tailwind, Three.js, and the existing simulation worker. During the SPA
-polishing stage it defaults to TypeScript, with Rust/WASM retained as a
-selectable comparison backend:
+**[Open the live FoilBench lab](https://gravifer.github.io/FoilBench/).** It is
+a separate, canvas-first Svelte, Tailwind, and Three.js presentation built on
+the existing simulation worker. Drag the foil directly, choose a preset and
+solver from the controls, or pause and reset from the centered transport
+strip. The familiar keyboard controls remain available when focus is not in an
+interactive control: `1/2/3`, `Space`, `R`, `+/-/0`, `[/]`, and `V/T/C`.
+
+The lab defaults to the independent TypeScript solvers; the shared Rust core
+compiled to WASM is selectable as a comparison backend. Changing solver
+families within one backend supports warm conversion. Changing numerical
+backend performs a clearly reported cold restart at the authoritative foil
+pose. The Python, Julia, and compact TypeScript presentations remain the dev
+viewers used for parity and diagnostics.
+
+For local SPA development:
 
 ```powershell
 just web-view
@@ -106,9 +117,10 @@ just web-view
 
 `just web-build` produces a base-path-safe static build for `/FoilBench/`, and
 `just web-preview` serves that build locally. No web server backend is required,
-and only a newer stable published release may update GitHub Pages. Prereleases
-and stable backports remain downloadable without displacing the live lab.
-Ordinary pushes and pull requests never deploy. See the
+and the deployed files are tied to a versioned GitHub Release. Only a newer
+stable published release may update GitHub Pages; prereleases and stable
+backports remain downloadable without displacing the live lab. Ordinary pushes
+and pull requests never deploy. See the
 [static browser lab architecture](docs/web-spa.md) and
 [web release guide](docs/web-release.md).
 

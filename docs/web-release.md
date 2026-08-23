@@ -9,6 +9,19 @@ the first release, repository **Settings → Pages → Build and deployment** mu
 use **GitHub Actions** as its source. The repository `GITHUB_TOKEN` can deploy
 an enabled Pages site, but it cannot enable Pages on the owner's behalf.
 
+The `github-pages` environment must also permit both workflow entry points.
+Under **Settings → Environments → github-pages → Deployment branches and
+tags**, retain these allowed refs:
+
+- branch `main`, for manual workflow dispatches;
+- tag pattern `v*.*.*`, for tag-triggered releases.
+
+An optional environment wait timer is compatible with the workflow; it simply
+keeps the deployment job in its expected waiting state before Pages promotion.
+Do not configure only `main`: GitHub evaluates a tag-triggered deployment
+against the tag ref even though the workflow separately proves that its commit
+is reachable from `origin/main`.
+
 ## Starting a release
 
 The release workflow accepts versions of the form
@@ -77,7 +90,7 @@ that single build feeds both publication paths:
 
 1. `foilbench-web-vX.Y.Z.zip` packages the static site.
 2. `SHA256SUMS` identifies the exact archive bytes.
-3. A draft GitHub Release receives both assets and is then published.
+3. A GitHub Release receives both assets and is published.
 4. The release is published explicitly without changing GitHub's **Latest**
    designation.
 5. The workflow compares a stable candidate with the release identity served
@@ -88,6 +101,11 @@ that single build feeds both publication paths:
 GitHub adds its tag-based source ZIP and tarball automatically. FoilBench does
 not publish a separate Rust/WASM archive or use GitHub Packages; the WASM files
 needed by the lab are already contained in the static web archive.
+
+Repository releases are immutable after publication. The workflow therefore
+builds and verifies the identified artifact before publishing it, and later
+failures are recovered by rerunning the failed job rather than editing or
+recreating that release.
 
 Prereleases are publish-only and never deploy to Pages. Stable releases use
 strict SemVer precedence against the version in the live site's
@@ -120,6 +138,10 @@ in `SHA256SUMS`.
 - A Pages failure after publication leaves the GitHub Release intact and the
   previous Pages deployment live. Rerun the failed deployment job; rebuilding
   or recreating the release is unnecessary.
+- If GitHub reports that a tag is not allowed to deploy to `github-pages`, add
+  or correct the `v*.*.*` environment tag rule described above, then rerun only
+  **Deploy released Pages artifact**. Its dependent **Mark deployed release as
+  Latest** job will follow after a successful deployment.
 - If Pages succeeds but updating GitHub's **Latest** designation fails, the
   new site is already live. Rerun only the failed promotion job.
 
