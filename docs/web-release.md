@@ -16,6 +16,12 @@ The release workflow accepts versions of the form
 `v0.2.0-rc.1`. A suffix marks the GitHub Release as a prerelease. Build
 metadata introduced with `+` is intentionally unsupported.
 
+Release labels need only be valid and unused; publication itself is not
+monotonic. For example, publishing `v4.2.13` after `v4.7.1`, or publishing an
+RC after its corresponding final release, is allowed. Those releases remain
+available as historical or backport artifacts without necessarily replacing
+the live lab.
+
 There are two equivalent entry points.
 
 ### GitHub Actions interface
@@ -49,7 +55,11 @@ commit to be reachable from `origin/main`. A tag on an unmerged feature commit
 therefore cannot publish or deploy the lab. A known-good older commit on the
 `main` history remains eligible.
 
-## Build and publication transaction
+## Build, publication, and Pages promotion
+
+Release workflow runs share one global concurrency queue. Different version
+labels therefore cannot race one another while reading or updating the live
+Pages site.
 
 The workflow performs one identified production build with the fixed Pages
 base `/FoilBench/`. Its generated `release.json` records:
@@ -66,15 +76,24 @@ that single build feeds both publication paths:
 1. `foilbench-web-vX.Y.Z.zip` packages the static site.
 2. `SHA256SUMS` identifies the exact archive bytes.
 3. A draft GitHub Release receives both assets and is then published.
-4. Only after publication succeeds is the already-built Pages artifact
-   deployed.
+4. The release is published explicitly without changing GitHub's **Latest**
+   designation.
+5. The workflow compares a stable candidate with the release identity served
+   by the live Pages site.
+6. Only an eligible stable build is deployed; after successful deployment,
+   its GitHub Release is marked **Latest**.
 
 GitHub adds its tag-based source ZIP and tarball automatically. FoilBench does
 not publish a separate Rust/WASM archive or use GitHub Packages; the WASM files
 needed by the lab are already contained in the static web archive.
 
-Prereleases use the same Pages destination. Publishing an RC therefore makes
-that RC the live lab while retaining GitHub's prerelease classification.
+Prereleases are publish-only and never deploy to Pages. Stable releases use
+strict SemVer precedence against the version in the live site's
+`release.json`: a candidate deploys only when it is newer. An equal or older
+stable release is still published, but Pages and GitHub's **Latest** release
+remain unchanged. A missing `release.json` response (HTTP 404) is treated as
+the first deployment; malformed, unreachable, or otherwise untrustworthy live
+metadata fails closed instead of guessing.
 
 To verify a downloaded release archive on a Unix-like system:
 
@@ -92,12 +111,22 @@ in `SHA256SUMS`.
   problem with a new version rather than moving a published release tag.
 - A release-publication failure leaves Pages on its previous release. A draft
   may remain available for inspection or removal.
+- A prerelease or non-newer stable release publishes successfully and records
+  a skipped Pages promotion; this is an expected successful outcome.
+- An inability to establish the live release version leaves the newly
+  published release visible but non-latest and prevents deployment.
 - A Pages failure after publication leaves the GitHub Release intact and the
   previous Pages deployment live. Rerun the failed deployment job; rebuilding
   or recreating the release is unnecessary.
+- If Pages succeeds but updating GitHub's **Latest** designation fails, the
+  new site is already live. Rerun only the failed promotion job.
 
 GitHub Releases and Pages are separate services and cannot be updated as one
 atomic transaction. Publishing the release before deployment guarantees that
 every successful Pages update corresponds to an already-visible release. The
 site's `release.json`, downloadable archive, and checksum make that
 relationship auditable.
+
+After publication has created a tag, retry failed jobs rather than rerunning
+the entire workflow: a new complete manual run correctly rejects the now-used
+version label.
