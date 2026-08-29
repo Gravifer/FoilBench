@@ -159,6 +159,8 @@
   button:disabled { cursor: default; opacity: .38; }
   .toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .toggle-grid button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; padding: 6px 6px 6px 8px; font-size: var(--panel-font-control); text-align: left; }
+  .trail-blend-label { margin-top: 13px; }
+  .trail-blend-control { grid-template-columns: repeat(3, 1fr); margin-bottom: 0; }
   .explanation-card, .diagnostics-card { margin: 12px; border: 1px solid var(--color-rule); border-radius: 5px; background: color-mix(in srgb, var(--color-surface-raised) 58%, var(--color-surface)); }
   .explanation-card > button, .diagnostics-card > button { display: flex; justify-content: space-between; width: 100%; padding: 10px 11px; border: 0; background: transparent; color: var(--color-ink); font-family: var(--font-display); font-size: var(--panel-font-card); line-height: 1.25; }
   .explanation-copy { padding: 0 11px 3px; }

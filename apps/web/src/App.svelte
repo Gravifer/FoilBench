@@ -6,6 +6,7 @@
   import {isSpaViewerSnapshot} from "foilbench-typescript/src/viewer/protocol.js";
   import type {SolverBackend, SpaViewerSnapshot, ViewerStartState, ViewerStatusEvent} from "foilbench-typescript/src/viewer/protocol.js";
   import {FoilSceneController, LAB_PALETTE} from "foilbench-typescript/src/viewer/sceneController.js";
+  import type {TrailBlendMode} from "foilbench-typescript/src/viewer/sceneController.js";
   import {fuseViewerStatus} from "foilbench-typescript/src/viewer/statusFusion.js";
   import {ViewerWorkerClient} from "foilbench-typescript/src/viewer/workerClient.js";
   import {LatestRequestGate} from "./latestRequest.js";
@@ -52,6 +53,7 @@
   let narrowControlsOpen = $state(false);
   let teachingOpen = $state(true);
   let diagnosticsOpen = $state(false);
+  let trailBlendMode = $state<TrailBlendMode>("normal");
   let statusNotice = $state<string | null>(null);
   const statusNotices = new StatusNoticeController((notice) => { statusNotice = notice; });
   let tuningSteps = $state<Record<SolverId, number>>({"stable-fluids": 0, "lbm-d2q9": 0, "pic-flip": 0});
@@ -260,6 +262,11 @@
     else wideControlsOpen = !wideControlsOpen;
   }
 
+  function changeTrailBlendMode(mode: TrailBlendMode): void {
+    trailBlendMode = mode;
+    scene?.setTrailBlendMode(mode);
+  }
+
   function handleKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -280,7 +287,7 @@
   }
 
   onMount(() => {
-    scene = new FoilSceneController(sceneHost, LAB_PALETTE, {showTracerPoints: false, trailStyle: "age-speed-alpha"});
+    scene = new FoilSceneController(sceneHost, LAB_PALETTE, {showTracerPoints: false, trailStyle: "age-speed-alpha", trailBlendMode});
     const resize = (): void => {
       updateSceneLayout();
       const bounds = sceneHost.getBoundingClientRect();
@@ -466,6 +473,12 @@
           <button class:active={snapshot?.tracerMode === "material"} type="button" aria-keyshortcuts="T" onclick={() => client?.send({kind: "toggle-tracers"})}><span>Material tracers</span><kbd>T</kbd></button>
           <button class:active={snapshot?.cropEnabled === true} type="button" aria-keyshortcuts="C" onclick={() => client?.send({kind: "toggle-crop"})}><span>Crop edges</span><kbd>C</kbd></button>
           <button class:active={snapshot?.diagnosticMode === "every-step"} type="button" aria-keyshortcuts="D" onclick={() => client?.send({kind: "toggle-diagnostics"})}><span>Live diagnostics</span><kbd>D</kbd></button>
+        </div>
+        <span class="field-label trail-blend-label">Trail blending</span>
+        <div class="segmented trail-blend-control" aria-label="Trail blending">
+          <button class:active={trailBlendMode === "normal"} aria-pressed={trailBlendMode === "normal"} type="button" onclick={() => changeTrailBlendMode("normal")}>Normal</button>
+          <button class:active={trailBlendMode === "additive"} aria-pressed={trailBlendMode === "additive"} type="button" onclick={() => changeTrailBlendMode("additive")}>Additive</button>
+          <button class:active={trailBlendMode === "screen"} aria-pressed={trailBlendMode === "screen"} type="button" onclick={() => changeTrailBlendMode("screen")}>Screen</button>
         </div>
       </section>
 

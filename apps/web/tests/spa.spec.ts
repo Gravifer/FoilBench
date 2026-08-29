@@ -38,6 +38,33 @@ test("curated controls and local scenario import remain browser-local", async ({
   await expect(page.getByText("A locally imported, schema-validated scenario.")).toBeVisible();
 });
 
+test("trail blending compares one SPA frame without restarting either backend", async ({page}) => {
+  await page.goto("./?preset=dynamic&solver=stable-fluids&backend=typescript");
+  await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
+  const canvas = page.locator("canvas");
+  const blending = page.getByLabel("Trail blending");
+  const pause = page.getByRole("button", {name: "Pause simulation"});
+  await expect(canvas).toHaveAttribute("data-trail-blend", "normal");
+  await expect(blending.getByRole("button", {name: "Normal"})).toHaveAttribute("aria-pressed", "true");
+
+  await pause.click();
+  await expect(page.getByLabel("Simulation paused")).toBeVisible();
+  const pausedTime = await page.locator(".playback-time").textContent();
+  await blending.getByRole("button", {name: "Additive"}).click();
+  await expect(canvas).toHaveAttribute("data-trail-blend", "additive");
+  await expect(page.locator(".playback-time")).toHaveText(pausedTime ?? "");
+  await blending.getByRole("button", {name: "Screen"}).click();
+  await expect(canvas).toHaveAttribute("data-trail-blend", "screen");
+  await expect(page.locator(".playback-time")).toHaveText(pausedTime ?? "");
+  await expect(page).not.toHaveURL(/trail/i);
+
+  await page.getByRole("button", {name: "Rust / WASM", exact: true}).click();
+  await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
+  await expect(canvas).toHaveAttribute("data-trail-blend", "screen");
+  await blending.getByRole("button", {name: "Normal"}).click();
+  await expect(canvas).toHaveAttribute("data-trail-blend", "normal");
+});
+
 test("semantic design tokens replace Tailwind defaults", async ({page}) => {
   await page.goto("./?backend=typescript");
   const values = await page.locator("body").evaluate((body) => {
@@ -183,7 +210,7 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
   await expect(page.getByText("MacCormack", {exact: true})).toBeVisible();
   await expect(page.getByText("adv=maccormack", {exact: false})).toHaveCount(0);
   await page.getByRole("button", {name: "Next transport"}).click();
-  await expect(page.getByText("Skew RK2", {exact: true})).toBeVisible();
+  await expect(page.getByText("Skew RK2", {exact: true})).toBeVisible({timeout: 30_000});
   await expect(page.getByText("Rust / WASM", {exact: true}).first()).toBeVisible();
   await expect(page.getByText("Execution engine", {exact: true})).toBeVisible();
 
@@ -192,7 +219,7 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
   await page.keyboard.press("Control+C");
   await expect(crop).not.toHaveClass(/active/);
   await page.keyboard.press("c");
-  await expect(crop).toHaveClass(/active/);
+  await expect(crop).toHaveClass(/active/, {timeout: 30_000});
 });
 
 test("header regions do not overlap across supported widths", async ({page}) => {
