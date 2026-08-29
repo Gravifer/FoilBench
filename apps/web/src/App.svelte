@@ -31,6 +31,10 @@
   let labHeader: HTMLElement;
   let flowViewport: HTMLDivElement;
   let sceneHost: HTMLDivElement;
+  let controlPanel: HTMLElement;
+  let controlsToggle: HTMLButtonElement;
+  let guideDialog: HTMLDialogElement;
+  let guideTrigger: HTMLButtonElement;
   let scene: FoilSceneController | null = null;
   let client: ViewerWorkerClient | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -125,6 +129,12 @@
     "stable-fluids": "Stable Fluids",
     "lbm-d2q9": "D2Q9 LBM",
     "pic-flip": "PIC/FLIP",
+  };
+
+  const solverDescriptions: Readonly<Record<SolverId, string>> = {
+    "stable-fluids": "A projected grid method with selectable transport, from forgiving to deliberately energetic.",
+    "lbm-d2q9": "A lattice-population method whose relaxation and effective Reynolds number stay within stable limits.",
+    "pic-flip": "A particle-and-grid method that blends smooth PIC updates with lively FLIP motion.",
   };
 
   function replaceUrl(): void {
@@ -258,8 +268,22 @@
   }
 
   function toggleControls(): void {
-    if (narrowViewport) narrowControlsOpen = !narrowControlsOpen;
-    else wideControlsOpen = !wideControlsOpen;
+    const opening = !controlsOpen;
+    if (narrowViewport) narrowControlsOpen = opening;
+    else wideControlsOpen = opening;
+    if (opening && narrowViewport) requestAnimationFrame(() => controlPanel.focus());
+  }
+
+  function openGuide(): void {
+    guideDialog.showModal();
+  }
+
+  function closeGuide(): void {
+    guideDialog.close();
+  }
+
+  function restoreGuideFocus(): void {
+    guideTrigger.focus();
   }
 
   function changeTrailBlendMode(mode: TrailBlendMode): void {
@@ -270,7 +294,12 @@
   function handleKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.key === "Escape" && narrowViewport && narrowControlsOpen) { narrowControlsOpen = false; return; }
+    if (event.key === "Escape" && guideDialog?.open === true) return;
+    if (event.key === "Escape" && narrowViewport && narrowControlsOpen) {
+      narrowControlsOpen = false;
+      requestAnimationFrame(() => controlsToggle.focus());
+      return;
+    }
     if (target !== null && target.closest("input, select, textarea, button, [contenteditable='true']") !== null) return;
     if (event.key === " ") { event.preventDefault(); client?.send({kind: "pause"}); }
     else if (event.key.toLowerCase() === "r") client?.send({kind: "reset"});
@@ -389,7 +418,7 @@
       </div>
     </div>
     <div class="header-right">
-      <button class="controls-toggle" type="button" aria-controls="simulation-controls" aria-expanded={controlsOpen} aria-label={controlsOpen ? "Hide controls" : "Show controls"} title={controlsOpen ? "Hide controls" : "Show controls"} onclick={toggleControls}>
+      <button bind:this={controlsToggle} class="controls-toggle" type="button" aria-controls="simulation-controls" aria-expanded={controlsOpen} aria-label={controlsOpen ? "Hide controls" : "Show controls"} title={controlsOpen ? "Hide controls" : "Show controls"} onclick={toggleControls}>
         <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
       </button>
     </div>
@@ -417,8 +446,13 @@
     </section>
   </div>
 
-  <aside id="simulation-controls" class:controls-open={controlsOpen} class="control-panel" aria-label="Simulation controls">
+  <aside bind:this={controlPanel} id="simulation-controls" class:controls-open={controlsOpen} class="control-panel" aria-label="Simulation controls" aria-hidden={!controlsOpen} inert={!controlsOpen} tabindex="-1">
     <div class="panel-scroll">
+      <button bind:this={guideTrigger} class="guide-trigger" type="button" aria-haspopup="dialog" onclick={openGuide}>
+        <span class="guide-mark" aria-hidden="true">?</span>
+        <span><strong>Lab guide</strong><small>Solvers, controls, and interpretation</small></span>
+      </button>
+
       <section class="control-section">
         <div class="section-heading"><h2>Experiment</h2><span>{scenario?.foil.naca === undefined ? "" : `NACA ${scenario.foil.naca}`}</span></div>
         <label class="mobile-preset-field" for="mobile-preset"><span class="field-label">Preset</span>
@@ -435,17 +469,19 @@
 
       <section class="control-section">
         <div class="section-heading"><h2>Solver</h2><span>runs locally</span></div>
-        <span class="field-label">Method</span>
-        <div class="solver-grid">
+        <span id="solver-method-label" class="field-label">Method</span>
+        <div class="solver-grid" role="group" aria-labelledby="solver-method-label" aria-describedby="solver-method-help">
           {#each SOLVER_IDS as id, index}
-            <button class:active={solverId === id} type="button" aria-keyshortcuts={String(index + 1)} onclick={() => changeSolver(id)}><span>{solverLabels[id]}</span><kbd>{index + 1}</kbd></button>
+            <button class:active={solverId === id} type="button" aria-pressed={solverId === id} aria-keyshortcuts={String(index + 1)} onclick={() => changeSolver(id)}><span>{solverLabels[id]}</span><kbd>{index + 1}</kbd></button>
           {/each}
         </div>
-        <span class="field-label engine-label">Execution engine</span>
-        <div class="segmented" aria-label="Execution engine">
-          <button class:active={backend === "typescript"} type="button" onclick={() => changeBackend("typescript")}>TypeScript</button>
-          <button class:active={backend === "rust-wasm"} type="button" onclick={() => changeBackend("rust-wasm")}>Rust / WASM</button>
+        <p id="solver-method-help" class="context-note">{solverDescriptions[solverId]}</p>
+        <span id="execution-engine-label" class="field-label engine-label">Execution engine</span>
+        <div class="segmented" role="group" aria-labelledby="execution-engine-label" aria-describedby="execution-engine-help">
+          <button class:active={backend === "typescript"} type="button" aria-pressed={backend === "typescript"} onclick={() => changeBackend("typescript")}>TypeScript</button>
+          <button class:active={backend === "rust-wasm"} type="button" aria-pressed={backend === "rust-wasm"} onclick={() => changeBackend("rust-wasm")}>Rust / WASM</button>
         </div>
+        <p id="execution-engine-help" class="context-note">The engine changes the implementation, not the physical model. Changing it restarts at the visible pose.</p>
       </section>
 
       <section class="control-section">
@@ -468,18 +504,19 @@
 
       <section class="control-section">
         <div class="section-heading"><h2>View</h2><span>presentation only</span></div>
-        <div class="toggle-grid">
-          <button class:active={snapshot?.vorticityVisible === true} type="button" aria-keyshortcuts="V" onclick={() => client?.send({kind: "toggle-vorticity"})}><span>Vorticity</span><kbd>V</kbd></button>
-          <button class:active={snapshot?.tracerMode === "material"} type="button" aria-keyshortcuts="T" onclick={() => client?.send({kind: "toggle-tracers"})}><span>Material tracers</span><kbd>T</kbd></button>
-          <button class:active={snapshot?.cropEnabled === true} type="button" aria-keyshortcuts="C" onclick={() => client?.send({kind: "toggle-crop"})}><span>Crop edges</span><kbd>C</kbd></button>
-          <button class:active={snapshot?.diagnosticMode === "every-step"} type="button" aria-keyshortcuts="D" onclick={() => client?.send({kind: "toggle-diagnostics"})}><span>Live diagnostics</span><kbd>D</kbd></button>
+        <div class="toggle-grid" role="group" aria-label="Flow presentation">
+          <button class:active={snapshot?.vorticityVisible === true} type="button" aria-pressed={snapshot?.vorticityVisible === true} aria-keyshortcuts="V" onclick={() => client?.send({kind: "toggle-vorticity"})}><span>Vorticity</span><kbd>V</kbd></button>
+          <button class:active={snapshot?.tracerMode === "material"} type="button" aria-pressed={snapshot?.tracerMode === "material"} aria-keyshortcuts="T" onclick={() => client?.send({kind: "toggle-tracers"})}><span>Material tracers</span><kbd>T</kbd></button>
+          <button class:active={snapshot?.cropEnabled === true} type="button" aria-pressed={snapshot?.cropEnabled === true} aria-keyshortcuts="C" onclick={() => client?.send({kind: "toggle-crop"})}><span>Crop edges</span><kbd>C</kbd></button>
+          <button class:active={snapshot?.diagnosticMode === "every-step"} type="button" aria-pressed={snapshot?.diagnosticMode === "every-step"} aria-keyshortcuts="D" onclick={() => client?.send({kind: "toggle-diagnostics"})}><span>Live diagnostics</span><kbd>D</kbd></button>
         </div>
-        <span class="field-label trail-blend-label">Trail blending</span>
-        <div class="segmented trail-blend-control" aria-label="Trail blending">
+        <span id="trail-blend-label" class="field-label trail-blend-label">Trail blending</span>
+        <div class="segmented trail-blend-control" role="group" aria-labelledby="trail-blend-label" aria-describedby="view-help">
           <button class:active={trailBlendMode === "normal"} aria-pressed={trailBlendMode === "normal"} type="button" onclick={() => changeTrailBlendMode("normal")}>Normal</button>
           <button class:active={trailBlendMode === "additive"} aria-pressed={trailBlendMode === "additive"} type="button" onclick={() => changeTrailBlendMode("additive")}>Additive</button>
           <button class:active={trailBlendMode === "screen"} aria-pressed={trailBlendMode === "screen"} type="button" onclick={() => changeTrailBlendMode("screen")}>Screen</button>
         </div>
+        <p id="view-help" class="context-note">Tracer lifecycle and blending change how the flow is revealed, never the simulated velocity field.</p>
       </section>
 
       <section class="explanation-card">
@@ -508,5 +545,24 @@
       </section>
     </div>
   </aside>
+
+  <dialog bind:this={guideDialog} class="lab-guide" aria-labelledby="lab-guide-title" aria-describedby="lab-guide-intro" onclose={restoreGuideFocus}>
+    <div class="guide-heading">
+      <div><span>FoilBench field notes</span><h2 id="lab-guide-title">How this lab fits together</h2></div>
+      <button class="guide-close" type="button" aria-label="Close lab guide" title="Close (Escape)" onclick={closeGuide}>×</button>
+    </div>
+    <p id="lab-guide-intro">Every view shows the same toy two-dimensional wind tunnel. The controls below separate changes to the flow from changes to its presentation.</p>
+    <dl class="guide-concepts">
+      <div><dt>Solver</dt><dd>Chooses the numerical method. A warm switch reconstructs the new solver from the current flow when possible.</dd></div>
+      <div><dt>Execution engine</dt><dd>Chooses the independent TypeScript or Rust/WASM implementation. This is not another physical model, so changing it performs a clean restart at the visible pose.</dd></div>
+      <div><dt>Display and material tracers</dt><dd>Display tracers periodically replenish coverage; material tracers preserve residence and can leave quiet regions empty. Neither changes the flow.</dd></div>
+      <div><dt>Trail blending</dt><dd>Normal, Additive, and Screen alter only how overlapping trail pixels combine. Pause to compare the exact same frame.</dd></div>
+    </dl>
+    <div class="guide-keys" aria-label="Keyboard shortcuts">
+      <span><kbd>Space</kbd> Pause</span><span><kbd>R</kbd> Reset</span><span><kbd>1–3</kbd> Solver</span><span><kbd>V</kbd> Vorticity</span><span><kbd>T</kbd> Tracers</span><span><kbd>C</kbd> Crop</span>
+    </div>
+    <p class="guide-caveat"><strong>Pedagogical limit.</strong> FoilBench can show separation, vortex shedding, and irregular two-dimensional wakes. It does not reproduce three-dimensional vortex stretching or claim engineering-grade aerodynamic prediction.</p>
+    <a class="guide-link" href="https://github.com/Gravifer/FoilBench/blob/main/docs/web-lab-guide.md" target="_blank" rel="noreferrer">Read the complete browser lab guide <span aria-hidden="true">↗</span></a>
+  </dialog>
 
 </main>

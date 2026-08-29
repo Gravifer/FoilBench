@@ -60,6 +60,15 @@ restart the solver, reseed tracers, or change artifacts, and all three use the
 same trail geometry, shader, and rendering pass. The compact dev viewers keep
 their reference tracer presentation.
 
+The controls panel also exposes an in-app lab guide that distinguishes solver
+method from execution engine, display from material tracers, and physical
+controls from presentation-only trail blending. It links to the complete
+[browser lab guide](web-lab-guide.md) and records the simulation's deliberately
+two-dimensional pedagogical limits. Chromium remains the primary browser test
+surface; lightweight Firefox and WebKit production-artifact smokes cover both
+the TypeScript and Rust/WASM engines without multiplying the full interaction
+suite.
+
 ## Development
 
 From the repository root:

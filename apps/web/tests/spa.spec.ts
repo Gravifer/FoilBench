@@ -20,6 +20,41 @@ test("static SPA defaults to TypeScript and retains the Rust/WASM comparison bac
   await expect(page).toHaveURL(/backend=rust-wasm/);
 });
 
+test("the lab guide explains semantics without mutating the simulation", async ({page}) => {
+  await page.goto("./?preset=dynamic&solver=stable-fluids&backend=typescript");
+  await expect(page.getByLabel("Simulation running")).toBeVisible({timeout: 30_000});
+  const time = page.locator(".playback-time");
+  const before = await time.textContent();
+
+  await page.getByRole("button", {name: "Lab guide"}).click();
+  const guide = page.getByRole("dialog", {name: "How this lab fits together"});
+  await expect(guide).toBeVisible();
+  await expect(guide.getByText("Execution engine", {exact: true})).toBeVisible();
+  await expect(guide.getByText("Pedagogical limit.", {exact: false})).toBeVisible();
+  await expect(guide.getByRole("link", {name: /complete browser lab guide/i})).toHaveAttribute("href", /docs\/web-lab-guide\.md$/);
+  await page.keyboard.press("Escape");
+  await expect(guide).toBeHidden();
+  await expect(page.getByRole("button", {name: "Lab guide"})).toBeFocused();
+  await expect(time).not.toHaveText(before ?? "");
+});
+
+test("selection controls expose pressed state and the narrow drawer restores focus", async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844});
+  await page.goto("./?backend=typescript");
+  const toggle = page.getByRole("button", {name: "Show controls"});
+  const panel = page.getByLabel("Simulation controls");
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+  await toggle.click();
+  await expect(panel).toBeFocused();
+  await expect(panel).toHaveAttribute("aria-hidden", "false");
+  await expect(page.getByRole("button", {name: "Stable Fluids"})).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", {name: "TypeScript", exact: true})).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", {name: "Vorticity"})).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", {name: "Show controls"})).toBeFocused();
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+});
+
 test("curated controls and local scenario import remain browser-local", async ({page}) => {
   await page.goto("./?preset=fixed-stall&solver=stable-fluids&backend=typescript");
   await expect(page.getByLabel("Experiment")).toHaveValue("fixed-stall");
@@ -48,7 +83,7 @@ test("trail blending compares one SPA frame without restarting either backend", 
   await expect(blending.getByRole("button", {name: "Normal"})).toHaveAttribute("aria-pressed", "true");
 
   await pause.click();
-  await expect(page.getByLabel("Simulation paused")).toBeVisible();
+  await expect(page.getByLabel("Simulation paused")).toBeVisible({timeout: 30_000});
   const pausedTime = await page.locator(".playback-time").textContent();
   await blending.getByRole("button", {name: "Additive"}).click();
   await expect(canvas).toHaveAttribute("data-trail-blend", "additive");
@@ -212,7 +247,7 @@ test("the centered transport, key hints, and solver-aware tuning remain semantic
   await page.getByRole("button", {name: "Next transport"}).click();
   await expect(page.getByText("Skew RK2", {exact: true})).toBeVisible({timeout: 30_000});
   await expect(page.getByText("Rust / WASM", {exact: true}).first()).toBeVisible();
-  await expect(page.getByText("Execution engine", {exact: true})).toBeVisible();
+  await expect(page.getByLabel("Simulation controls").getByText("Execution engine", {exact: true})).toBeVisible();
 
   const crop = page.getByRole("button", {name: "Crop"});
   await expect(crop).not.toHaveClass(/active/);

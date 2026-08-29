@@ -10,12 +10,13 @@
     "build": "npm run build:wasm && vite build",
     "build:pages": "npm run build -- --base /FoilBench/",
     "build:wasm": "node ../../implementations/typescript/tools/buildRustWasm.mjs ../../apps/web/public/rust-wasm",
-    "check": "svelte-check --tsconfig ./tsconfig.json && eslint src tests releaseMetadata.ts vite.config.ts playwright.config.ts vitest.config.ts",
+    "check": "svelte-check --tsconfig ./tsconfig.json && eslint src tests releaseMetadata.ts vite.config.ts playwright.config.ts playwright.compat.config.ts vitest.config.ts",
     "dev": "vite",
     "preview": "vite preview --base /FoilBench/",
-    "setup:browser": "playwright install chromium",
+    "setup:browser": "playwright install chromium firefox webkit",
     "test": "vitest run",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:browser:compat": "playwright test --config playwright.compat.config.ts"
   },
   "dependencies": {
     "computer-modern": "^0.1.3",

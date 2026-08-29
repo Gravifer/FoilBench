@@ -90,11 +90,16 @@ jobs:
           FOILBENCH_RELEASE_BUILT_AT: '2000-01-01T00:00:00Z'
       - name: Exercise release packaging without publishing
         run: python tools/package_web_release.py --version v0.0.0-ci --output dist/ci-release
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install supported browser smoke matrix
+        run: npx playwright install --with-deps chromium firefox webkit
         working-directory: apps/web
       - name: Test static web artifact
         run: npm run test:browser
+        working-directory: apps/web
+        env:
+          CI: 'true'
+      - name: Test Firefox and WebKit compatibility
+        run: npm run test:browser:compat
         working-directory: apps/web
         env:
           CI: 'true'
