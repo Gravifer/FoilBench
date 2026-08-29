@@ -9,6 +9,12 @@ play. Both use the same TypeScript worker protocol, latest-snapshot ownership,
 Three.js scene controller, scenario validation, tracers, diagnostics, recovery
 logic, and Rust/WASM adapter.
 
+The released lab is available at
+[https://gravifer.github.io/FoilBench/](https://gravifer.github.io/FoilBench/).
+The compact TypeScript presentation remains a dev viewer rather than a
+superseded or legacy interface: it is still the tighter parity and diagnostic
+surface.
+
 ## Runtime architecture
 
 The lab is a static single-page application. A static file server supplies
@@ -18,15 +24,30 @@ remote simulation process.
 
 The browser supports two numerical backends:
 
-- TypeScript is the development-phase default while the SPA is polished.
-- Rust/WASM remains the intended production path and is selectable for direct
-  comparison.
+- TypeScript is the current default and the faster browser path on the
+  development machine.
+- Rust/WASM is built from the same core as Rust/native and remains selectable
+  for direct comparison.
 
 Warm switching is available among solver families within one backend. Changing
 backend is intentionally a cold restart: it preserves the authoritative foil
 pose, selected Reynolds number, and applicable tuning, but resets physical
 time, solver-private history, and tracer paths. The interface reports the
 restart rather than presenting it as a state-preserving conversion.
+
+## Playing with the lab
+
+Drag the foil in the scene to change its angle of attack. Presets and solver
+controls live in the collapsible controls panel; pause and reset use the
+transport strip in the header. The interface exposes Stable Fluids, D2Q9 TRT
+LBM, and blended PIC/FLIP under both browser backends.
+
+Keyboard controls remain aligned with the dev viewers: `1/2/3` select the
+solver, `Space` pauses, `R` resets, `+/-/0` adjust or reset Reynolds number,
+`[/]` tune the active solver, and `V/T/C` toggle vorticity, tracer mode, and
+diagnostic cropping. Modified shortcuts and keystrokes directed at interactive
+HTML controls are ignored so ordinary browser commands such as copy continue
+to work.
 
 ## Development
 

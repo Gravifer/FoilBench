@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
       - name: Resolve and validate release identity
         id: identity
-        shell: pwsh
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
@@ -42,45 +42,50 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-              if ($env:EVENT_REF -ne 'refs/heads/main') {
-                  throw 'Manual releases must run from main'
-              }
-              $version = $env:REQUESTED_VERSION.Trim()
-              $commit = (& git rev-parse HEAD).Trim()
-          }
-          else {
-              $version = $env:EVENT_REF_NAME
-              $commit = $env:EVENT_SHA
-          }
-          $candidateArguments = @(
-              'tools/validate_web_release_candidate.py',
-              '--candidate', $version,
-              '--repository', '.'
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            if [[ "$EVENT_REF" != 'refs/heads/main' ]]; then
+              echo 'Manual releases must run from main' >&2
+              exit 1
+            fi
+            version="$(python -c 'import os; print(os.environ["REQUESTED_VERSION"].strip())')"
+            commit="$(git rev-parse HEAD)"
+          else
+            version="$EVENT_REF_NAME"
+            commit="$EVENT_SHA"
+          fi
+
+          candidate_arguments=(
+            tools/validate_web_release_candidate.py
+            --candidate "$version"
+            --repository .
           )
-          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-              $candidateArguments += '--require-candidate-tag-absent'
-          }
-          & python @candidateArguments
-          if ($LASTEXITCODE -ne 0) {
-              throw "Release candidate policy rejected $version"
-          }
-          if ($env:EVENT_NAME -ne 'workflow_dispatch') {
-              & git fetch --no-tags origin main:refs/remotes/origin/main
-              if ($LASTEXITCODE -ne 0) {
-                  throw 'Could not fetch origin/main for the release ancestry check'
-              }
-              & git merge-base --is-ancestor $commit origin/main
-              if ($LASTEXITCODE -ne 0) {
-                  throw "Tagged commit $commit is not reachable from origin/main"
-              }
-          }
-          $builtAt = [DateTimeOffset]::UtcNow.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-          $prerelease = $version.Contains('-').ToString().ToLowerInvariant()
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "commit=$commit" >> $env:GITHUB_OUTPUT
-          "built_at=$builtAt" >> $env:GITHUB_OUTPUT
-          "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            candidate_arguments+=(--require-candidate-tag-absent)
+          fi
+          python "${candidate_arguments[@]}"
+
+          if [[ "$EVENT_NAME" != 'workflow_dispatch' ]]; then
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            if ! git merge-base --is-ancestor "$commit" origin/main; then
+              echo "Tagged commit $commit is not reachable from origin/main" >&2
+              exit 1
+            fi
+          fi
+
+          built_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          {
+            printf 'version=%s\n' "$version"
+            printf 'commit=%s\n' "$commit"
+            printf 'built_at=%s\n' "$built_at"
+            printf 'prerelease=%s\n' "$prerelease"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
@@ -154,7 +159,7 @@ jobs:
           name: web-release-files
           path: dist/release
       - name: Create draft, attach assets, and publish
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
@@ -163,27 +168,25 @@ jobs:
           RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          $arguments = @(
-              'release', 'create', $env:RELEASE_VERSION,
-              "dist/release/foilbench-web-$($env:RELEASE_VERSION).zip",
-              'dist/release/SHA256SUMS',
-              '--generate-notes', '--latest=false',
-              '--title', "FoilBench $($env:RELEASE_VERSION)",
-              '--repo', $env:RELEASE_REPOSITORY
+          set -euo pipefail
+
+          arguments=(
+            release create "$RELEASE_VERSION"
+            "dist/release/foilbench-web-$RELEASE_VERSION.zip"
+            dist/release/SHA256SUMS
+            --generate-notes --latest=false
+            --title "FoilBench $RELEASE_VERSION"
+            --repo "$RELEASE_REPOSITORY"
           )
-          if ($env:EVENT_NAME -eq 'push') {
-              $arguments += '--verify-tag'
-          }
-          else {
-              $arguments += @('--target', $env:RELEASE_COMMIT)
-          }
-          if ($env:RELEASE_PRERELEASE -eq 'true') {
-              $arguments += '--prerelease'
-          }
-          & gh @arguments
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Could not create and publish the GitHub release'
-          }
+          if [[ "$EVENT_NAME" == 'push' ]]; then
+            arguments+=(--verify-tag)
+          else
+            arguments+=(--target "$RELEASE_COMMIT")
+          fi
+          if [[ "$RELEASE_PRERELEASE" == 'true' ]]; then
+            arguments+=(--prerelease)
+          fi
+          gh "${arguments[@]}"
 
   deployment_policy:
     name: Plan Pages promotion
@@ -199,37 +202,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compare candidate with the live Pages release
         id: plan
-        shell: pwsh
+        shell: bash
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          $arguments = @(
-              'tools/plan_web_deployment.py',
-              '--candidate', $env:RELEASE_VERSION,
-              '--metadata-url', 'https://gravifer.github.io/FoilBench/release.json',
-              '--github-output', $env:GITHUB_OUTPUT
-          )
-          & python @arguments
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Could not establish a trustworthy Pages promotion decision'
-          }
+          set -euo pipefail
+
+          python tools/plan_web_deployment.py \
+            --candidate "$RELEASE_VERSION" \
+            --metadata-url 'https://gravifer.github.io/FoilBench/release.json' \
+            --github-output "$GITHUB_OUTPUT"
       - name: Summarize promotion decision
-        shell: pwsh
+        shell: bash
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           DEPLOYED_VERSION: ${{ steps.plan.outputs.deployed_version }}
           DEPLOY: ${{ steps.plan.outputs.deploy }}
           REASON: ${{ steps.plan.outputs.reason }}
         run: |
-          $current = if ($env:DEPLOYED_VERSION) { $env:DEPLOYED_VERSION } else { 'none' }
-          @(
-              '## Pages promotion decision',
-              '',
-              "- Candidate: ``$env:RELEASE_VERSION``",
-              "- Currently deployed: ``$current``",
-              "- Deploy: ``$env:DEPLOY``",
-              "- Reason: $env:REASON"
-          ) >> $env:GITHUB_STEP_SUMMARY
+          set -euo pipefail
+
+          current="${DEPLOYED_VERSION:-none}"
+          {
+            printf '## Pages promotion decision\n\n'
+            printf -- '- Candidate: `%s`\n' "$RELEASE_VERSION"
+            printf -- '- Currently deployed: `%s`\n' "$current"
+            printf -- '- Deploy: `%s`\n' "$DEPLOY"
+            printf -- '- Reason: %s\n' "$REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     name: Deploy released Pages artifact
@@ -258,13 +258,12 @@ jobs:
       contents: write
     steps:
       - name: Promote the deployed GitHub release
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          & gh release edit $env:RELEASE_VERSION --latest --repo $env:RELEASE_REPOSITORY
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Pages deployed successfully, but the GitHub release could not be marked Latest'
-          }
+          set -euo pipefail
+
+          gh release edit "$RELEASE_VERSION" --latest --repo "$RELEASE_REPOSITORY"
