@@ -13,7 +13,9 @@ The released lab is available at
 [https://gravifer.github.io/FoilBench/](https://gravifer.github.io/FoilBench/).
 The compact TypeScript presentation remains a dev viewer rather than a
 superseded or legacy interface: it is still the tighter parity and diagnostic
-surface.
+surface. For a user-facing explanation of presets, solvers, controls, tracer
+modes, readouts, and simulation limits, see the
+[browser lab guide](web-lab-guide.md).
 
 ## Runtime architecture
 

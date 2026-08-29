@@ -105,6 +105,10 @@ The SPA's trail-only tracers fade by age and respond to local speed; the View
 panel can compare Normal, Additive, and Screen blending without disturbing the
 running simulation.
 
+The [browser lab guide](docs/web-lab-guide.md) explains every preset, solver,
+engine, control, tracer and blending mode, performance readout, recovery event,
+and the pedagogical limits of the two-dimensional simulation.
+
 The lab defaults to the independent TypeScript solvers; the shared Rust core
 compiled to WASM is selectable as a comparison backend. Changing solver
 families within one backend supports warm conversion. Changing numerical
@@ -175,6 +179,7 @@ See [architecture](docs/architecture.md), [Phase 1 acceptance](docs/phase1-accep
 [Revision 4 acceptance](docs/revision4-acceptance.md),
 [Revision 5 acceptance](docs/revision5-acceptance.md),
 [Revision 5 quality addendum](docs/revision5-quality-addendum.md),
+[browser lab guide](docs/web-lab-guide.md),
 [benchmarking guide](docs/benchmark-methodology.md), and the
 [implementation roadmap](docs/implementation-roadmap.md).
 

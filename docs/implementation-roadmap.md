@@ -373,7 +373,7 @@ therefore explicitly deferred to Revision 6 with new conformance vectors.
 
 ## Post-Phase 3: static browser lab
 
-**Status:** Released and deployed. Version `v0.2.0` is live at
+**Status:** Released and deployed. Version `v0.2.1` is live at
 [https://gravifer.github.io/FoilBench/](https://gravifer.github.io/FoilBench/).
 
 The student-facing FoilBench SPA builds on the accepted TypeScript worker and
@@ -384,5 +384,8 @@ and a release-identified GitHub Pages build. Versioned GitHub Releases carry
 the exact static archive and checksum; prereleases and stable backports publish
 without displacing the site, while only a newer stable version may promote to
 Pages and become **Latest**. The original Three.js viewer remains the
-cross-language parity reference. See [the browser-lab architecture](web-spa.md)
-and [release guide](web-release.md).
+cross-language parity reference. The `v0.2.1` presentation adds age- and
+speed-weighted trails without point heads plus Normal, Additive, and Screen
+blending. See
+the [browser lab guide](web-lab-guide.md),
+[browser-lab architecture](web-spa.md), and [release guide](web-release.md).
