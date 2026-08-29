@@ -101,6 +101,9 @@ the existing simulation worker. Drag the foil directly, choose a preset and
 solver from the controls, or pause and reset from the centered transport
 strip. The familiar keyboard controls remain available when focus is not in an
 interactive control: `1/2/3`, `Space`, `R`, `+/-/0`, `[/]`, and `V/T/C`.
+The SPA's trail-only tracers fade by age and respond to local speed; the View
+panel can compare Normal, Additive, and Screen blending without disturbing the
+running simulation.
 
 The lab defaults to the independent TypeScript solvers; the shared Rust core
 compiled to WASM is selectable as a comparison backend. Changing solver
