@@ -125,6 +125,11 @@
   .control-panel { --panel-font-section: 17px; --panel-font-card: 14px; --panel-font-control: 12px; --panel-font-caption: 10px; --panel-font-data: 11px; grid-row: 2; grid-column: 2; min-width: 0; min-height: 0; overflow: hidden; visibility: hidden; opacity: 0; border-left: 1px solid var(--color-rule); background: var(--color-surface); font-size: var(--panel-font-control); line-height: 1.4; transition: opacity 120ms ease, visibility 0s linear 180ms; }
   .panel-open > .control-panel { visibility: visible; opacity: 1; transition-delay: 0s; }
   .panel-scroll { height: 100%; overflow-y: auto; scrollbar-color: var(--color-rule) var(--color-surface); }
+  .guide-trigger { display: flex; width: calc(100% - 24px); align-items: center; gap: 10px; margin: 12px; padding: 9px 10px; text-align: left; }
+  .guide-trigger > span:last-child { display: grid; gap: 1px; }
+  .guide-trigger strong { color: var(--color-ink); font-family: var(--font-display); font-size: var(--panel-font-card); }
+  .guide-trigger small { color: var(--color-ink-muted); font-size: var(--panel-font-caption); }
+  .guide-mark { display: inline-grid; width: 26px; height: 26px; flex: 0 0 26px; place-content: center; border: 1px solid var(--color-flow); border-radius: 999px; color: var(--color-flow-soft); font-family: var(--font-data); font-size: 12px; }
   .control-section { padding: 16px 18px; border-bottom: 1px solid var(--color-rule); }
   .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px; }
   .section-heading h2 { margin: 0; font-family: var(--font-display); font-size: var(--panel-font-section); line-height: 1.2; }
@@ -132,6 +137,7 @@
   .field-label { display: block; margin-bottom: 5px; color: var(--color-ink-muted); font-size: var(--panel-font-caption); text-transform: uppercase; letter-spacing: .08em; }
   .mobile-preset-field { display: none; }
   .engine-label { margin-top: 13px; }
+  .context-note { margin: 7px 0 0; color: var(--color-ink-muted); font-size: 11px; line-height: 1.42; }
   select { width: 100%; padding: 8px 9px; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink); font-size: var(--panel-font-control); line-height: 1.35; }
   .field-note { min-height: 30px; margin: 7px 0 10px; color: var(--color-ink-muted); font-size: var(--panel-font-control); line-height: 1.45; }
   button, .file-button { border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink-muted); cursor: pointer; transition: border-color 120ms ease, color 120ms ease, background 120ms ease; }
@@ -171,6 +177,24 @@
   .diagnostics-card dt { color: var(--color-ink-muted); }
   .diagnostics-card dd { margin: 0; color: var(--color-flow-soft); font-family: var(--font-data); }
 
+  .lab-guide { width: min(650px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); overflow: auto; padding: 0; border: 1px solid var(--color-rule); border-radius: 7px; background: color-mix(in srgb, var(--color-surface) 94%, transparent); color: var(--color-ink); box-shadow: 0 24px 80px #000b; font-family: var(--font-ui); }
+  .lab-guide::backdrop { background: #0009; backdrop-filter: blur(3px); }
+  .guide-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 22px 14px; border-bottom: 1px solid var(--color-rule); }
+  .guide-heading span { color: var(--color-flow-soft); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; }
+  .guide-heading h2 { margin: 4px 0 0; font-family: var(--font-display); font-size: 25px; line-height: 1.12; }
+  .guide-close { display: inline-grid; width: 32px; height: 32px; flex: 0 0 32px; padding: 0; place-content: center; font-family: var(--font-ui-gothic); font-size: 22px; line-height: 1; }
+  .lab-guide > p { margin: 0; padding: 15px 22px 0; color: var(--color-ink-muted); font-size: 13px; line-height: 1.55; }
+  .guide-concepts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 17px 22px; background: var(--color-rule); border: 1px solid var(--color-rule); }
+  .guide-concepts div { padding: 13px 14px; background: var(--color-surface); }
+  .guide-concepts dt { margin-bottom: 4px; color: var(--color-flow-soft); font-family: var(--font-display); font-size: 15px; }
+  .guide-concepts dd { margin: 0; color: var(--color-ink-muted); font-size: 12px; line-height: 1.5; }
+  .guide-keys { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 22px; padding: 11px 0; border-block: 1px solid var(--color-rule); color: var(--color-ink-muted); font-size: 11px; }
+  .guide-keys span { display: inline-flex; align-items: center; gap: 5px; }
+  .lab-guide > .guide-caveat { padding-top: 14px; }
+  .guide-caveat strong { color: var(--color-warning); font-weight: 600; }
+  .guide-link { display: inline-flex; margin: 18px 22px 22px; color: var(--color-flow-soft); font-size: 12px; text-underline-offset: 3px; }
+  .guide-link:hover { color: var(--color-ink); }
+
 }
 
 @media (max-width: 980px) {
@@ -200,6 +224,8 @@
   .stage-readout > div { min-width: 94px; padding: 6px 7px; }
   .stage-readout > div:nth-child(3) { display: none; }
   .drag-hint { width: max-content; max-width: calc(100% - 20px); text-align: center; }
+  .guide-concepts { grid-template-columns: 1fr; }
+  .guide-heading h2 { font-size: 21px; }
 }
 
 @media (max-width: 400px) {
