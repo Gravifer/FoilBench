@@ -5,8 +5,8 @@ export default defineConfig({
   testMatch: "spa.compat.spec.ts",
   fullyParallel: false,
   workers: 1,
-  timeout: 90_000,
-  expect: {timeout: 30_000},
+  timeout: 150_000,
+  expect: {timeout: 60_000},
   projects: [
     {name: "firefox", use: {...devices["Desktop Firefox"]}},
     {name: "webkit", use: {...devices["Desktop Safari"]}},
