@@ -58,7 +58,7 @@ test("selection controls expose pressed state and the narrow drawer restores foc
 test("responsive panel changes preserve a usable focus target", async ({page}) => {
   await page.setViewportSize({width: 1280, height: 720});
   await page.goto("./?backend=typescript");
-  const controlsToggle = page.getByRole("button", {name: /controls/});
+  const controlsToggle = page.locator(".controls-toggle");
   const typescript = page.getByRole("button", {name: "TypeScript", exact: true});
 
   await typescript.focus();

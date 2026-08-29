@@ -150,6 +150,10 @@
     snapshot = null;
     statusEvent = null;
     renderedRevision = -1;
+    if (scene !== null) {
+      delete scene.canvas.dataset["renderedBackend"];
+      delete scene.canvas.dataset["renderedRevision"];
+    }
     loading = true;
     error = null;
     const nextClient = new ViewerWorkerClient();
@@ -358,6 +362,8 @@
       if (snapshot.revision !== renderedRevision) {
         renderedRevision = snapshot.revision;
         scene.render(snapshot, scenario);
+        scene.canvas.dataset["renderedBackend"] = backend;
+        scene.canvas.dataset["renderedRevision"] = String(snapshot.revision);
         client?.acknowledgeSnapshot(snapshot.revision);
       } else scene.draw();
     };
