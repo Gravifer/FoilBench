@@ -49,6 +49,15 @@ diagnostic cropping. Modified shortcuts and keystrokes directed at interactive
 HTML controls are ignored so ordinary browser commands such as copy continue
 to work.
 
+The SPA renders trails without point heads and weights their brightness by
+history age and local speed. **View → Trail blending** compares three
+presentation-only treatments on the same flow state: Normal is the restrained
+source-over default, Additive accumulates overlapping light more strongly, and
+Screen provides gentler density emphasis. Switching among them does not
+restart the solver, reseed tracers, or change artifacts, and all three use the
+same trail geometry, shader, and rendering pass. The compact dev viewers keep
+their reference tracer presentation.
+
 ## Development
 
 From the repository root:

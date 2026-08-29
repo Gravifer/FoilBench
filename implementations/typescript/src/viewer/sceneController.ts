@@ -15,6 +15,20 @@ export interface FoilScenePalette {
 export interface FoilSceneStyle {
   readonly showTracerPoints?: boolean;
   readonly trailStyle?: "reference" | "age-speed-alpha";
+  readonly trailBlendMode?: TrailBlendMode;
+}
+
+export type TrailBlendMode = "normal" | "additive" | "screen";
+
+export interface TrailBlendConfiguration {
+  readonly source: THREE.BlendingSrcFactor;
+  readonly destination: THREE.BlendingDstFactor;
+}
+
+export function trailBlendConfiguration(mode: TrailBlendMode): TrailBlendConfiguration {
+  if (mode === "normal") return {source: THREE.OneFactor, destination: THREE.OneMinusSrcAlphaFactor};
+  if (mode === "additive") return {source: THREE.OneFactor, destination: THREE.OneFactor};
+  return {source: THREE.OneFactor, destination: THREE.OneMinusSrcColorFactor};
 }
 
 const REFERENCE_PALETTE: FoilScenePalette = {
@@ -44,6 +58,8 @@ export class FoilSceneController {
   private readonly vorticityMaterial: THREE.MeshBasicMaterial;
   private readonly vorticityPlane: THREE.Mesh;
   private readonly trailStyle: "reference" | "age-speed-alpha";
+  private readonly trailMaterial: THREE.ShaderMaterial | null;
+  private trailBlendModeValue: TrailBlendMode;
   private width = 1;
   private height = 1;
 
@@ -61,18 +77,22 @@ export class FoilSceneController {
 
     this.camera.position.z = 5;
     this.trailStyle = style.trailStyle ?? "reference";
+    this.trailBlendModeValue = style.trailBlendMode ?? "normal";
+    this.trailMaterial = this.trailStyle === "age-speed-alpha"
+      ? new THREE.ShaderMaterial({
+          uniforms: {flowColor: {value: new THREE.Color(this.palette.flowPath)}},
+          vertexShader: "attribute float intensity; varying float vIntensity; void main() { vIntensity = intensity; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+          fragmentShader: "uniform vec3 flowColor; varying float vIntensity; void main() { gl_FragColor = vec4(flowColor * vIntensity, vIntensity); }",
+          transparent: true,
+          depthWrite: false,
+          premultipliedAlpha: true,
+          blending: THREE.CustomBlending,
+        })
+      : null;
+    this.applyTrailBlendMode();
     this.paths = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      this.trailStyle === "age-speed-alpha"
-        ? new THREE.ShaderMaterial({
-            uniforms: {flowColor: {value: new THREE.Color(this.palette.flowPath)}},
-            vertexShader: "attribute float intensity; varying float vIntensity; void main() { vIntensity = intensity; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-            fragmentShader: "uniform vec3 flowColor; varying float vIntensity; void main() { gl_FragColor = vec4(flowColor, vIntensity); }",
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.NormalBlending,
-          })
-        : new THREE.LineBasicMaterial({color: this.palette.flowPath, transparent: true, opacity: 0.55}),
+      this.trailMaterial ?? new THREE.LineBasicMaterial({color: this.palette.flowPath, transparent: true, opacity: 0.55}),
     );
     this.points = new THREE.Points(
       new THREE.BufferGeometry(),
@@ -120,6 +140,14 @@ export class FoilSceneController {
 
   public draw(): void {
     this.renderer.render(this.scene, this.camera);
+  }
+
+  public get trailBlendMode(): TrailBlendMode { return this.trailBlendModeValue; }
+
+  public setTrailBlendMode(mode: TrailBlendMode): void {
+    if (mode === this.trailBlendModeValue) return;
+    this.trailBlendModeValue = mode;
+    this.applyTrailBlendMode();
   }
 
   public pointerAngle(event: PointerEvent, scenario: Scenario): number {
@@ -239,5 +267,17 @@ export class FoilSceneController {
       intensities[2 * segment + 1] = intensity;
     }
     attribute.needsUpdate = true;
+  }
+
+  private applyTrailBlendMode(): void {
+    if (this.trailMaterial === null) return;
+    const configuration = trailBlendConfiguration(this.trailBlendModeValue);
+    this.trailMaterial.blendEquation = THREE.AddEquation;
+    this.trailMaterial.blendSrc = configuration.source;
+    this.trailMaterial.blendDst = configuration.destination;
+    this.trailMaterial.blendSrcAlpha = THREE.OneFactor;
+    this.trailMaterial.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+    this.trailMaterial.needsUpdate = true;
+    this.canvas.dataset["trailBlend"] = this.trailBlendModeValue;
   }
 }
