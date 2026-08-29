@@ -55,6 +55,24 @@ test("selection controls expose pressed state and the narrow drawer restores foc
   await expect(panel).toHaveAttribute("aria-hidden", "true");
 });
 
+test("responsive panel changes preserve a usable focus target", async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 720});
+  await page.goto("./?backend=typescript");
+  const controlsToggle = page.getByRole("button", {name: /controls/});
+  const typescript = page.getByRole("button", {name: "TypeScript", exact: true});
+
+  await typescript.focus();
+  await page.setViewportSize({width: 390, height: 720});
+  await expect(page.getByRole("button", {name: "Show controls"})).toBeFocused();
+
+  await page.setViewportSize({width: 1280, height: 720});
+  await page.getByRole("button", {name: "Lab guide"}).click();
+  await expect(page.getByRole("dialog", {name: "How this lab fits together"})).toBeVisible();
+  await page.setViewportSize({width: 390, height: 720});
+  await page.keyboard.press("Escape");
+  await expect(controlsToggle).toBeFocused();
+});
+
 test("curated controls and local scenario import remain browser-local", async ({page}) => {
   await page.goto("./?preset=fixed-stall&solver=stable-fluids&backend=typescript");
   await expect(page.getByLabel("Experiment")).toHaveValue("fixed-stall");
@@ -114,6 +132,11 @@ test("semantic design tokens replace Tailwind defaults", async ({page}) => {
   expect(values.family).toContain("CMU Sans Serif");
   expect(values.flow.toLowerCase()).toBe("#58c4dd");
   await expect.poll(async () => page.evaluate(() => document.fonts.check('12px "CMU Sans Serif"'))).toBe(true);
+  const explanatoryText = await page.locator(".control-panel").evaluate((panel) => ({
+    guide: getComputedStyle(panel.querySelector(".guide-trigger small") as HTMLElement).color,
+    context: getComputedStyle(panel.querySelector(".context-note") as HTMLElement).color,
+  }));
+  expect(explanatoryText).toEqual({guide: "rgb(187, 187, 187)", context: "rgb(187, 187, 187)"});
 });
 
 test("the control panel uses a deliberate compact type scale", async ({page}) => {

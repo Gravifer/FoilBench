@@ -128,7 +128,7 @@
   .guide-trigger { display: flex; width: calc(100% - 24px); align-items: center; gap: 10px; margin: 12px; padding: 9px 10px; text-align: left; }
   .guide-trigger > span:last-child { display: grid; gap: 1px; }
   .guide-trigger strong { color: var(--color-ink); font-family: var(--font-display); font-size: var(--panel-font-card); }
-  .guide-trigger small { color: var(--color-ink-faint); font-size: var(--panel-font-caption); }
+  .guide-trigger small { color: var(--color-ink-muted); font-size: var(--panel-font-caption); }
   .guide-mark { display: inline-grid; width: 26px; height: 26px; flex: 0 0 26px; place-content: center; border: 1px solid var(--color-flow); border-radius: 999px; color: var(--color-flow-soft); font-family: var(--font-data); font-size: 12px; }
   .control-section { padding: 16px 18px; border-bottom: 1px solid var(--color-rule); }
   .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px; }
@@ -137,7 +137,7 @@
   .field-label { display: block; margin-bottom: 5px; color: var(--color-ink-muted); font-size: var(--panel-font-caption); text-transform: uppercase; letter-spacing: .08em; }
   .mobile-preset-field { display: none; }
   .engine-label { margin-top: 13px; }
-  .context-note { margin: 7px 0 0; color: var(--color-ink-faint); font-size: 11px; line-height: 1.42; }
+  .context-note { margin: 7px 0 0; color: var(--color-ink-muted); font-size: 11px; line-height: 1.42; }
   select { width: 100%; padding: 8px 9px; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink); font-size: var(--panel-font-control); line-height: 1.35; }
   .field-note { min-height: 30px; margin: 7px 0 10px; color: var(--color-ink-muted); font-size: var(--panel-font-control); line-height: 1.45; }
   button, .file-button { border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-surface-raised); color: var(--color-ink-muted); cursor: pointer; transition: border-color 120ms ease, color 120ms ease, background 120ms ease; }

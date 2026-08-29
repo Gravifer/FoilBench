@@ -283,7 +283,8 @@
   }
 
   function restoreGuideFocus(): void {
-    guideTrigger.focus();
+    if (controlsOpen) guideTrigger.focus();
+    else controlsToggle.focus();
   }
 
   function changeTrailBlendMode(mode: TrailBlendMode): void {
@@ -362,7 +363,12 @@
     };
     draw();
     window.addEventListener("keydown", handleKey);
-    const updateControlsMode = (event: MediaQueryListEvent): void => { narrowViewport = event.matches; };
+    const updateControlsMode = (event: MediaQueryListEvent): void => {
+      const focusWasInPanel = controlPanel.contains(document.activeElement);
+      const controlsWillBeOpen = event.matches ? narrowControlsOpen : wideControlsOpen;
+      narrowViewport = event.matches;
+      if (focusWasInPanel && !controlsWillBeOpen) requestAnimationFrame(() => controlsToggle.focus());
+    };
     narrowControlsQuery.addEventListener("change", updateControlsMode);
     const visibility = (): void => { client?.setVisible(document.visibilityState === "visible"); };
     document.addEventListener("visibilitychange", visibility);
