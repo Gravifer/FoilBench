@@ -8,7 +8,7 @@ export default defineConfig({
   timeout: 150_000,
   expect: {timeout: 60_000},
   projects: [
-    {name: "firefox", use: {...devices["Desktop Firefox"]}},
+    {name: "firefox", use: {...devices["Desktop Firefox"], headless: false}},
     {name: "webkit", use: {...devices["Desktop Safari"]}},
   ],
   use: {baseURL: "http://127.0.0.1:4176/FoilBench/", headless: true},
