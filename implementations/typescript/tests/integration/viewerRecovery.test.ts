@@ -8,7 +8,14 @@ import {createSolver} from "../../src/solvers/factory.js";
 import {ViewerModel} from "../../src/viewer/model.js";
 
 class DelegatingSolver implements FlowSolver {
-  public constructor(protected readonly inner: FlowSolver) {}
+  public readonly interactiveTuning?: NonNullable<FlowSolver["interactiveTuning"]>;
+  public readonly adjustInteractiveTuning?: NonNullable<FlowSolver["adjustInteractiveTuning"]>;
+  public readonly applyInteractiveTuning?: NonNullable<FlowSolver["applyInteractiveTuning"]>;
+  public constructor(protected readonly inner: FlowSolver) {
+    if (inner.interactiveTuning !== undefined) this.interactiveTuning = () => inner.interactiveTuning?.();
+    if (inner.adjustInteractiveTuning !== undefined) this.adjustInteractiveTuning = (direction) => inner.adjustInteractiveTuning?.(direction);
+    if (inner.applyInteractiveTuning !== undefined) this.applyInteractiveTuning = (value) => inner.applyInteractiveTuning?.(value);
+  }
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
   public get stateRevision(): number { return this.inner.stateRevision; }
@@ -197,5 +204,29 @@ describe("interactive recovery semantics", () => {
     expect(destinationCreations).toBe(1);
     expect(model.solver).toBe(source);
     expect(model.snapshot().recoveryEpoch).toBe(0);
+  });
+
+  it("keeps live tuning reachable through a delegating wrapper without inventing it", async () => {
+    const wrapped = (id: SolverId): FlowSolver => new DelegatingSolver(createSolver(id));
+    const tunable = new ViewerModel(await scenario(), "stable-fluids", wrapped);
+    tunable.adjustSolverTuning(1);
+    expect(tunable.status).not.toBe("no live tuning available");
+    const untunable = new ViewerModel(await scenario(), "lbm-d2q9", wrapped);
+    untunable.adjustSolverTuning(1);
+    expect(untunable.status).toBe("no live tuning available");
+  });
+
+  it("re-applies saved tuning to a wrapped recovery replacement", async () => {
+    let creations = 0;
+    const factory = (id: SolverId): FlowSolver => { creations += 1; const solver = createSolver(id); return creations === 1 ? solver : new DelegatingSolver(solver); };
+    const model = new ViewerModel(await scenario(), "stable-fluids", factory);
+    model.adjustSolverTuning(1);
+    const tuned = model.solver.interactiveTuning?.()?.value;
+    expect(tuned).toBeDefined();
+    expect(createSolver("stable-fluids").interactiveTuning?.()?.value).not.toBe(tuned);
+    model.solver = new FailingSolver(model.solver, numericalFailure());
+    model.step();
+    expect(model.snapshot().recoveryEpoch).toBe(1);
+    expect(model.solver.interactiveTuning?.()?.value).toBe(tuned);
   });
 });
