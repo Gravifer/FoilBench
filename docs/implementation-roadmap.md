@@ -373,7 +373,7 @@ therefore explicitly deferred to Revision 6 with new conformance vectors.
 
 ## Post-Phase 3: static browser lab
 
-**Status:** Released and deployed. Version `v0.2.1` is live at
+**Status:** Released and deployed. Version `v0.2.2` is live at
 [https://gravifer.github.io/FoilBench/](https://gravifer.github.io/FoilBench/).
 
 The student-facing FoilBench SPA builds on the accepted TypeScript worker and
