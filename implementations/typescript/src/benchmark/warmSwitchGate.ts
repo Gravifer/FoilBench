@@ -8,7 +8,14 @@ import {createSolver} from "../solvers/factory.js";
 import {ViewerModel} from "../viewer/model.js";
 
 class DelegatingSolver implements FlowSolver {
-  public constructor(protected readonly inner: FlowSolver) {}
+  public readonly interactiveTuning?: NonNullable<FlowSolver["interactiveTuning"]>;
+  public readonly adjustInteractiveTuning?: NonNullable<FlowSolver["adjustInteractiveTuning"]>;
+  public readonly applyInteractiveTuning?: NonNullable<FlowSolver["applyInteractiveTuning"]>;
+  public constructor(protected readonly inner: FlowSolver) {
+    if (inner.interactiveTuning !== undefined) this.interactiveTuning = () => inner.interactiveTuning?.();
+    if (inner.adjustInteractiveTuning !== undefined) this.adjustInteractiveTuning = (direction) => inner.adjustInteractiveTuning?.(direction);
+    if (inner.applyInteractiveTuning !== undefined) this.applyInteractiveTuning = (value) => inner.applyInteractiveTuning?.(value);
+  }
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
   public get stateRevision(): number { return this.inner.stateRevision; }
