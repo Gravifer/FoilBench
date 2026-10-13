@@ -24,15 +24,13 @@ class DelegatingSolver implements FlowSolver {
 
 class RejectingImportSolver extends DelegatingSolver {
   public constructor(inner: FlowSolver, private readonly reason: Exclude<ImportReason, "none"> = "nonfinite_state") { super(inner); }
-  public override importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
-    void state; void control;
+  public override importState(): ImportOutcome {
     return {status: "rejected", reason: this.reason, stage: "canonical-import", evidence: {}, discardedState: [], warnings: []};
   }
 }
 
 class FailingAdvanceSolver extends DelegatingSolver {
-  public override advance(control: ControlState, targetDt: number): StepReport {
-    void control; void targetDt;
+  public override advance(): StepReport {
     throw new NumericalFailure("stability_limit", "injected fresh-fallback validation failure", "time-mapping");
   }
 }

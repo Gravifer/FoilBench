@@ -65,7 +65,7 @@ export class LbmSolver implements FlowSolver {
   }
 
   public restart(scenario: Scenario, seed: number, start: RestartState): void {
-    void seed; if (scenario.domain.dimension !== 2) throw new RangeError("lbm-d2q9 supports only 2D");
+    if (scenario.domain.dimension !== 2) throw new RangeError("lbm-d2q9 supports only 2D");
     if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid LBM restart state");
     this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = start.reynolds; this.time = start.time; this.control = {time: start.time, angleDegrees: start.angleDegrees, angularVelocityDegrees: 0};
     const {nx, ny} = dimensions(scenario.domain); const count = nx * ny; this.populations = new Float32Array(); this.scratch = new Float32Array();

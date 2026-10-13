@@ -7,26 +7,29 @@ import {parseScenario} from "../../src/core/scenario.js";
 import {createSolver} from "../../src/solvers/factory.js";
 import {ViewerModel} from "../../src/viewer/model.js";
 
-class FailingSolver implements FlowSolver {
-  public constructor(protected readonly inner: FlowSolver, private readonly error: Error) {}
+class DelegatingSolver implements FlowSolver {
+  public constructor(protected readonly inner: FlowSolver) {}
   public get info(): SolverInfo { return this.inner.info; }
   public get reynolds(): number { return this.inner.reynolds; }
   public get stateRevision(): number { return this.inner.stateRevision; }
   public initialize(scenario: Scenario, seed: number): void { this.inner.initialize(scenario, seed); }
   public restart(scenario: Scenario, seed: number, start: RestartState): void { this.inner.restart(scenario, seed, start); }
   public setReynolds(reynolds: number): ReynoldsOutcome { return this.inner.setReynolds(reynolds); }
-  public advance(control: ControlState, targetDt: number): StepReport { void control; void targetDt; throw this.error; }
+  public advance(control: ControlState, targetDt: number): StepReport { return this.inner.advance(control, targetDt); }
   public sampleVelocity(points: FloatArray): FloatArray { return this.inner.sampleVelocity(points); }
   public exportState(): CanonicalFlowState { return this.inner.exportState(); }
   public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { return this.inner.importState(state, control); }
   public diagnostics(): Diagnostics { return this.inner.diagnostics(); }
 }
 
-class RejectingImportSolver extends FailingSolver {
-  public constructor(inner: FlowSolver, private readonly reason: Exclude<ImportReason, "none">) { super(inner, new Error("unused")); }
-  public override advance(control: ControlState, targetDt: number): StepReport { return this.inner.advance(control, targetDt); }
-  public override importState(state: CanonicalFlowState, control: ControlState): ImportOutcome {
-    void state; void control;
+class FailingSolver extends DelegatingSolver {
+  public constructor(inner: FlowSolver, private readonly error: Error) { super(inner); }
+  public override advance(): StepReport { throw this.error; }
+}
+
+class RejectingImportSolver extends DelegatingSolver {
+  public constructor(inner: FlowSolver, private readonly reason: Exclude<ImportReason, "none">) { super(inner); }
+  public override importState(): ImportOutcome {
     return {status: "rejected", reason: this.reason, stage: "canonical-import", evidence: {}, discardedState: [], warnings: []};
   }
 }

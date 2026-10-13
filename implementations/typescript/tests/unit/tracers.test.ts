@@ -8,7 +8,6 @@ import type {
   FlowSolver,
   FloatArray,
   ImportOutcome,
-  RestartState,
   ReynoldsOutcome,
   Scenario,
   SolverInfo,
@@ -40,8 +39,8 @@ class SampleSolver implements FlowSolver {
   public readonly stateRevision = 0;
 
   public constructor(private readonly velocity: Velocity, private readonly angleDegrees = 0) {}
-  public initialize(scenarioValue: Scenario, seed: number): void { void scenarioValue; void seed; }
-  public restart(scenarioValue: Scenario, seed: number, start: RestartState): void { void scenarioValue; void seed; void start; }
+  public initialize(): void { /* the sample field is fixed */ }
+  public restart(): void { /* the sample field is fixed */ }
   public setReynolds(reynolds: number): ReynoldsOutcome { return {requested: reynolds, effective: reynolds, warnings: []}; }
   public advance(_control: ControlState, targetDt: number): StepReport { return {requestedDt: targetDt, advancedDt: targetDt, substeps: 1, maxSpeed: 0, stateRevision: 0, evidence: {}, warnings: []}; }
   public sampleVelocity(points: FloatArray): FloatArray {
@@ -55,7 +54,7 @@ class SampleSolver implements FlowSolver {
   public exportState(): CanonicalFlowState {
     return {schemaVersion: 1, dimension: 2, bounds: scenario.domain.bounds, resolution: scenario.domain.resolution, periodicAxes: [], time: 0, precision: "float32", angleDegrees: this.angleDegrees, angularVelocityDegrees: 0, sourceLanguage: "test", sourceSolver: "sample", velocity: new Float32Array(32 * 16 * 2), density: null};
   }
-  public importState(state: CanonicalFlowState, control: ControlState): ImportOutcome { void state; void control; return {status: "accepted", reason: "none", stage: null, evidence: {}, discardedState: [], warnings: []}; }
+  public importState(): ImportOutcome { return {status: "accepted", reason: "none", stage: null, evidence: {}, discardedState: [], warnings: []}; }
   public diagnostics(): Diagnostics { return {stateRevision: 0, values: {}, warnings: []}; }
 }
 
