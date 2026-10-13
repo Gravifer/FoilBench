@@ -47,7 +47,6 @@ export class StableFluidsSolver implements FlowSolver {
   }
 
   public restart(scenario: Scenario, seed: number, start: RestartState): void {
-    void seed;
     if (scenario.domain.dimension !== 2) throw new RangeError("stable-fluids supports only 2D");
     if (!Number.isFinite(start.time) || start.time < 0 || !Number.isFinite(start.angleDegrees) || !Number.isFinite(start.reynolds) || start.reynolds <= 0) throw new RangeError("invalid stable-fluids restart state");
     this.scenario = scenario; this.foil = new NacaFoil(scenario.foil); this.reynolds = start.reynolds; this.time = start.time;
