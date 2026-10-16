@@ -93,7 +93,7 @@ jobs:
           cache-dependency-path: |
             implementations/typescript/package-lock.json
             apps/web/package-lock.json
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: '1.99.0'
           targets: wasm32-unknown-unknown
