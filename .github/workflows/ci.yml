@@ -29,6 +29,14 @@ jobs:
         with: {version: '1.13'}
       - uses: julia-actions/cache@v3
       - run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+      - name: Precompile and load GLMakie viewer
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: '0'
+        run: >-
+          xvfb-run -a julia --project=implementations/julia/viewer
+          -e 'using Pkg; Pkg.instantiate(); Pkg.precompile(; strict=true);
+          using FoilBenchJulia, GLMakie, JSON3;
+          println("viewer-load-ok julia=", VERSION, " glmakie=", Base.pkgversion(GLMakie))'
 
   julia-floor:
     runs-on: ubuntu-latest
@@ -38,6 +46,14 @@ jobs:
         with: {version: '1.12.6'}
       - uses: julia-actions/cache@v3
       - run: julia --project=implementations/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+      - name: Precompile and load GLMakie viewer
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: '0'
+        run: >-
+          xvfb-run -a julia --project=implementations/julia/viewer
+          -e 'using Pkg; Pkg.instantiate(); Pkg.precompile(; strict=true);
+          using FoilBenchJulia, GLMakie, JSON3;
+          println("viewer-load-ok julia=", VERSION, " glmakie=", Base.pkgversion(GLMakie))'
 
   typescript:
     runs-on: ubuntu-latest
