@@ -23,6 +23,20 @@
       "enabled": false
     },
     {
+      "description": "Preserve Julia 1.12.6 as the deliberate compat-floor CI job",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "julia"
+      ],
+      "matchFileNames": [
+        ".github/workflows/ci.yml"
+      ],
+      "matchCurrentValue": "/^1\\.12\\.6$/",
+      "enabled": false
+    },
+    {
       "description": "Defer TypeScript major upgrades for one year",
       "matchPackageNames": [
         "typescript"

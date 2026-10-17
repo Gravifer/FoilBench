@@ -34,6 +34,27 @@ remains independent from solver work. GLMakie has its own committed `viewer/`
 environment so solver-only tests and benchmarks do not pay its dependency or
 precompile cost.
 
+Julia 1.13 is the primary target and Julia 1.12 stays supported. The solver
+environment has a single `Manifest.toml` resolved under 1.13 that also installs
+on 1.12.6; the `julia-floor` CI job checks that. The `viewer/` environment keeps
+two manifests because Julia 1.13 made `Zstd_jll` a standard library, so a
+manifest resolved under 1.13 cannot install on 1.12:
+
+- `viewer/Manifest.toml` is resolved under Julia 1.13. It is also what any Julia
+  without its own versioned file uses, so a newer release never rewrites the 1.12
+  manifest.
+- `viewer/Manifest-v1.12.toml` is resolved under Julia 1.12 and is selected
+  automatically by every 1.12.x.
+
+After changing the viewer's dependencies, regenerate both, each under its own
+Julia, and keep the third-party package versions identical (juliaup channels
+shown):
+
+```powershell
+julia +1.13 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
+julia +1.12 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
+```
+
 Run the preview performance acceptance gate with:
 
 ```powershell
