@@ -46,13 +46,28 @@ manifest resolved under 1.13 cannot install on 1.12:
 - `viewer/Manifest-v1.12.toml` is resolved under Julia 1.12 and is selected
   automatically by every 1.12.x.
 
-After changing the viewer's dependencies, regenerate both, each under its own
-Julia, and keep the third-party package versions identical (juliaup channels
-shown):
+CI pins exact Julia patch releases because a patch release can change the
+versions of the standard libraries recorded in the manifests, so resolve each
+manifest under exactly the release CI uses for it. Below, `<primary>` is the
+version pinned by the `julia` job in `.github/workflows/ci.yml`; the 1.12 floor
+stays at 1.12.6. juliaup accepts exact versions as channels, for example
+`juliaup add 1.12.6`.
+
+After changing the viewer's dependencies, regenerate both viewer manifests and
+keep the third-party package versions identical:
 
 ```powershell
-julia +1.13 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
-julia +1.12 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
+julia +<primary> --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
+julia +1.12.6 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
+```
+
+When Renovate bumps the primary release, resolve the solver and viewer
+`Manifest.toml` under the new release; `viewer/Manifest-v1.12.toml` stays as it
+is:
+
+```powershell
+julia +<primary> --project=implementations/julia -e "using Pkg; Pkg.resolve()"
+julia +<primary> --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
 ```
 
 Run the preview performance acceptance gate with:
