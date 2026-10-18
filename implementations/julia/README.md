@@ -55,6 +55,11 @@ julia +1.13 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
 julia +1.12 --project=implementations/julia/viewer -e "using Pkg; Pkg.resolve()"
 ```
 
+CI pins exact Julia patch releases because a patch release can change the
+versions of the standard libraries recorded in the manifests. When Renovate
+bumps the primary version, resolve the solver and viewer `Manifest.toml` under
+that release; the 1.12 floor stays at 1.12.6.
+
 Run the preview performance acceptance gate with:
 
 ```powershell
