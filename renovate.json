@@ -28,7 +28,7 @@
         "github-actions"
       ],
       "matchPackageNames": [
-        "julia"
+        "JuliaLang/julia"
       ],
       "matchFileNames": [
         ".github/workflows/ci.yml"
