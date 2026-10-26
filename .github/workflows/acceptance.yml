@@ -44,7 +44,7 @@ jobs:
         if: matrix.implementation == 'python'
       - uses: julia-actions/setup-julia@v3
         if: matrix.implementation == 'julia'
-        with: {version: '1.13.2'}
+        with: {version: 'v1.13.3'}
       - uses: actions/setup-node@v7
         if: matrix.implementation == 'typescript' || matrix.target == 'wasm-browser'
         with: {node-version: 24, cache: npm, cache-dependency-path: implementations/typescript/package-lock.json}
