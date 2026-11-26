@@ -28,7 +28,7 @@
     "@playwright/test": "^1.55.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.5.2",
+    "@types/node": "^26.0.0",
     "eslint": "^10.0.0",
     "svelte": "^5.56.10",
     "svelte-check": "^4.7.6",
